@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+
+data/
+backups/
+*.log
+*.swp
+.DS_Store
+
+tenants/*/
+!tenants/template/

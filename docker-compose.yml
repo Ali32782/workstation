@@ -1,0 +1,483 @@
+# =============================================================================
+# Corehub / MedTheris - Core Stack
+# Hetzner CX42 · Ubuntu 24.04 · Docker Engine + Compose v2
+#
+# Start:         docker compose --env-file .env up -d
+# Logs:          docker compose logs -f <service>
+# Update images: docker compose pull && docker compose up -d
+#
+# Jitsi + Zammad run in separate compose files (see README).
+# =============================================================================
+
+name: corehub
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
+  corehub-internal:
+    driver: bridge
+    internal: true
+  medtheris-internal:
+    driver: bridge
+    internal: true
+  shared-internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  landing_cache:
+  npm_data:
+  npm_letsencrypt:
+  keycloak_pg_data:
+  rocketchat_uploads:
+  rocketchat_mongo_data:
+  rocketchat_uploads_medtheris:
+  rocketchat_mongo_medtheris_data:
+  nc_corehub_data:
+  nc_medtheris_data:
+  mariadb_data:
+  twenty_data:
+  twenty_pg_data:
+  twenty_redis_data:
+  redis_data:
+  gitea_data:
+  gitea_db:
+  portainer_data:
+  collabora_data:
+
+# -----------------------------------------------------------------------------
+services:
+
+  # =========================================================================
+  # Proxy & Auth (shared)
+  # =========================================================================
+
+  landing:
+    # Static landing + per-tenant dashboard.
+    # Serves:
+    #   kineo360.work / www.kineo360.work -> marketing
+    #   <slug>.kineo360.work              -> tenant dashboard (slug from Host header)
+    image: nginx:1.27-alpine
+    container_name: landing
+    restart: unless-stopped
+    volumes:
+      - ./landing/conf.d:/etc/nginx/conf.d:ro
+      - ./landing/public:/usr/share/nginx/html:ro
+      - landing_cache:/var/cache/nginx
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  npm:
+    image: jc21/nginx-proxy-manager:2.11.3
+    container_name: npm
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:81:81"   # admin UI only via SSH tunnel
+    environment:
+      TZ: ${TZ}
+      DISABLE_IPV6: "true"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "/usr/bin/check-health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - keycloak_pg_data:/var/lib/postgresql/data
+    networks:
+      - shared-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: keycloak
+    restart: unless-stopped
+    # hostname-strict=false so the same container serves
+    #   auth.corehub.io / auth.medtheris.kineo360.work / auth.<slug>.kineo360.work
+    # Per-realm frontendUrl (set in realm JSON) makes emitted links tenant-scoped.
+    command: start --http-enabled=true --hostname-strict=false --proxy-headers=xforwarded
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HOSTNAME: ${KC_HOSTNAME}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      TZ: ${TZ}
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks:
+      - proxy
+      - shared-internal
+
+  # =========================================================================
+  # Communication (Corehub)
+  # =========================================================================
+
+  rocketchat-mongo:
+    # Mongo runs ONLY on the internal corehub-internal network (no public port).
+    # Replica set (rs0) is required by Rocket.Chat oplog tailer.
+    # No root auth on purpose: combining auth + replica set requires a keyFile
+    # setup; since the DB is not publicly reachable, the replica-set-only mode
+    # is the standard Rocket.Chat docker-compose configuration.
+    image: mongo:6
+    container_name: rocketchat-mongo
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--oplogSize", "128", "--bind_ip_all"]
+    volumes:
+      - rocketchat_mongo_data:/data/db
+    networks:
+      - corehub-internal
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  rocketchat-mongo-init:
+    image: mongo:6
+    container_name: rocketchat-mongo-init
+    restart: "no"
+    depends_on:
+      rocketchat-mongo:
+        condition: service_healthy
+    networks:
+      - corehub-internal
+    command: >
+      bash -c "sleep 5 && mongosh mongodb://rocketchat-mongo:27017 --eval
+      'try { rs.status() } catch(e) { rs.initiate({_id: \"rs0\", members: [{_id:0, host:\"rocketchat-mongo:27017\"}]}) }'"
+
+  rocketchat:
+    image: rocket.chat:6.11
+    container_name: rocketchat
+    restart: unless-stopped
+    depends_on:
+      rocketchat-mongo:
+        condition: service_healthy
+    environment:
+      ROOT_URL: ${ROCKETCHAT_URL}
+      PORT: 3000
+      MONGO_URL: mongodb://rocketchat-mongo:27017/rocketchat?replicaSet=rs0
+      MONGO_OPLOG_URL: mongodb://rocketchat-mongo:27017/local?replicaSet=rs0
+      TZ: ${TZ}
+    volumes:
+      - rocketchat_uploads:/app/uploads
+    networks:
+      - proxy
+      - corehub-internal
+
+  # =========================================================================
+  # Communication (MedTheris — isolated tenant, separate data)
+  # =========================================================================
+
+  rocketchat-mongo-medtheris:
+    image: mongo:6
+    container_name: rocketchat-mongo-medtheris
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--oplogSize", "128", "--bind_ip_all"]
+    volumes:
+      - rocketchat_mongo_medtheris_data:/data/db
+    networks:
+      - medtheris-internal
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  rocketchat-mongo-medtheris-init:
+    image: mongo:6
+    container_name: rocketchat-mongo-medtheris-init
+    restart: "no"
+    depends_on:
+      rocketchat-mongo-medtheris:
+        condition: service_healthy
+    networks:
+      - medtheris-internal
+    command: >
+      bash -c "sleep 5 && mongosh mongodb://rocketchat-mongo-medtheris:27017 --eval
+      'try { rs.status() } catch(e) { rs.initiate({_id: \"rs0\", members: [{_id:0, host:\"rocketchat-mongo-medtheris:27017\"}]}) }'"
+
+  rocketchat-medtheris:
+    image: rocket.chat:6.11
+    container_name: rocketchat-medtheris
+    restart: unless-stopped
+    depends_on:
+      rocketchat-mongo-medtheris:
+        condition: service_healthy
+    environment:
+      ROOT_URL: https://chat.medtheris.kineo360.work
+      PORT: 3000
+      MONGO_URL: mongodb://rocketchat-mongo-medtheris:27017/rocketchat?replicaSet=rs0
+      MONGO_OPLOG_URL: mongodb://rocketchat-mongo-medtheris:27017/local?replicaSet=rs0
+      TZ: ${TZ}
+    volumes:
+      - rocketchat_uploads_medtheris:/app/uploads
+    networks:
+      - proxy
+      - medtheris-internal
+
+  # =========================================================================
+  # Office
+  # =========================================================================
+
+  mariadb:
+    image: mariadb:10.11
+    container_name: mariadb
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      NC_COREHUB_DB_PASSWORD: ${NC_COREHUB_DB_PASSWORD}
+      NC_MEDTHERIS_DB_PASSWORD: ${NC_MEDTHERIS_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./scripts/mariadb-init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - shared-internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  nextcloud-corehub:
+    image: nextcloud:29-apache
+    container_name: nextcloud-corehub
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mariadb
+      MYSQL_DATABASE: nc_corehub
+      MYSQL_USER: nc_corehub
+      MYSQL_PASSWORD: ${NC_COREHUB_DB_PASSWORD}
+      NEXTCLOUD_ADMIN_USER: ${NC_COREHUB_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NC_COREHUB_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NC_COREHUB_URL}
+      OVERWRITEPROTOCOL: https
+      OVERWRITEHOST: ${NC_COREHUB_URL}
+      TRUSTED_PROXIES: 172.16.0.0/12
+      TZ: ${TZ}
+    volumes:
+      - nc_corehub_data:/var/www/html
+    networks:
+      - proxy
+      - shared-internal
+      - corehub-internal
+
+  nextcloud-medtheris:
+    image: nextcloud:29-apache
+    container_name: nextcloud-medtheris
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mariadb
+      MYSQL_DATABASE: nc_medtheris
+      MYSQL_USER: nc_medtheris
+      MYSQL_PASSWORD: ${NC_MEDTHERIS_DB_PASSWORD}
+      NEXTCLOUD_ADMIN_USER: ${NC_MEDTHERIS_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NC_MEDTHERIS_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NC_MEDTHERIS_URL}
+      OVERWRITEPROTOCOL: https
+      OVERWRITEHOST: ${NC_MEDTHERIS_URL}
+      TRUSTED_PROXIES: 172.16.0.0/12
+      TZ: ${TZ}
+    volumes:
+      - nc_medtheris_data:/var/www/html
+    networks:
+      - proxy
+      - shared-internal
+      - medtheris-internal
+
+  collabora:
+    image: collabora/code:25.04.9.4.1
+    container_name: collabora
+    restart: unless-stopped
+    cap_add:
+      - MKNOD
+    environment:
+      domain: ${COLLABORA_ALLOWED_HOSTS}
+      extra_params: --o:ssl.enable=false --o:ssl.termination=true
+      TZ: ${TZ}
+    volumes:
+      - collabora_data:/opt/cool/child-roots
+    networks:
+      - proxy
+      - shared-internal
+
+  # =========================================================================
+  # CRM & Helpdesk (Zammad runs via docker-compose.zammad.yml)
+  # =========================================================================
+
+  twenty-db:
+    image: postgres:16-alpine
+    container_name: twenty-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${TWENTY_PG_PASSWORD}
+      POSTGRES_DB: default
+      TZ: ${TZ}
+    volumes:
+      - twenty_pg_data:/var/lib/postgresql/data
+    networks:
+      - corehub-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - shared-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  twenty-redis:
+    image: redis:7-alpine
+    container_name: twenty-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - twenty_redis_data:/data
+    networks:
+      - corehub-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  twenty:
+    image: twentycrm/twenty:latest
+    container_name: twenty
+    restart: unless-stopped
+    depends_on:
+      twenty-db:
+        condition: service_healthy
+      twenty-redis:
+        condition: service_healthy
+    environment:
+      PG_DATABASE_URL: postgres://postgres:${TWENTY_PG_PASSWORD}@twenty-db:5432/default
+      REDIS_URL: redis://twenty-redis:6379
+      SERVER_URL: ${TWENTY_URL}
+      APP_SECRET: ${TWENTY_APP_SECRET}
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: .local-storage
+      AUTH_SSO_ENABLED: "true"
+      AUTH_OIDC_CLIENT_ID: twenty
+      AUTH_OIDC_CLIENT_SECRET: ${OIDC_COREHUB_TWENTY_SECRET}
+      AUTH_OIDC_ISSUER: https://auth.kineo360.work/realms/corehub
+      MESSAGING_PROVIDER_GMAIL_ENABLED: "false"
+      TZ: ${TZ}
+    volumes:
+      - twenty_data:/app/packages/twenty-server/.local-storage
+    networks:
+      - proxy
+      - corehub-internal
+
+  # =========================================================================
+  # Dev Tools (Corehub)
+  # =========================================================================
+
+  gitea-db:
+    image: postgres:16-alpine
+    container_name: gitea-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gitea
+      POSTGRES_USER: gitea
+      POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - gitea_db:/var/lib/postgresql/data
+    networks:
+      - corehub-internal
+
+  gitea:
+    image: gitea/gitea:1.22
+    container_name: gitea
+    restart: unless-stopped
+    depends_on:
+      - gitea-db
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: gitea-db:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: gitea
+      GITEA__database__PASSWD: ${GITEA_DB_PASSWORD}
+      GITEA__server__ROOT_URL: ${GITEA_URL}
+      GITEA__server__DOMAIN: git.${PUBLIC_DOMAIN_KINEO}
+      GITEA__server__SSH_DOMAIN: git.${PUBLIC_DOMAIN_KINEO}
+      GITEA__server__SSH_PORT: "2222"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      TZ: ${TZ}
+    volumes:
+      - gitea_data:/data
+    ports:
+      - "2222:22"    # SSH for git push over ssh
+    networks:
+      - proxy
+      - corehub-internal
+
+  portainer:
+    image: portainer/portainer-ce:2.21.4
+    container_name: portainer
+    restart: unless-stopped
+    # SECURITY: never expose 9000 publicly. Bind to loopback only.
+    # Reach via SSH tunnel:  ssh -L 9000:localhost:9000 <host>
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    networks:
+      - corehub-internal

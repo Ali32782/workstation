@@ -1,0 +1,6 @@
+# /etc/cron.d/corehub-backup  -  daily offsite backup at 03:00 Europe/Zurich
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+REPO_DIR=/opt/corehub
+
+0 3 * * *  deploy  /opt/corehub/scripts/backup.sh >> /var/log/corehub/backup.log 2>&1

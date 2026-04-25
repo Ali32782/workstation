@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kineo360 — Digitale Plattform für Physiotherapie-Praxen</title>
+<meta name="description" content="Kineo360 ist die modulare, selbst gehostete Plattform für Physiotherapie-Praxen: Dokumente, Chat, Video und Telefonie aus einer Hand." />
+<style>
+  :root {
+    --ink: #0f172a;
+    --muted: #475569;
+    --accent: #2563eb;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+               -webkit-font-smoothing: antialiased; line-height: 1.5; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 24px; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 32px; }
+  .brand { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+  .brand span { color: var(--accent); }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 18px; font-size: 14px; }
+  nav a:hover { color: var(--ink); }
+  h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.1; letter-spacing: -0.02em; margin: 24px 0 16px; max-width: 20ch; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 60ch; }
+  .cta { display: inline-flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 12px 18px; border-radius: 10px;
+         font-weight: 600; text-decoration: none; font-size: 15px;
+         transition: transform 0.08s ease, box-shadow 0.2s ease; }
+  .btn-primary { background: var(--accent); color: white; box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 18px; margin: 64px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+          padding: 20px; }
+  .card h3 { margin: 0 0 8px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0 8px; border-top: 1px solid var(--border); margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav>
+    <div class="brand">Kineo<span>360</span></div>
+    <div>
+      <a href="#features">Plattform</a>
+      <a href="mailto:info@kineo360.work">Kontakt</a>
+      <a href="https://auth.medtheris.kineo360.work">Anmelden</a>
+    </div>
+  </nav>
+
+  <header>
+    <h1>Eine Plattform für deine Praxis. Nicht fünf Abos.</h1>
+    <p class="lede">
+      Kineo360 bündelt Patientendokumente, Teamchat, Videokonferenz und
+      Helpdesk in einer selbst gehosteten, Schweiz-konformen Umgebung —
+      auf deiner eigenen Domain, mit deinem eigenen Branding.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="mailto:info@kineo360.work?subject=Demo-Termin%20Kineo360">Demo anfragen</a>
+      <a class="btn btn-ghost" href="https://auth.medtheris.kineo360.work">Zum Login</a>
+    </div>
+  </header>
+
+  <section id="features" class="grid">
+    <div class="card"><h3>Dokumente</h3><p>Nextcloud mit Collabora Online — Patientendossiers, Formulare, Versanddialog. Pro Praxis eigene Instanz.</p></div>
+    <div class="card"><h3>Chat</h3><p>Rocket.Chat als privater Team-Messenger. Kanäle pro Therapeut:in, verschlüsselte Direktnachrichten.</p></div>
+    <div class="card"><h3>Video</h3><p>Jitsi Meet für Anamnese und Teambesprechungen — ohne Account, ohne Speicher, ohne Drittanbieter.</p></div>
+    <div class="card"><h3>Helpdesk</h3><p>Zammad sammelt Patientenanfragen aus Mail und Formular in eine Ticket-Queue pro Praxis.</p></div>
+    <div class="card"><h3>Telefonie</h3><p>Peoplefone-Integration. Eine Einrichtungsstunde, dann klingelt's auf Zoiper — iOS, Android, Desktop.</p></div>
+    <div class="card"><h3>SSO &amp; Isolation</h3><p>Keycloak-basiertes Single-Sign-on. Jede Praxis hat ihre eigene Benutzerwelt — kein Datenleck zwischen Mandanten.</p></div>
+  </section>
+
+  <footer>Kineo360 · betrieben von MedTheris GmbH · hergestellt mit Corehub Technologies · © 2026</footer>
+</div>
+</body>
+</html>

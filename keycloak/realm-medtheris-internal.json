@@ -1,0 +1,54 @@
+{
+  "realm": "medtheris-internal",
+  "displayName": "MedTheris",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 36000,
+  "passwordPolicy": "length(12) and specialChars(1) and upperCase(1) and digits(1) and notUsername",
+  "attributes": {
+    "frontendUrl": "https://auth.kineo360.work"
+  },
+  "roles": {
+    "realm": [
+      { "name": "medtheris-admin",    "description": "MedTheris platform operator" },
+      { "name": "medtheris-support",  "description": "Onboarding + customer support" },
+      { "name": "medtheris-user",     "description": "Team member" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "nextcloud",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://files.medtheris.kineo360.work/*"],
+      "webOrigins": ["https://files.medtheris.kineo360.work"],
+      "standardFlowEnabled": true
+    },
+    {
+      "clientId": "rocketchat",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://chat.medtheris.kineo360.work/*"],
+      "webOrigins": ["https://chat.medtheris.kineo360.work"],
+      "standardFlowEnabled": true
+    },
+    {
+      "clientId": "zammad",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://support.medtheris.kineo360.work/*"],
+      "webOrigins": ["https://support.medtheris.kineo360.work"],
+      "standardFlowEnabled": true
+    }
+  ]
+}

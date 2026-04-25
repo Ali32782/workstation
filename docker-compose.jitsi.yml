@@ -1,0 +1,127 @@
+# =============================================================================
+# Jitsi Meet Stack (4 containers: web, prosody, jicofo, jvb)
+# Based on official docker-jitsi-meet (jitsi/stable-9457+)
+#
+# IMPORTANT: Test in isolation BEFORE running together with the core stack.
+# JVB must advertise a reachable public IP (DOCKER_HOST_ADDRESS).
+# Hetzner Cloud Firewall + UFW must allow UDP 10000 inbound.
+#
+# Start:   docker compose -f docker-compose.jitsi.yml --env-file .env up -d
+# =============================================================================
+
+name: jitsi
+
+networks:
+  meet.jitsi:
+    name: meet.jitsi
+  proxy:
+    external: true
+
+volumes:
+  jitsi_config:
+  jitsi_prosody_cfg:
+  jitsi_prosody_plugins:
+  jitsi_jicofo:
+  jitsi_jvb:
+  jitsi_transcripts:
+
+services:
+
+  web:
+    image: jitsi/web:stable-9457
+    container_name: jitsi-web
+    restart: unless-stopped
+    volumes:
+      - jitsi_config:/config:Z
+      - jitsi_transcripts:/usr/share/jitsi-meet/transcripts:Z
+    environment:
+      ENABLE_AUTH: "0"
+      ENABLE_GUESTS: "1"
+      ENABLE_LETSENCRYPT: "0"  # SSL handled by NPM
+      ENABLE_HTTP_REDIRECT: "0"
+      PUBLIC_URL: ${JITSI_PUBLIC_URL}
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_MUC_DOMAIN: muc.meet.jitsi
+      XMPP_BOSH_URL_BASE: http://prosody:5280
+      TZ: ${TZ}
+    networks:
+      - meet.jitsi
+      - proxy
+    depends_on:
+      - prosody
+
+  prosody:
+    image: jitsi/prosody:stable-9457
+    container_name: jitsi-prosody
+    restart: unless-stopped
+    expose:
+      - "5222"
+      - "5347"
+      - "5280"
+    volumes:
+      - jitsi_prosody_cfg:/config:Z
+      - jitsi_prosody_plugins:/prosody-plugins-custom:Z
+    environment:
+      AUTH_TYPE: internal
+      ENABLE_AUTH: "0"
+      ENABLE_GUESTS: "1"
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_MUC_DOMAIN: muc.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      JICOFO_COMPONENT_SECRET: ${JICOFO_COMPONENT_SECRET}
+      JICOFO_AUTH_USER: focus
+      JICOFO_AUTH_PASSWORD: ${JICOFO_AUTH_PASSWORD}
+      JVB_AUTH_USER: jvb
+      JVB_AUTH_PASSWORD: ${JVB_AUTH_PASSWORD}
+      TZ: ${TZ}
+    networks:
+      meet.jitsi:
+        aliases:
+          - auth.meet.jitsi
+          - muc.meet.jitsi
+          - internal-muc.meet.jitsi
+
+  jicofo:
+    image: jitsi/jicofo:stable-9457
+    container_name: jitsi-jicofo
+    restart: unless-stopped
+    volumes:
+      - jitsi_jicofo:/config:Z
+    environment:
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      XMPP_MUC_DOMAIN: muc.meet.jitsi
+      XMPP_SERVER: prosody
+      JICOFO_COMPONENT_SECRET: ${JICOFO_COMPONENT_SECRET}
+      JICOFO_AUTH_USER: focus
+      JICOFO_AUTH_PASSWORD: ${JICOFO_AUTH_PASSWORD}
+      TZ: ${TZ}
+    depends_on:
+      - prosody
+    networks:
+      - meet.jitsi
+
+  jvb:
+    image: jitsi/jvb:stable-9457
+    container_name: jitsi-jvb
+    restart: unless-stopped
+    ports:
+      - "10000:10000/udp"
+    volumes:
+      - jitsi_jvb:/config:Z
+    environment:
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      XMPP_SERVER: prosody
+      JVB_AUTH_USER: jvb
+      JVB_AUTH_PASSWORD: ${JVB_AUTH_PASSWORD}
+      JVB_PORT: 10000
+      JVB_ADVERTISE_IPS: ${DOCKER_HOST_ADDRESS}
+      TZ: ${TZ}
+    depends_on:
+      - prosody
+    networks:
+      - meet.jitsi

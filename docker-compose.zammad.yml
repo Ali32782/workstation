@@ -1,0 +1,127 @@
+# =============================================================================
+# Zammad Helpdesk Stack (MedTheris — support.medtheris.kineo360.work)
+# Minimal subset of the upstream Zammad docker-compose.
+#
+# Start:  docker compose -f docker-compose.zammad.yml --env-file .env up -d
+# =============================================================================
+
+name: zammad
+
+x-shared: &zammad-env
+  POSTGRESQL_HOST: zammad-postgres
+  POSTGRESQL_USER: zammad
+  POSTGRESQL_PASS: zammad
+  POSTGRESQL_DB: zammad_production
+  MEMCACHE_SERVERS: zammad-memcached:11211
+  REDIS_URL: redis://zammad-redis:6379
+  ELASTICSEARCH_HOST: zammad-elasticsearch
+  ELASTICSEARCH_PORT: 9200
+  ELASTICSEARCH_SCHEMA: http
+  ZAMMAD_WEB_CONCURRENCY: "0"
+  RAILS_MAX_THREADS: "5"
+  TZ: ${TZ}
+
+networks:
+  proxy:
+    external: true
+  zammad-internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  zammad_postgres_data:
+  zammad_elastic_data:
+  zammad_data:
+
+services:
+
+  zammad-postgres:
+    image: postgres:16-alpine
+    container_name: zammad-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zammad_production
+      POSTGRES_USER: zammad
+      POSTGRES_PASSWORD: zammad
+    volumes:
+      - zammad_postgres_data:/var/lib/postgresql/data
+    networks: [zammad-internal]
+
+  zammad-memcached:
+    image: memcached:1.6-alpine
+    container_name: zammad-memcached
+    restart: unless-stopped
+    command: memcached -m 256M
+    networks: [zammad-internal]
+
+  zammad-redis:
+    image: redis:7-alpine
+    container_name: zammad-redis
+    restart: unless-stopped
+    networks: [zammad-internal]
+
+  zammad-elasticsearch:
+    image: bitnami/elasticsearch:8
+    container_name: zammad-elasticsearch
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HEAP_SIZE: 512m
+      discovery.type: single-node
+    volumes:
+      - zammad_elastic_data:/bitnami/elasticsearch/data
+    networks: [zammad-internal]
+
+  zammad-init:
+    image: zammad/zammad-docker-compose:6.4.0-55
+    container_name: zammad-init
+    restart: on-failure
+    command: ["zammad-init"]
+    depends_on: [zammad-postgres, zammad-elasticsearch]
+    environment: *zammad-env
+    volumes:
+      - zammad_data:/opt/zammad
+    networks: [zammad-internal]
+
+  zammad-railsserver:
+    image: zammad/zammad-docker-compose:6.4.0-55
+    container_name: zammad-railsserver
+    restart: unless-stopped
+    command: ["zammad-railsserver"]
+    depends_on: [zammad-init]
+    environment: *zammad-env
+    volumes:
+      - zammad_data:/opt/zammad
+    networks: [zammad-internal, proxy]
+
+  zammad-scheduler:
+    image: zammad/zammad-docker-compose:6.4.0-55
+    container_name: zammad-scheduler
+    restart: unless-stopped
+    command: ["zammad-scheduler"]
+    depends_on: [zammad-railsserver]
+    environment: *zammad-env
+    volumes:
+      - zammad_data:/opt/zammad
+    networks: [zammad-internal]
+
+  zammad-websocket:
+    image: zammad/zammad-docker-compose:6.4.0-55
+    container_name: zammad-websocket
+    restart: unless-stopped
+    command: ["zammad-websocket"]
+    depends_on: [zammad-railsserver]
+    environment: *zammad-env
+    volumes:
+      - zammad_data:/opt/zammad
+    networks: [zammad-internal, proxy]
+
+  zammad-nginx:
+    image: zammad/zammad-docker-compose:6.4.0-55
+    container_name: zammad-nginx
+    restart: unless-stopped
+    command: ["zammad-nginx"]
+    depends_on: [zammad-railsserver]
+    environment: *zammad-env
+    volumes:
+      - zammad_data:/opt/zammad
+    networks: [zammad-internal, proxy]

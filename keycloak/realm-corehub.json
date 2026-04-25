@@ -1,0 +1,77 @@
+{
+  "realm": "corehub",
+  "displayName": "Corehub / Kineo360 Operator",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 36000,
+  "passwordPolicy": "length(12) and notUsername",
+  "attributes": {
+    "frontendUrl": "https://auth.kineo360.work"
+  },
+  "roles": {
+    "realm": [
+      { "name": "corehub-admin", "description": "Full administrative access" },
+      { "name": "corehub-dev",   "description": "Developer access" },
+      { "name": "corehub-user",  "description": "Standard user" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "nextcloud",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://files.kineo360.work/*"],
+      "webOrigins": ["https://files.kineo360.work"],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://files.kineo360.work/*"
+      }
+    },
+    {
+      "clientId": "rocketchat",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://chat.kineo360.work/*"],
+      "webOrigins": ["https://chat.kineo360.work"],
+      "standardFlowEnabled": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://chat.kineo360.work/*"
+      }
+    },
+    {
+      "clientId": "gitea",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://git.kineo360.work/*"],
+      "webOrigins": ["https://git.kineo360.work"],
+      "standardFlowEnabled": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://git.kineo360.work/*"
+      }
+    },
+    {
+      "clientId": "twenty",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://crm.kineo360.work/*"],
+      "webOrigins": ["https://crm.kineo360.work"],
+      "standardFlowEnabled": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://crm.kineo360.work/*"
+      }
+    }
+  ]
+}

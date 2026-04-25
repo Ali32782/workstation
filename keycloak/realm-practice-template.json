@@ -1,0 +1,54 @@
+{
+  "realm": "practice-__SLUG__",
+  "displayName": "__NAME__",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 36000,
+  "passwordPolicy": "length(10) and specialChars(1) and digits(1) and notUsername",
+  "attributes": {
+    "frontendUrl": "https://auth.__SLUG__.kineo360.work"
+  },
+  "roles": {
+    "realm": [
+      { "name": "practice-owner",      "description": "Practice owner / admin" },
+      { "name": "practice-therapist",  "description": "Therapist / clinician" },
+      { "name": "practice-reception",  "description": "Reception / support" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "nextcloud",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://files.__SLUG__.kineo360.work/*"],
+      "webOrigins": ["https://files.__SLUG__.kineo360.work"],
+      "standardFlowEnabled": true
+    },
+    {
+      "clientId": "rocketchat",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://chat.__SLUG__.kineo360.work/*"],
+      "webOrigins": ["https://chat.__SLUG__.kineo360.work"],
+      "standardFlowEnabled": true
+    },
+    {
+      "clientId": "zammad",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": ["https://support.medtheris.kineo360.work/*"],
+      "webOrigins": ["https://support.medtheris.kineo360.work"],
+      "standardFlowEnabled": true
+    }
+  ]
+}
