@@ -96,6 +96,26 @@ docker exec -u git gitea gitea admin auth add-oauth \
    | Merge users          | `Yes`                                                    |
    | Show button          | `Yes`                                                    |
 
+   **CRITICAL** — also set `Accounts_OAuth_Custom-Keycloak-identity_token_sent_via`
+   to `header` directly in MongoDB; the admin UI does not expose this setting in
+   recent Rocket.Chat versions. Without it, RC sends the access token as a URL
+   query parameter on the userinfo call, which Keycloak ignores → login fails
+   silently with `Unauthorized`. Set it via:
+
+   ```bash
+   docker exec rocketchat-mongo mongosh rocketchat --eval '
+     db.rocketchat_settings.updateOne(
+       {_id:"Accounts_OAuth_Custom-Keycloak-identity_token_sent_via"},
+       {$set:{value:"header", type:"select", _updatedAt:new Date()}},
+       {upsert:true}
+     );
+     db.meteor_accounts_loginServiceConfiguration.deleteMany({service:"keycloak"});
+   '
+   docker restart rocketchat
+   ```
+
+   Then disable Email-2FA until SMTP is wired (`Accounts_TwoFactorAuthentication_By_Email_Enabled = false`).
+
 ### Twenty CRM
 
 Add to the `twenty` service in `docker-compose.yml`:
