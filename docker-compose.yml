@@ -410,10 +410,11 @@ services:
       APP_SECRET: ${TWENTY_APP_SECRET}
       STORAGE_TYPE: local
       STORAGE_LOCAL_PATH: .local-storage
-      AUTH_SSO_ENABLED: "true"
-      AUTH_OIDC_CLIENT_ID: twenty
-      AUTH_OIDC_CLIENT_SECRET: ${OIDC_COREHUB_TWENTY_SECRET}
-      AUTH_OIDC_ISSUER: https://auth.kineo360.work/realms/corehub
+      # Twenty SSO is gated behind multi-workspace mode (and effectively
+      # enterprise in v2). Multi-workspace forces every workspace onto a
+      # 2nd-level subdomain (e.g. kineo.crm.kineo360.work) which would
+      # require a 2nd-level wildcard cert. Deferred — see SECURITY-DEBT.md.
+      AUTH_SSO_ENABLED: "false"
       MESSAGING_PROVIDER_GMAIL_ENABLED: "false"
       TZ: ${TZ}
     volumes:

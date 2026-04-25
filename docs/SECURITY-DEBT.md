@@ -27,8 +27,17 @@ einfließen (spätestens vor Onboarding erster externer Praxis).
 - [ ] **Keycloak MFA (TOTP) für `ali` im master realm erzwingen**
   - Admin Console → Authentication → Flows → Browser → OTP Form = Required
 - [ ] **Keycloak Master-Admin-Passwort rotieren** auf ≥20 Zeichen unique
-- [ ] **OIDC in alle Tools wired** (Nextcloud, Rocket.Chat, Gitea, Twenty)
+- [ ] **OIDC in alle Tools wired** (Nextcloud, Rocket.Chat, Gitea — Twenty deferred)
   - Per-Tool Admin-Accounts werden zu "break-glass" und bleiben mit Unique-Password liegen
+- [ ] **Twenty CRM SSO** — explizit deferred bis einer dieser Trigger:
+  - Twenty führt OIDC für Self-Hosted ohne Multi-Workspace-Zwang ein, ODER
+  - Twenty Enterprise wird lizensiert (kostenpflichtig), ODER
+  - Wir migrieren auf 2nd-Level-Wildcard `*.crm.kineo360.work` (DNS, Cert, NPM-Routing)
+
+  Hintergrund: Twenty v2 koppelt SSO-UI an `IS_MULTIWORKSPACE_ENABLED=true`,
+  was jeden Workspace auf `<workspace>.<base-domain>` zwingt. Würde zwei
+  Wildcard-Level brauchen, die unsere aktuelle DNS/Cert-Struktur nicht hat.
+  Ali nutzt Twenty bis dahin mit lokalem Account (Email + Password).
 - [ ] **Fail2ban** auf Host für SSH + NPM Login-Brute-Force-Schutz
 - [ ] **Backup-Verschlüsselung** (S3 Hetzner Object Storage mit restic + Password)
 - [ ] **Audit-Log** in Keycloak aktivieren (Events → Login Events storage 14d)
