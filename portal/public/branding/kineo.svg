@@ -1,0 +1,29 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <title>Kineo Group</title>
+
+  <!-- Outer rotating triad -->
+  <g transform="translate(100, 100)">
+    <!-- Three nodes representing motion / connected entities -->
+    <g>
+      <!-- Central node -->
+      <circle cx="0" cy="0" r="14" fill="#7c3aed"/>
+      <circle cx="0" cy="0" r="6" fill="#ffffff"/>
+
+      <!-- Three orbiting nodes at 120° -->
+      <!-- Top -->
+      <line x1="0" y1="-14" x2="0" y2="-50" stroke="#9b6ef5" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="0" cy="-58" r="12" fill="#7c3aed"/>
+      <circle cx="0" cy="-58" r="5" fill="#ffffff"/>
+
+      <!-- Bottom-right -->
+      <line x1="12" y1="7" x2="43" y2="25" stroke="#9b6ef5" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="50" cy="29" r="12" fill="#7c3aed"/>
+      <circle cx="50" cy="29" r="5" fill="#ffffff"/>
+
+      <!-- Bottom-left -->
+      <line x1="-12" y1="7" x2="-43" y2="25" stroke="#9b6ef5" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="-50" cy="29" r="12" fill="#7c3aed"/>
+      <circle cx="-50" cy="29" r="5" fill="#ffffff"/>
+    </g>
+  </g>
+</svg>

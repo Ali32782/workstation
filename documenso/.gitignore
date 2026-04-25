@@ -1,0 +1,5 @@
+cert.p12
+secrets.local.env
+*.key
+*.crt
+*.pem

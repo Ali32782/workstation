@@ -1,0 +1,46 @@
+import { notFound } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { isAdminUsername } from "@/lib/admin-allowlist";
+import { fetchHealthSummary } from "@/lib/health";
+import { getWorkspace, type WorkspaceId } from "@/lib/workspaces";
+import { TopBar } from "@/components/TopBar";
+import { Sidebar } from "@/components/Sidebar";
+
+export default async function WorkspaceLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: Promise<{ workspace: string }>;
+}) {
+  const { workspace: workspaceParam } = await params;
+  const workspace = getWorkspace(workspaceParam);
+  if (!workspace) notFound();
+
+  const session = await auth();
+  const isAdmin = isAdminUsername(session?.user?.username);
+  const health = await fetchHealthSummary();
+
+  return (
+    <div className="min-h-screen flex flex-col bg-bg-base">
+      <TopBar
+        workspace={workspace}
+        user={{
+          name: session?.user?.name ?? "Unbekannt",
+          username: session?.user?.username,
+          email: session?.user?.email ?? undefined,
+        }}
+        isAdmin={isAdmin}
+        groups={session?.groups ?? []}
+      />
+      <div className="flex flex-1 min-h-0">
+        <Sidebar
+          workspaceId={workspace.id as WorkspaceId}
+          isAdmin={isAdmin}
+          health={health}
+        />
+        <main className="flex-1 min-w-0 overflow-hidden">{children}</main>
+      </div>
+    </div>
+  );
+}

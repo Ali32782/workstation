@@ -45,6 +45,8 @@ volumes:
   gitea_db:
   portainer_data:
   collabora_data:
+  documenso_pg_data:
+  documenso_data:
 
 # -----------------------------------------------------------------------------
 services:
@@ -416,6 +418,17 @@ services:
       # require a 2nd-level wildcard cert. Deferred — see SECURITY-DEBT.md.
       AUTH_SSO_ENABLED: "false"
       MESSAGING_PROVIDER_GMAIL_ENABLED: "false"
+      # Migadu SMTP for invitation / password-reset / workspace mails.
+      # Sender mailbox: johannes@medtheris.kineo360.work (chosen as MedTheris sales sender).
+      EMAIL_DRIVER: smtp
+      EMAIL_FROM_ADDRESS: ${TWENTY_SMTP_FROM_ADDRESS:-johannes@medtheris.kineo360.work}
+      EMAIL_FROM_NAME: ${TWENTY_SMTP_FROM_NAME:-Kineo360 CRM}
+      EMAIL_SYSTEM_ADDRESS: ${TWENTY_SMTP_FROM_ADDRESS:-johannes@medtheris.kineo360.work}
+      EMAIL_SMTP_HOST: ${TWENTY_SMTP_HOST:-smtp.migadu.com}
+      EMAIL_SMTP_PORT: ${TWENTY_SMTP_PORT:-465}
+      EMAIL_SMTP_USER: ${TWENTY_SMTP_USER:-johannes@medtheris.kineo360.work}
+      EMAIL_SMTP_PASSWORD: ${TWENTY_SMTP_PASSWORD}
+      EMAIL_SMTP_SECURE: "true"
       TZ: ${TZ}
     volumes:
       - twenty_data:/app/packages/twenty-server/.local-storage
@@ -482,3 +495,167 @@ services:
       - portainer_data:/data
     networks:
       - corehub-internal
+
+  # =========================================================================
+  # Documenso (DocuSign-Alternative, sign.kineo360.work)
+  # SSO via Keycloak `main` realm. SMTP via Migadu. Self-signed PKCS#12 cert
+  # for PDF signatures (Phase 1 — production-grade cert via Swiss certifier
+  # is Phase 2, see SECURITY-DEBT.md).
+  # =========================================================================
+
+  documenso-db:
+    image: postgres:16-alpine
+    container_name: documenso-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: documenso
+      POSTGRES_PASSWORD: ${DOCUMENSO_DB_PASSWORD}
+      POSTGRES_DB: documenso
+      TZ: ${TZ}
+    volumes:
+      - documenso_pg_data:/var/lib/postgresql/data
+    networks:
+      - shared-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U documenso"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  documenso:
+    image: documenso/documenso:latest
+    container_name: documenso
+    restart: unless-stopped
+    depends_on:
+      documenso-db:
+        condition: service_healthy
+    environment:
+      PORT: "3000"
+      NEXTAUTH_URL: ${DOCUMENSO_URL}
+      NEXTAUTH_SECRET: ${DOCUMENSO_NEXTAUTH_SECRET}
+      NEXT_PRIVATE_ENCRYPTION_KEY: ${DOCUMENSO_ENCRYPTION_KEY}
+      NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY: ${DOCUMENSO_ENCRYPTION_SECONDARY_KEY}
+      NEXT_PUBLIC_WEBAPP_URL: ${DOCUMENSO_URL}
+      NEXT_PUBLIC_MARKETING_URL: ${DOCUMENSO_URL}
+      NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+      NEXT_PRIVATE_DATABASE_URL: postgresql://documenso:${DOCUMENSO_DB_PASSWORD}@documenso-db:5432/documenso
+      NEXT_PRIVATE_DIRECT_DATABASE_URL: postgresql://documenso:${DOCUMENSO_DB_PASSWORD}@documenso-db:5432/documenso
+      # PDF signing: PKCS#12 mounted read-only from host bind-mount
+      NEXT_PRIVATE_SIGNING_TRANSPORT: local
+      NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH: /opt/documenso/cert.p12
+      NEXT_PRIVATE_SIGNING_PASSPHRASE: ${DOCUMENSO_SIGNING_PASSPHRASE}
+      # SMTP: Migadu, port 465 + SECURE=true. Uses the same johannes@medtheris.kineo360.work
+      # mailbox as Twenty (single sender for all transactional mail keeps DKIM clean).
+      NEXT_PRIVATE_SMTP_TRANSPORT: smtp-auth
+      NEXT_PRIVATE_SMTP_HOST: smtp.migadu.com
+      NEXT_PRIVATE_SMTP_PORT: "465"
+      NEXT_PRIVATE_SMTP_SECURE: "true"
+      NEXT_PRIVATE_SMTP_USERNAME: ${DOCUMENSO_SMTP_USERNAME}
+      NEXT_PRIVATE_SMTP_PASSWORD: ${DOCUMENSO_SMTP_PASSWORD}
+      NEXT_PRIVATE_SMTP_FROM_NAME: ${DOCUMENSO_SMTP_FROM_NAME:-Kineo360 Sign}
+      NEXT_PRIVATE_SMTP_FROM_ADDRESS: ${DOCUMENSO_SMTP_FROM_ADDRESS}
+      # Uploads: store PDFs in postgres (no S3 needed for low volume).
+      # Switch to S3 (Hetzner Object Storage) when monthly upload >5GB.
+      NEXT_PUBLIC_UPLOAD_TRANSPORT: database
+      # OIDC SSO via Keycloak main realm (well-known auto-discovery).
+      NEXT_PRIVATE_OIDC_PROVIDER_LABEL: ${DOCUMENSO_OIDC_LABEL:-Kineo360 SSO}
+      NEXT_PRIVATE_OIDC_CLIENT_ID: documenso
+      NEXT_PRIVATE_OIDC_CLIENT_SECRET: ${DOCUMENSO_KC_CLIENT_SECRET}
+      NEXT_PRIVATE_OIDC_WELL_KNOWN: https://auth.kineo360.work/realms/main/.well-known/openid-configuration
+      NEXT_PRIVATE_OIDC_ALLOW_SIGNUP: "true"
+      # Disable manual signup once everyone is onboarded (forces SSO-only).
+      # Keep open during initial rollout so first SSO login auto-provisions.
+      NEXT_PUBLIC_DISABLE_SIGNUP: ${DOCUMENSO_DISABLE_PUBLIC_SIGNUP:-false}
+      TZ: ${TZ}
+    volumes:
+      - documenso_data:/app/data
+      - ./documenso/cert.p12:/opt/documenso/cert.p12:ro
+      # Auto-redirect to OIDC for users coming from the portal.
+      # The portal links to /sso-bridge.html instead of /, which fires the
+      # POST /api/auth/oauth/authorize/oidc and follows the returned redirectUrl
+      # (Documenso v2 has POST-only OIDC routes, so a tiny client-side helper
+      # is required to skip the manual "Kineo360 SSO" button click).
+      - ./documenso/sso-bridge.html:/app/apps/remix/build/client/sso-bridge.html:ro
+    networks:
+      - proxy
+      - shared-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # =========================================================================
+  # Portal (custom UI shell — Next.js, branded for Corehub + MedTheris)
+  # Reachable at app.kineo360.work via NPM. Iframes the other apps.
+  # =========================================================================
+
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+    image: corehub/portal:latest
+    container_name: portal
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET: ${PORTAL_AUTH_SECRET}
+      AUTH_URL: ${PORTAL_URL}
+      NEXTAUTH_URL: ${PORTAL_URL}
+      AUTH_TRUST_HOST: "true"
+      KEYCLOAK_ISSUER: https://auth.kineo360.work/realms/main
+      KEYCLOAK_REALM: main
+      KEYCLOAK_CLIENT_ID: ${PORTAL_KC_CLIENT_ID:-portal}
+      KEYCLOAK_CLIENT_SECRET: ${PORTAL_KC_CLIENT_SECRET}
+      KEYCLOAK_ADMIN_BASE: ${KEYCLOAK_ADMIN_BASE:-https://auth.kineo360.work}
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      MIGADU_ADMIN_USER: ${MIGADU_ADMIN_USER:-}
+      MIGADU_API_KEY: ${MIGADU_API_KEY:-}
+      PORTAL_ADMIN_USERNAMES: ${PORTAL_ADMIN_USERNAMES:-ali,johannes}
+      # --- Plane SSO bridge ---
+      PLANE_BASE_URL: ${PLANE_BASE_URL:-https://plane.kineo360.work}
+      PLANE_BRIDGE_API_TOKEN: ${PLANE_BRIDGE_API_TOKEN}
+      PLANE_BRIDGE_PASSWORD_SECRET: ${PLANE_BRIDGE_PASSWORD_SECRET}
+      # --- Mail (Brevo SMTP relay; Migadu fallback for IMAP/Sent) ---
+      # Hetzner blocks outbound 25/465/587 on most plans, so we MUST use a
+      # third-party relay (Brevo). Migadu host/port stay configured for IMAP
+      # APPEND-to-Sent and are also used as the legacy direct-submit fallback
+      # for any host that ever gets port 465 unblocked.
+      SMTP_RELAY_HOST: ${SMTP_RELAY_HOST:-}
+      SMTP_RELAY_PORT: ${SMTP_RELAY_PORT:-587}
+      SMTP_RELAY_USER: ${SMTP_RELAY_USER:-}
+      SMTP_RELAY_PASS: ${SMTP_RELAY_PASS:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.migadu.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Kineo360}
+      IMAP_HOST: ${IMAP_HOST:-imap.migadu.com}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      # --- Chat (Rocket.Chat REST/admin + Mongo for token mint) ---
+      ROCKETCHAT_API_BASE: ${ROCKETCHAT_API_BASE:-http://rocketchat:3000}
+      # Browser-visible RC origin (file links, images). API may use internal Docker DNS.
+      ROCKETCHAT_PUBLIC_URL: ${ROCKETCHAT_URL:-https://chat.kineo360.work}
+      ROCKETCHAT_ADMIN_USER_ID: ${ROCKETCHAT_ADMIN_USER_ID:-}
+      ROCKETCHAT_ADMIN_TOKEN: ${ROCKETCHAT_ADMIN_TOKEN:-}
+      ROCKETCHAT_MONGO_URL: ${ROCKETCHAT_MONGO_URL:-mongodb://rocketchat-mongo:27017/rocketchat?replicaSet=rs0}
+      JITSI_PUBLIC_BASE: ${JITSI_PUBLIC_URL:-https://meet.kineo360.work}
+      # --- Snappymail SSO bridge (webmail) ---
+      SNAPPYMAIL_BRIDGE_INTERNAL_URL: ${SNAPPYMAIL_BRIDGE_INTERNAL_URL:-http://snappymail:8888/sso-bridge.php}
+      SNAPPYMAIL_PUBLIC_BASE: ${SNAPPYMAIL_PUBLIC_BASE:-https://webmail.kineo360.work}
+      SNAPPYMAIL_BRIDGE_TOKEN: ${SNAPPYMAIL_BRIDGE_TOKEN:-}
+      # --- Derived per-user passwords (mail / chat / etc.) ---
+      DERIVED_PASSWORD_SECRET: ${DERIVED_PASSWORD_SECRET:-}
+      # --- Status page ---
+      UPTIME_KUMA_STATUS_SLUG: ${UPTIME_KUMA_STATUS_SLUG:-kineo360}
+      NODE_ENV: production
+      TZ: ${TZ}
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

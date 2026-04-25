@@ -8,8 +8,107 @@
 Eine zusammenhängende „Workstation"-Erfahrung für Therapeuten und
 Praxis-Personal, in der **alle täglichen Arbeitstools** unter einem Dach
 mit konsistentem Look & Feel laufen: Mail, Chat, Helpdesk, Files, CRM,
-Calls, Termine. Ali soll sich nicht fühlen, als jongliere er sechs
+Calls, Termine. Niemand im Team soll sich fühlen, als jongliere er sechs
 verschiedene Open-Source-Apps — sondern als nutze er **ein Produkt**.
+
+## Marken-Hierarchie
+
+> **Entschieden** _(2026-04-25, Ali)_: **MedTheris** ist DAS Customer-Produkt.
+> Kunden sehen ausschließlich „MedTheris". „Kineo360" ist ein interner
+> Plattform-Codename, taucht extern nicht auf. Die Domain `kineo360.work`
+> ist **temporär** — später bekommt MedTheris eine eigene Customer-facing-TLD
+> (z.B. `medtheris.ch` / `.health` / `.app`), und alles Customer-facing
+> migriert dorthin.
+
+| Ebene | Name | Sichtbarkeit | Asset |
+|---|---|---|---|
+| Firma (legal entity) | **Corehub Technologies LLC** | Footer, Impressum, Verträge | `branding/logos/corehub.svg` (Hex-Mark, Navy `#1e4d8c`) |
+| Internes Tool | **Corehub Workstation** | nur Mitarbeiter | erbt Corehub-Mark |
+| **Customer-Produkt** | **MedTheris** | überall extern (Web, Mail, App, Marketing) | `branding/logos/medtheris.svg` (Hex-Network, Emerald `#059669`) |
+| Plattform-Codename | **Kineo360** | nur intern (Repo-Namen, Domain temporär, Container-Hostnames) | kein Logo |
+| Internes Team A | **Corehub** | nur intern (Sidebar-Workspace) | Corehub-Mark |
+| Internes Team B | **MedTheris-Team** | nur intern (Sidebar-Workspace) | MedTheris-Mark |
+
+Das Portal-Branding nutzt das **Corehub-Mark** als master-identity in der Top-Bar
+(„Corehub Workstation · INTERNAL"). Workspace-Badges in der Sidebar zeigen das
+jeweilige Team-Mark + Akzentfarbe.
+
+### Domain-Migration (deferred)
+
+Aktuell läuft alles unter `*.kineo360.work` weil das die einzige Domain ist die
+in Cloudflare voll konfiguriert ist. Wenn MedTheris seine eigene Customer-Domain
+hat, wandert in dieser Reihenfolge:
+
+1. **Customer-facing zuerst**: `medtheris.<tld>` für Marketing-Site, Login, App
+   (`app.medtheris.<tld>`, `auth.medtheris.<tld>`)
+2. **Mail folgt**: `*@medtheris.<tld>` für Sales/Support, alte Adressen werden
+   per Migadu-Alias forwarded für ~6 Monate
+3. **Internal bleibt**: `*.kineo360.work` für Mitarbeiter-only Tools (Gitea,
+   Portainer, NPM, Status, Workstation-Portal), das sieht der Kunde eh nie
+
+Tracking: `SECURITY-DEBT.md` → „Customer-Domain-Migration MedTheris".
+
+## Workspaces / Teams
+
+> **Architektur-Update _(2026-04-25, Ali)_**: alle internen Teams laufen in
+> **einem** Keycloak-Realm `main`. Workspace-Sichtbarkeit kommt aus
+> Group-Membership (`/corehub`, `/medtheris`, `/kineo`). Vorher gab es 3
+> Realms — das wurde konsolidiert, weil das gesamte Tool intern ist und kein
+> Multi-Tenant-Mandantenmodell braucht. Bonus: ein Login = sofort Zugriff
+> auf alle Apps (echtes SSO statt 3× separat einloggen).
+
+| Team        | Rolle                            | Keycloak-Group | Mail-Domain                  | Akzentfarbe | Apps in Sidebar                                                                |
+|-------------|----------------------------------|----------------|------------------------------|-------------|--------------------------------------------------------------------------------|
+| **Corehub** | Engineering / Plattformbau       | `/corehub`     | `corehub.kineo360.work`      | Navy `#1e4d8c` | **Dashboard**, Mail, Chat (RC corehub), **Kalender** (NC), Files (NC), **Office** (Collabora), CRM, Code (Gitea), **Projekte** *(deferred)*, Status, Identity, Reverse Proxy |
+| **MedTheris** | Sales + Customer Inquiries     | `/medtheris`   | `medtheris.kineo360.work`    | Emerald `#059669` | **Dashboard**, Mail, Chat (RC medtheris), **Kalender** (NC), Files (NC), **Office** (Collabora), CRM (Sales-Pipeline), Helpdesk (Zammad), Status, Identity |
+| **Kineo** | Group-Holding / Strategy           | `/kineo`       | `kineo.kineo360.work`        | Violet `#7c3aed` | **Dashboard**, Mail, Chat (RC corehub), Calls (Jitsi), CRM, Projekte (Plane), Status, Identity *(eigene NC/Zammad-Backends sind deferred)* |
+
+**Office-Stack:** ein gemeinsamer **OnlyOffice Document Server** (`onlyoffice-ds` Container) wird zu beiden
+Nextcloud-Instanzen connected. Vorteile: voll docx/xlsx/pptx-kompatibel (besser als Collabora),
+Live-Co-Editing, gratis self-hosted bis 20 concurrent. URL: `office.kineo360.work` (intern via NPM,
+nur als Document-Server-Backend von NC angesprochen, nie direkt vom User geöffnet).
+
+**Mail-Setup:** Beide Teams kriegen je eine Migadu-Subdomain unter `kineo360.work`
+(Migadu erlaubt unbegrenzt viele Subdomains gratis). Pro Domain: MX + SPF + 3× DKIM + DMARC.
+
+| Mailbox-Klasse              | Adresse                                           |
+|-----------------------------|---------------------------------------------------|
+| Persönlich (User)           | `<vorname>@<team>.kineo360.work`                  |
+| Rollenadresse Engineering   | `eng@corehub.kineo360.work`                       |
+| Rollenadresse Sales         | `sales@medtheris.kineo360.work`                   |
+| Rollenadresse Support       | `support@medtheris.kineo360.work`                 |
+| Service-Sender Corehub-Stack| `noreply@corehub.kineo360.work`                   |
+| Service-Sender Medtheris-Stack | `noreply@medtheris.kineo360.work`              |
+| Infrastruktur (Hetzner, Keycloak admin, Uptime Kuma) | `noreply@kineo360.work` (bestehend) |
+
+Ali (Johannes Ali Peters) ist Mitglied aller drei Teams → Workspace-Switcher oben rechts.
+Künftige Team-Mitglieder werden über das Onboarding-Tool im Realm `main` angelegt
+und in eine oder mehrere Top-Level-Groups eingehängt. Sie sehen dann nur die
+Workspaces, deren Group sie angehören.
+
+### Team-Mitglieder (Stand 2026-04-25, post-Realm-Migration)
+
+Alle User leben jetzt im **einzigen** Keycloak-Realm `main`. Workspace-Sichtbarkeit
+ergibt sich aus Group-Mitgliedschaften:
+
+| User                          | E-Mail (primär)                  | Group-Memberships                                       | Workspaces sichtbar      |
+|-------------------------------|----------------------------------|---------------------------------------------------------|--------------------------|
+| **ali** (Johannes Ali Peters) | `ali.peters@kineo.swiss`         | `/kineo/executives`, `/corehub/dev-ops`, `/medtheris/sales` | Kineo · Corehub · MedTheris |
+| **johannes** (Johannes Ali Peters) | `johannes@corehub.kineo360.work` | `/corehub/product-owner`, `/kineo/leadership`           | Corehub · Kineo          |
+| **diana**                     | `diana@corehub.kineo360.work`    | `/corehub/full-stack`                                   | Corehub                  |
+| **richard**                   | `richard@corehub.kineo360.work`  | `/corehub/back-end`                                     | Corehub                  |
+
+**Provisionierung**: Erstpasswort wird in Keycloak temporär gesetzt mit
+`force-reset` Flag → User muss bei erstem Login ändern und kriegt direkt eine
+Aufforderung zur TOTP-Einrichtung. Mailboxes werden parallel in Migadu
+angelegt (`<vorname>@<workspace>.kineo360.work`) und benutzen denselben
+Authenticator/SSO via Keycloak NICHT (Migadu ist eigenständiges Auth — siehe
+`docs/migadu-dns.md`).
+
+**Wo werden User angelegt?** Im Onboarding-Tool unter
+`https://app.kineo360.work/admin/onboarding/members` (nur für Admin-Allowlist:
+`ali`, `johannes`). Das Tool legt einen User in `main` an, fügt ihn den gewählten
+Top-Level-Groups hinzu und provisioniert pro Workspace eine Migadu-Mailbox.
 
 ## Three Phases
 
@@ -69,11 +168,11 @@ Das ist kein „nebenbei" mehr — das ist ein zweites Geschäft.
 
 ## Aktuelle Akzeptanz
 
-In Phase 0 (jetzt) nutzt Ali jede App in ihrer Originalform direkt unter
+In Phase 0 (jetzt) nutzt das Team jede App in ihrer Originalform direkt unter
 `<service>.kineo360.work`. Das ist explizit OK weil:
 
-- Single Operator, keine UI-Konsistenz nötig
+- Kleines internes Team (3 Devs), keine UI-Konsistenz für Externe nötig
 - Alle Apps haben SSO → kein Mehrfach-Login-Schmerz
 - Die UI-Investition lohnt erst wenn entweder
-  (a) Ali nervt's täglich, oder
+  (a) das Team nervt's täglich, oder
   (b) externe Nutzer (Mitarbeiter, Patient:innen) reinkommen

@@ -61,18 +61,19 @@ services:
     networks: [zammad-internal]
 
   zammad-elasticsearch:
-    image: bitnami/elasticsearch:8
+    image: elasticsearch:8.15.3
     container_name: zammad-elasticsearch
     restart: unless-stopped
     environment:
-      ELASTICSEARCH_HEAP_SIZE: 512m
       discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     volumes:
-      - zammad_elastic_data:/bitnami/elasticsearch/data
+      - zammad_elastic_data:/usr/share/elasticsearch/data
     networks: [zammad-internal]
 
   zammad-init:
-    image: zammad/zammad-docker-compose:6.4.0-55
+    image: ghcr.io/zammad/zammad:7.0.1-0019
     container_name: zammad-init
     restart: on-failure
     command: ["zammad-init"]
@@ -83,7 +84,7 @@ services:
     networks: [zammad-internal]
 
   zammad-railsserver:
-    image: zammad/zammad-docker-compose:6.4.0-55
+    image: ghcr.io/zammad/zammad:7.0.1-0019
     container_name: zammad-railsserver
     restart: unless-stopped
     command: ["zammad-railsserver"]
@@ -94,7 +95,7 @@ services:
     networks: [zammad-internal, proxy]
 
   zammad-scheduler:
-    image: zammad/zammad-docker-compose:6.4.0-55
+    image: ghcr.io/zammad/zammad:7.0.1-0019
     container_name: zammad-scheduler
     restart: unless-stopped
     command: ["zammad-scheduler"]
@@ -105,7 +106,7 @@ services:
     networks: [zammad-internal]
 
   zammad-websocket:
-    image: zammad/zammad-docker-compose:6.4.0-55
+    image: ghcr.io/zammad/zammad:7.0.1-0019
     container_name: zammad-websocket
     restart: unless-stopped
     command: ["zammad-websocket"]
@@ -116,7 +117,7 @@ services:
     networks: [zammad-internal, proxy]
 
   zammad-nginx:
-    image: zammad/zammad-docker-compose:6.4.0-55
+    image: ghcr.io/zammad/zammad:7.0.1-0019
     container_name: zammad-nginx
     restart: unless-stopped
     command: ["zammad-nginx"]

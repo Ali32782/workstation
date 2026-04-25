@@ -1,0 +1,18 @@
+<svg width="200" height="200" viewBox="-100 -100 200 200" xmlns="http://www.w3.org/2000/svg">
+  <title>Kineo Mark</title>
+  <!-- Three orbital nodes around a central hub -->
+  <!-- Spokes -->
+  <line x1="0" y1="-14" x2="0" y2="-50" stroke="#9b6ef5" stroke-width="5" stroke-linecap="round"/>
+  <line x1="12" y1="7" x2="43" y2="25" stroke="#9b6ef5" stroke-width="5" stroke-linecap="round"/>
+  <line x1="-12" y1="7" x2="-43" y2="25" stroke="#9b6ef5" stroke-width="5" stroke-linecap="round"/>
+  <!-- Orbiting nodes -->
+  <circle cx="0" cy="-58" r="14" fill="#7c3aed"/>
+  <circle cx="0" cy="-58" r="6" fill="#ffffff"/>
+  <circle cx="50" cy="29" r="14" fill="#7c3aed"/>
+  <circle cx="50" cy="29" r="6" fill="#ffffff"/>
+  <circle cx="-50" cy="29" r="14" fill="#7c3aed"/>
+  <circle cx="-50" cy="29" r="6" fill="#ffffff"/>
+  <!-- Central hub -->
+  <circle cx="0" cy="0" r="16" fill="#7c3aed"/>
+  <circle cx="0" cy="0" r="7" fill="#ffffff"/>
+</svg>

@@ -1,3 +1,4 @@
+
 # DNS Setup — Option A (Cloudflare + Vercel split)
 
 Single source of truth for which domain lives at which provider, and the

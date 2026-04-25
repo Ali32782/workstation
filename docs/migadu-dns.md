@@ -5,12 +5,23 @@ no maintenance. One plan (~CHF 4/mo) covers every domain and alias.
 
 **Managed domains:**
 
-| Domain          | Primary use for mail                                      |
-|-----------------|-----------------------------------------------------------|
-| `corehub.io`    | Corehub team mailboxes (ali@, richard@, diana@)           |
-| `kineo360.work` | Platform mailboxes: `info@`, `support@`, `noreply@`, plus per-tenant identities `<slug>@kineo360.work` |
-| `medtheris.com` | Optional MedTheris GmbH company mailboxes                 |
-| `<practice>.ch` | Optional per-practice alias/identity                      |
+| Domain                          | Primary use for mail                                                              |
+|---------------------------------|-----------------------------------------------------------------------------------|
+| `kineo360.work`                 | Infrastruktur-Sender: `noreply@` für Hetzner-Alerts, Keycloak-Admin, Uptime Kuma |
+| `corehub.kineo360.work` *(neu)* | **Corehub team** — Engineering mailboxes (`ali@`, `eng@`, `noreply@`)            |
+| `medtheris.kineo360.work` *(neu)* | **Medtheris team** — Sales + Customer Inquiry (`ali@`, `sales@`, `support@`, `noreply@`) |
+| `corehub.io`                    | Legacy Corehub mailboxes (vor Workspace-Aufteilung)                              |
+| `medtheris.com`                 | Optional GmbH-Domain (Rechnungen, externe Kommunikation)                          |
+| `<practice>.ch`                 | Optional per-Praxis Alias/Identity (Praxis-Onboarding)                           |
+
+> **Setup-Reihenfolge für die zwei Team-Subdomains:**
+>
+> 1. **Migadu Admin** → Domains → **Add Domain** → `corehub.kineo360.work` (gratis, zählt nicht gegen die Mailbox-Quota; Subdomains sind unbegrenzt unter dem bezahlten Parent-Account).
+> 2. Migadu zeigt die nötigen DNS-Werte → in **Cloudflare** unter Zone `kineo360.work` die 6 Records anlegen (siehe unten, „DNS records per domain"). **Alle CNAMEs müssen „DNS only" (graue Wolke)** sein, sonst frisst Cloudflare die Migadu-Verifikation.
+> 3. Migadu Admin → **Verify Domain** klicken → grünes Häkchen.
+> 4. Mailboxen anlegen: `ali@`, `eng@`, `noreply@`.
+> 5. Wiederholen für `medtheris.kineo360.work` mit Mailboxen `ali@`, `sales@`, `support@`, `noreply@`.
+> 6. Service-Sender umkonfigurieren via `scripts/wire-smtp.sh` (siehe Abschnitt „Per-Workspace SMTP-Sender" unten).
 
 ## DNS records per domain
 
@@ -73,6 +84,29 @@ practice. Recommended default.
    pointing to Migadu's hosts.
 3. Mailboxes on the practice domain now route through Migadu with the same
    quota.
+
+## Per-Workspace SMTP-Sender
+
+Sobald die zwei Team-Subdomains in Migadu verifiziert sind, müssen die
+Container ihren `SMTP_FROM_EMAIL` pro Workspace-Stack umstellen, damit
+ausgehende Mails das richtige Branding zeigen:
+
+| Container                | `SMTP_FROM_EMAIL`                       |
+|--------------------------|------------------------------------------|
+| Rocket.Chat (corehub)    | `noreply@corehub.kineo360.work`          |
+| Nextcloud (corehub)      | `noreply@corehub.kineo360.work`          |
+| Keycloak realm `corehub` | `noreply@corehub.kineo360.work`          |
+| Rocket.Chat (medtheris)  | `noreply@medtheris.kineo360.work`        |
+| Nextcloud (medtheris)    | `noreply@medtheris.kineo360.work`        |
+| Keycloak realm `medtheris-internal` | `noreply@medtheris.kineo360.work` |
+| Twenty CRM               | `noreply@kineo360.work` (geteilt)        |
+| Hetzner-/Uptime-/Backup-Alerts | `noreply@kineo360.work`           |
+
+`SMTP_USER` bleibt für **alle** Container `noreply@kineo360.work` — Migadu
+erlaubt einem Login-User, From-Adressen aller verifizierten Domains zu senden.
+Nur `SMTP_FROM_EMAIL` wechselt pro Stack. Das Skript `scripts/wire-smtp.sh`
+nimmt zwei optionale Env-Vars `COREHUB_FROM` und `MEDTHERIS_FROM` und setzt
+die richtigen Werte je Container.
 
 ## Verify
 

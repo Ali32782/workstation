@@ -1,0 +1,26 @@
+<svg width="200" height="200" viewBox="-100 -100 200 200" xmlns="http://www.w3.org/2000/svg">
+  <title>Corehub Mark</title>
+  <!-- Outer hex ring -->
+  <path d="M0,-86 L74.5,-43 L74.5,43 L0,86 L-74.5,43 L-74.5,-43 Z"
+        fill="none" stroke="#1e4d8c" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Inner filled hexagon -->
+  <path d="M0,-56 L48.5,-28 L48.5,28 L0,56 L-48.5,28 L-48.5,-28 Z" fill="#1e4d8c"/>
+  <!-- Core white hexagon -->
+  <path d="M0,-30 L26,-15 L26,15 L0,30 L-26,15 L-26,-15 Z" fill="#ffffff"/>
+  <!-- Spokes -->
+  <line x1="0" y1="-56" x2="0" y2="-86" stroke="#4a7fc1" stroke-width="4" stroke-linecap="round"/>
+  <line x1="48.5" y1="-28" x2="74.5" y2="-43" stroke="#4a7fc1" stroke-width="4" stroke-linecap="round"/>
+  <line x1="48.5" y1="28" x2="74.5" y2="43" stroke="#4a7fc1" stroke-width="4" stroke-linecap="round"/>
+  <line x1="0" y1="56" x2="0" y2="86" stroke="#4a7fc1" stroke-width="4" stroke-linecap="round"/>
+  <line x1="-48.5" y1="28" x2="-74.5" y2="43" stroke="#4a7fc1" stroke-width="4" stroke-linecap="round"/>
+  <line x1="-48.5" y1="-28" x2="-74.5" y2="-43" stroke="#4a7fc1" stroke-width="4" stroke-linecap="round"/>
+  <!-- Vertex dots -->
+  <circle cx="0" cy="-86" r="6" fill="#4a7fc1"/>
+  <circle cx="74.5" cy="-43" r="6" fill="#4a7fc1"/>
+  <circle cx="74.5" cy="43" r="6" fill="#4a7fc1"/>
+  <circle cx="0" cy="86" r="6" fill="#4a7fc1"/>
+  <circle cx="-74.5" cy="43" r="6" fill="#4a7fc1"/>
+  <circle cx="-74.5" cy="-43" r="6" fill="#4a7fc1"/>
+  <!-- Center dot -->
+  <circle cx="0" cy="0" r="8" fill="#1e4d8c"/>
+</svg>

@@ -40,6 +40,12 @@ services:
       ENABLE_LETSENCRYPT: "0"  # SSL handled by NPM
       ENABLE_HTTP_REDIRECT: "0"
       PUBLIC_URL: ${JITSI_PUBLIC_URL}
+      # „Office/Teams“-Nähe: de, kein großer Willkommens-Hub, Prejoin = Gerätecheck vor dem Raum
+      DEFAULT_LANGUAGE: de
+      ENABLE_WELCOME_PAGE: "0"
+      ENABLE_PREJOIN_PAGE: "1"
+      # Weitere Anpassung (Wasserzeichen, Toolbar): siehe
+      # https://jitsi.github.io/handbook/docs/devops-guide/devops-guide-docker
       XMPP_DOMAIN: meet.jitsi
       XMPP_AUTH_DOMAIN: auth.meet.jitsi
       XMPP_MUC_DOMAIN: muc.meet.jitsi

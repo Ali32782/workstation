@@ -10,6 +10,10 @@ ssh -L 81:localhost:81 deploy@<host>
 
 Default first-login: `admin@example.com` / `changeme` — change immediately.
 
+> **Reset admin password** (if locked out): see `scripts/npm-reset-admin.sh` —
+> generates a fresh bcrypt hash via a throwaway node container and updates the
+> `auth` row in NPM's SQLite DB. Restarts NPM after.
+
 ## One-time global settings
 
 - **Settings → Default Site**: `Congratulations Page`
