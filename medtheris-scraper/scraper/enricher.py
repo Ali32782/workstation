@@ -28,6 +28,41 @@ from playwright.async_api import async_playwright
 _EMAIL_REGEX = re.compile(
     r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
 )
+
+# Hosts → social channel; we recognise both /in/ profiles and /company/ pages
+# on LinkedIn but only return the channel-name (URL is preserved as-is).
+_SOCIAL_HOST_MAP: dict[str, str] = {
+    "linkedin.com": "linkedin",
+    "www.linkedin.com": "linkedin",
+    "ch.linkedin.com": "linkedin",
+    "de.linkedin.com": "linkedin",
+    "instagram.com": "instagram",
+    "www.instagram.com": "instagram",
+    "facebook.com": "facebook",
+    "www.facebook.com": "facebook",
+    "fb.com": "facebook",
+    "youtube.com": "youtube",
+    "www.youtube.com": "youtube",
+    "youtu.be": "youtube",
+    "twitter.com": "x",
+    "www.twitter.com": "x",
+    "x.com": "x",
+    "www.x.com": "x",
+    "tiktok.com": "tiktok",
+    "www.tiktok.com": "tiktok",
+    "xing.com": "xing",
+    "www.xing.com": "xing",
+    "threads.net": "threads",
+    "www.threads.net": "threads",
+}
+
+
+def _classify_social(url: str) -> str | None:
+    """Return social-channel name (linkedin/instagram/...) or None."""
+    if not url or not url.startswith(("http://", "https://")):
+        return None
+    host = urlparse(url).netloc.lower()
+    return _SOCIAL_HOST_MAP.get(host)
 _EMAIL_BLOCKLIST = (
     "noreply", "no-reply", "example", "test@", "spam", "yourname",
     "wixpress", "sentry", "wordpress", "domain.com", "sentry.io",
@@ -161,7 +196,19 @@ def _pick_person_pages(base_url: str, links: list[str],
 
 
 async def _scrape_page(page, url: str, timeout_ms: int) -> dict:
-    """Visit one page, return its html/text/links/emails. Empty dict on error."""
+    """
+    Visit one page, return its html/text/links/emails plus structured signals
+    that the booking detector + extractor need:
+
+      iframes      — list of iframe[src] URLs (booking widgets often live here)
+      scripts      — list of script[src] URLs (third-party SDKs reveal stack)
+      form_actions — list of form[action] URLs (custom self-hosted booking)
+      meta_generator — content of <meta name="generator"> if present (CMS)
+      socials      — dict {channel: url} for linkedin/instagram/facebook/...
+      phones       — list of "tel:" hrefs (numbers explicitly linked)
+
+    Empty dict (with 'error') on failure.
+    """
     try:
         await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
         html = await page.content()
@@ -169,22 +216,52 @@ async def _scrape_page(page, url: str, timeout_ms: int) -> dict:
         links = await page.eval_on_selector_all(
             "a[href]", "els => els.map(e => e.href)"
         )
+        iframes = await page.eval_on_selector_all(
+            "iframe[src]", "els => els.map(e => e.src)"
+        )
+        scripts = await page.eval_on_selector_all(
+            "script[src]", "els => els.map(e => e.src)"
+        )
+        form_actions = await page.eval_on_selector_all(
+            "form[action]", "els => els.map(e => e.action)"
+        )
+        meta_generator = await page.evaluate(
+            "() => { const m = document.querySelector('meta[name=\"generator\"]'); "
+            "return m ? m.getAttribute('content') : null; }"
+        )
         emails = {
             e for e in _EMAIL_REGEX.findall(html)
             if not any(b in e.lower() for b in _EMAIL_BLOCKLIST)
         }
-        # Also harvest mailto: links — they're cleaner than free-text matches
+        socials: dict[str, str] = {}
+        phones: list[str] = []
         for link in links:
-            if link and link.lower().startswith("mailto:"):
+            if not link:
+                continue
+            low = link.lower()
+            if low.startswith("mailto:"):
                 addr = link.split(":", 1)[1].split("?", 1)[0].strip()
                 if addr and not any(b in addr.lower() for b in _EMAIL_BLOCKLIST):
                     emails.add(addr)
+                continue
+            if low.startswith("tel:"):
+                phones.append(link.split(":", 1)[1].strip())
+                continue
+            channel = _classify_social(link)
+            if channel and channel not in socials:
+                socials[channel] = link
         return {
             "url": url,
             "html": html,
             "text": text,
             "links": links,
             "emails": list(emails),
+            "iframes": [s for s in iframes if s],
+            "scripts": [s for s in scripts if s],
+            "form_actions": [s for s in form_actions if s],
+            "meta_generator": meta_generator,
+            "socials": socials,
+            "phones": phones,
         }
     except Exception as exc:
         return {"url": url, "error": str(exc)}
@@ -253,11 +330,29 @@ async def enrich_practice(url: str, timeout_ms: int = 15000) -> dict:
             merged_html = "\n".join(b.get("html", "") for b in page_blobs)
             merged_links = list({l for b in page_blobs for l in b.get("links", [])})
             merged_emails = list({e for b in page_blobs for e in b.get("emails", [])})
+            merged_iframes = list({s for b in page_blobs for s in b.get("iframes", [])})
+            merged_scripts = list({s for b in page_blobs for s in b.get("scripts", [])})
+            merged_forms = list({s for b in page_blobs for s in b.get("form_actions", [])})
+            merged_phones = list({p for b in page_blobs for p in b.get("phones", [])})
+            merged_meta_gens = list({
+                (b.get("meta_generator") or "").strip() for b in page_blobs
+                if b.get("meta_generator")
+            })
+            merged_socials: dict[str, str] = {}
+            for blob in page_blobs:
+                for channel, link in (blob.get("socials") or {}).items():
+                    merged_socials.setdefault(channel, link)
 
             return {
                 "html": merged_html,
-                "text": merged_text[:18000],  # raised from 8000 — Impressum at end was being clipped
+                "text": merged_text[:18000],
                 "links": merged_links,
+                "iframes": merged_iframes,
+                "scripts": merged_scripts,
+                "form_actions": merged_forms,
+                "meta_generators": merged_meta_gens,
+                "tel_links": merged_phones,
+                "socials": merged_socials,
                 "emails_found": merged_emails,
                 "pages_scraped": [b["url"] for b in page_blobs],
             }

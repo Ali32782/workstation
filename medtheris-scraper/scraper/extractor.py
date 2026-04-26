@@ -59,9 +59,9 @@ def extract_structured_data(text: str, practice_name: str,
 
     prompt = f"""\
 Du bist Sales-Researcher und analysierst die Website der Schweizer \
-Physiotherapie-Praxis "{practice_name}". Extrahiere Personen, Kontaktdaten \
-und Praxis-Profil. Antworte NUR mit einem JSON-Objekt, KEIN Markdown, \
-KEINE Erklärung.
+Physiotherapie-Praxis "{practice_name}". Extrahiere Personen, Kontaktdaten, \
+Praxis-Profil UND Sales-relevante Zusatzdaten. Antworte NUR mit einem \
+JSON-Objekt, KEIN Markdown, KEINE Erklärung.
 
 Schema:
 {{
@@ -73,6 +73,10 @@ Impressum-Block (Schweizer Recht — dort steht der juristische Inhaber).",
 Adresse des Inhabers wenn erkennbar (z.B. anna@praxis.ch), sonst null",
   "owner_phone": "Direkt-/Mobilnummer des Inhabers wenn explizit zugeordnet — \
 NICHT die allgemeine Praxis-Nummer; sonst null",
+  "owner_linkedin": "https://www.linkedin.com/in/<slug>/-URL des Inhabers, \
+falls auf der Website verlinkt — sonst null",
+  "owner_title": "Berufstitel/akademischer Grad des Inhabers wenn explizit \
+genannt, z.B. 'Dr. phil. nat.', 'MSc Physiotherapie', 'Praxisinhaber' — sonst null",
   "lead_therapist_name": "Vor- und Nachname des leitenden Therapeuten/der \
 Praxisleiterin — wenn unterschiedlich vom Inhaber (oder null wenn identisch \
 oder kein eigener Leiter erkennbar)",
@@ -85,7 +89,8 @@ explizit zugeordnet — NICHT die Praxis-Hauptnummer; sonst null",
       "name": "Vorname Nachname",
       "role": "z.B. Physiotherapeutin, Praxisleitung, Sportphysiotherapeut",
       "email": "persönliche Email aus der Liste oder null",
-      "specializations": ["optional, Liste der Spezialisierungen dieser Person"]
+      "specializations": ["optional, Liste der Spezialisierungen dieser Person"],
+      "linkedin": "https://www.linkedin.com/in/...-URL falls auf Website verlinkt, sonst null"
     }}
   ],
   "general_email": "Allgemeine Praxis-E-Mail aus den gefundenen E-Mails \
@@ -93,8 +98,30 @@ explizit zugeordnet — NICHT die Praxis-Hauptnummer; sonst null",
   "employee_count_physio": "Anzahl Physiotherapeut:innen im Team als Integer (oder null)",
   "languages": ["Sprachen der Praxis als ISO-Codes z.B. de, fr, it, en"],
   "specializations": ["Spezialisierungen der Praxis als Ganzes"],
+  "training_offered": ["Zusatz-Angebote neben klassischer Physio: \
+'Pilates', 'Yoga', 'Geräte-Training', 'medizinische Trainingstherapie', \
+'Personal Training', 'Präventionskurse' usw. (oder leere Liste)"],
+  "insurance_accepted": "Wie lautet die Krankenkassen-Anerkennung? Mögliche Werte: \
+'krankenkassen-anerkannt' (Standard CH-Phrase 'EMR/ASCA/RME-anerkannt' oder 'alle \
+Krankenkassen'), 'nur-zusatzversicherung', 'selbstzahler', null wenn nicht erwähnt",
+  "year_founded": "Gründungsjahr der Praxis als Integer (z.B. 2018), \
+falls auf Website explizit genannt — sonst null",
+  "locations": "Anzahl Standorte/Filialen als Integer. 1 wenn nur eine Praxis, \
+>1 wenn mehrere Filialen explizit genannt; null wenn unklar",
+  "opening_hours_summary": "kurze Klartextzusammenfassung der Öffnungszeiten \
+wenn auf Website (z.B. 'Mo-Fr 7:00-19:00, Sa nach Vereinbarung'); null wenn nicht erkennbar",
+  "accepts_emergency_appointments": true|false|null,
   "has_online_booking": true|false,
-  "practice_size": "klein|mittel|gross"
+  "online_booking_url": "Direkt-Link zum Buchungs-Widget wenn auf der Website \
+verlinkt (z.B. https://onedoc.ch/...) — sonst null",
+  "practice_size": "klein|mittel|gross",
+  "social_handles": {{
+    "linkedin_company":  "https://www.linkedin.com/company/<slug>/ oder null",
+    "instagram":         "https://www.instagram.com/<handle>/ oder null",
+    "facebook":          "https://www.facebook.com/<handle>/ oder null",
+    "youtube":           "URL oder null",
+    "tiktok":            "URL oder null"
+  }}
 }}
 
 Wichtige Regeln:
@@ -109,9 +136,6 @@ enthält: "Gründer", "Gründerin", "Inhaber", "Inhaberin", "Praxisinhaber", \
     c) Sonst → owner_name=null, owner_source=null.
   WICHTIG: owner_name darf NIEMALS eine Firma sein ("PhysioBasel AG" ist KEIN \
 gültiger owner_name). Nur Vorname+Nachname von echten Menschen.
-  BEISPIEL: Impressum sagt "PhysioBasel AG, Oetlingerstrasse 2", Team sagt \
-"Stefano Limone — Gründer, Physiotherapeut" → owner_name="Stefano Limone", \
-owner_source="team".
 - "Leitender Therapeut" = Praxisleitung wenn nicht selbst Inhaber. \
 Erkennbar an Rollen wie "Praxisleitung", "Zentrumsleiter:in", "Fachliche \
 Leitung", "Leitende:r Therapeut:in".
@@ -119,16 +143,17 @@ Leitung", "Leitende:r Therapeut:in".
 owner_name ausfüllen, lead_therapist_name = null.
 - owner_source NUR ausfüllen wenn owner_name nicht null ist; sonst owner_source = null.
 - team_members: ALLE im Team genannten Therapeut:innen aufzählen (auch der \
-Inhaber selbst — er gehört dort hinein UND nach owner_name). Wenn keine \
-Team-Liste sichtbar: leeres Array [].
-- Email-Zuordnung: Match Vor-/Nachname mit E-Mail-Local-Part ("anna@praxis.ch" \
-gehört zu Anna, "a.mueller@praxis.ch" zu Anna Mueller). Wenn unklar: null statt raten.
+Inhaber selbst). Wenn keine Team-Liste sichtbar: leeres Array [].
+- Email-Zuordnung: Match Vor-/Nachname mit E-Mail-Local-Part. Wenn unklar: null statt raten.
 - Telefon-Zuordnung: NUR setzen wenn die Nummer explizit dem Namen zugeordnet \
-ist (z.B. "Anna Müller, Mobile +41 79 123 45 67"). Die Praxis-Hauptnummer \
-NIEMALS als Person-Direktnummer übernehmen.
-- practice_size: klein (1-2 Therapeut:innen), mittel (3-6), gross (>6).
-- has_online_booking: true wenn die Website "online buchen", "Termin buchen", \
-einen Buchungs-Widget (OneDoc, Doctolib, Samedi) oder einen Link dorthin enthält.
+ist. Die Praxis-Hauptnummer NIEMALS als Person-Direktnummer übernehmen.
+- practice_size: klein (1-2), mittel (3-6), gross (>6).
+- has_online_booking: true wenn die Website "online buchen"/Buchungs-Widget enthält.
+- LinkedIn/Social-URLs nur ausfüllen wenn sie WIRKLICH im Website-Text/Links \
+auftauchen — niemals plausible URLs erfinden. Sonst null.
+- year_founded ist häufig im Impressum oder unter "Über uns" zu finden \
+("seit 2014", "gegründet 2017"). Falls nur ein Bereich wie "seit über 20 Jahren" \
+erkennbar: schätze konservativ (also: schreibe null statt zu raten).
 
 {emails_block}
 
@@ -139,7 +164,7 @@ Website-Text (Homepage + Impressum/Team/Über-uns/Kontakt-Seiten):
     client = anthropic.Anthropic()
     message = client.messages.create(
         model=_MODEL,
-        max_tokens=2000,  # raised — team_members list adds tokens
+        max_tokens=2800,  # raised — extended schema (training/insurance/socials/team-linkedin)
         messages=[{"role": "user", "content": prompt}],
     )
 

@@ -35,10 +35,11 @@ from crm.mapper import (
 )
 from crm.twenty_client import TwentyClient
 from db.local_db import LocalDB
-from scraper.booking_detector import detect_booking_system
+from scraper.booking_detector import detect_booking_system, detect_website_platform
 from scraper.discovery import discover_practices, fetch_place_details
 from scraper.enricher import enrich_practice
 from scraper.extractor import extract_structured_data
+from scraper.social_finder import find_owner_linkedin, promote_website_socials
 
 
 load_dotenv()
@@ -52,6 +53,7 @@ async def process_practice(
     db: LocalDB,
     tenant: str,
     google_key: str,
+    merge_existing: bool = True,
 ) -> dict:
     """
     Run details-fetch + enrichment + extraction + (optional) Twenty push.
@@ -62,16 +64,28 @@ async def process_practice(
     """
     place_id = practice["place_id"]
 
-    if db.is_processed(place_id):
+    # In merge mode we deliberately re-process cached places so newly
+    # available fields (LinkedIn-Lookup, neue Booking-Provider-Sigs, …)
+    # können bestehende CRM-Einträge anreichern, ohne sie zu überschreiben.
+    if db.is_processed(place_id) and not merge_existing:
         print(f"  Skip (cache hit): {practice.get('name')}")
         return practice
 
     print(f"  → {practice.get('name')}  ({practice.get('city')})")
 
     # Detail-Call NOW (after cache check) — pays only for processed practices.
+    # New fields from Google Places (opening_hours, geo, plus_code, ...) are
+    # copied unconditionally because they don't exist on the Text-Search row.
     detail = fetch_place_details(google_key, place_id)
     for field in ("phone", "website", "rating", "review_count", "status"):
         if detail.get(field) and not practice.get(field):
+            practice[field] = detail[field]
+    for field in (
+        "intl_phone", "opening_hours", "opening_hours_open_now",
+        "geo_lat", "geo_lng", "plus_code",
+        "wheelchair_accessible", "google_maps_url", "types",
+    ):
+        if detail.get(field) is not None:
             practice[field] = detail[field]
 
     if practice.get("website"):
@@ -81,11 +95,36 @@ async def process_practice(
         else:
             practice["emails_found"] = enriched.get("emails_found", [])
             practice["pages_scraped"] = enriched.get("pages_scraped", [])
-            practice["booking_system"] = detect_booking_system(
-                enriched.get("links", []), enriched.get("html", "")
+            practice["socials"] = enriched.get("socials", {}) or {}
+
+            booking = detect_booking_system(
+                html=enriched.get("html", ""),
+                links=enriched.get("links", []),
+                iframes=enriched.get("iframes", []),
+                scripts=enriched.get("scripts", []),
+                form_actions=enriched.get("form_actions", []),
             )
-            print(f"    {len(practice['pages_scraped'])} Seiten gecrawlt, "
-                  f"{len(practice['emails_found'])} Emails gefunden")
+            practice["booking_detection"] = booking
+            practice["booking_system"] = booking["provider"]
+
+            platform = detect_website_platform(
+                html=enriched.get("html", ""),
+                scripts=enriched.get("scripts", []),
+                meta_generators=enriched.get("meta_generators", []),
+            )
+            practice["website_platform_detection"] = platform
+            practice["website_platform"] = platform["platform"]
+
+            print(
+                f"    {len(practice['pages_scraped'])} Seiten gecrawlt, "
+                f"{len(practice['emails_found'])} Emails, "
+                f"booking={booking['provider']} ({booking['confidence']}), "
+                f"platform={platform['platform']}"
+            )
+
+            # Path-1 socials: harvest URLs that the website itself linked to.
+            practice.update(promote_website_socials(practice))
+
             if not _NO_EXTRACT and os.getenv("ANTHROPIC_API_KEY"):
                 try:
                     practice.update(extract_structured_data(
@@ -96,15 +135,27 @@ async def process_practice(
                 except Exception as exc:
                     print(f"    extractor error: {exc}")
 
+            # Path-2 socials: optional Claude web_search for owner LinkedIn.
+            # Gated inside find_owner_linkedin via ENABLE_SOCIAL_LOOKUP=1.
+            try:
+                extra_social = find_owner_linkedin(practice)
+                if extra_social:
+                    practice.update(extra_social)
+                    print(
+                        f"    LinkedIn (web_search): "
+                        f"owner={'yes' if extra_social.get('owner_linkedin') else 'no'}, "
+                        f"company={'yes' if extra_social.get('practice_linkedin') else 'no'}"
+                    )
+            except Exception as exc:
+                print(f"    social_finder error: {exc}")
+
     company_id: str | None = None
 
     if twenty is not None:
-        if twenty.company_exists(practice["name"]):
-            print(f"    CRM: Company exists, skipping create")
-        else:
-            company_id = twenty.create_company(
-                practice_to_company_input(practice, tenant)
-            )
+        existing = twenty.find_company(practice["name"])
+        company_input = practice_to_company_input(practice, tenant)
+        if existing is None:
+            company_id = twenty.create_company(company_input)
             if company_id:
                 people = practice_to_people_inputs(practice, company_id, tenant)
                 for person in people:
@@ -114,6 +165,20 @@ async def process_practice(
                 )
                 print(f"    CRM: Lead angelegt (company={company_id[:8]}…, "
                       f"{len(people)} Person:innen)")
+        else:
+            company_id = existing.get("id")
+            if merge_existing and company_id:
+                # MERGE-MODE (default): only fill empty fields, never overwrite
+                # data the human team may have curated.
+                merged = twenty.merge_company_fields(existing, company_input)
+                if merged:
+                    print(f"    CRM: Company existiert → angereichert "
+                          f"({len(merged)} Felder neu gesetzt)")
+                else:
+                    print(f"    CRM: Company existiert → bereits vollständig, "
+                          f"keine Änderung")
+            else:
+                print(f"    CRM: Company existiert → übersprungen (--no-merge)")
 
     db.mark_processed(place_id, practice, twenty_company_id=company_id)
     return practice
@@ -133,7 +198,19 @@ def write_csv(rows: list[dict], path: Path) -> None:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description="MedTheris Physio Scraper")
-    parser.add_argument("--canton", help="Nur einen Kanton scrapen, z.B. ZH/BE")
+    parser.add_argument("--country", default="ch",
+                        help="Land/Region-Code für Google Maps Suche (default 'ch'). "
+                             "Beispiele: ch, de, at.")
+    parser.add_argument("--canton", "--bundesland", dest="canton",
+                        help="Schweizer Kanton (ZH, BE, …) oder DE-Bundesland. "
+                             "Filter wird auf SWISS_PLZ_CITIES[*].canton angewendet.")
+    parser.add_argument("--city", help="Stadt-Filter (Substring, case-insensitive). "
+                                       "Akzeptiert auch Städte außerhalb der kuratierten "
+                                       "PLZ-Liste — die werden als Ad-hoc-Ziel hinzugefügt.")
+    parser.add_argument("--plz", help="Ein einzelner PLZ-Filter. Falls die PLZ nicht in "
+                                      "der kuratierten Liste ist, wird sie ad-hoc gescannt.")
+    parser.add_argument("--terms", help="Zusätzliche Suchbegriffe (komma-separiert), "
+                                        "z.B. 'Sportphysio,Manuelle Therapie'.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Discovery + Enrichment, KEIN Twenty-Push")
     parser.add_argument("--limit", type=int, default=None,
@@ -146,6 +223,9 @@ async def main() -> int:
                         help="Discovery: max Result-Pages pro PLZ×Query (default 3, =60 Treffer)")
     parser.add_argument("--no-extract", action="store_true",
                         help="Keine LLM-Extraktion (spart Anthropic-Tokens)")
+    parser.add_argument("--no-merge", action="store_true",
+                        help="Existierende CRM-Companies NICHT anreichern (Default = anreichern, "
+                             "niemals überschreiben).")
     args = parser.parse_args()
 
     global _NO_EXTRACT
@@ -171,12 +251,20 @@ async def main() -> int:
     db = LocalDB()
     print(f"Cache: {db.count()} Praxen bereits in der lokalen DB")
 
+    extra_terms = (
+        [t.strip() for t in args.terms.split(",") if t.strip()]
+        if args.terms else None
+    )
     practices = discover_practices(
         google_key,
         canton_filter=args.canton,
+        country_filter=args.country,
+        city_filter=args.city,
+        plz_filter=args.plz,
         max_plz=args.max_plz,
         max_queries=args.max_queries,
         max_pages=args.max_pages,
+        extra_terms=extra_terms,
     )
     if args.limit:
         practices = practices[: args.limit]
@@ -185,10 +273,13 @@ async def main() -> int:
           f"(dry-run={args.dry_run}, tenant={tenant})\n")
 
     processed: list[dict] = []
+    merge_mode = not args.no_merge
     for i, p in enumerate(practices, start=1):
         try:
             print(f"[{i}/{len(practices)}]", end=" ")
-            result = await process_practice(p, twenty, db, tenant, google_key)
+            result = await process_practice(
+                p, twenty, db, tenant, google_key, merge_existing=merge_mode
+            )
             processed.append(result)
         except KeyboardInterrupt:
             print("\nAbgebrochen — Cache wurde laufend geschrieben.")

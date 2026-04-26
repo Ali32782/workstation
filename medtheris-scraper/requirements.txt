@@ -5,3 +5,5 @@ beautifulsoup4>=4.12
 anthropic>=0.40
 gql[requests]>=3.5
 python-dotenv>=1.0
+flask>=3.0
+gunicorn>=22.0

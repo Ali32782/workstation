@@ -115,20 +115,124 @@ SWISS_PLZ_CITIES = [
 ]
 
 
-# Domain / URL signatures of known online-booking platforms in DACH/CH.
+# Domain / URL signatures of known online-booking platforms.
+#
+# These are matched against the merged HTML, link list, iframe sources, script
+# sources, and form actions of every visited subpage. The detector returns the
+# first provider whose signatures appear (highest-confidence first), plus an
+# 'evidence' string explaining where the match was found — that's important
+# for sales: "iframe-src=onedoc.ch" is a proven integration; a generic CTA
+# keyword on a Wix homepage is a much weaker signal.
+#
 # 'custom' is reserved for sites that have generic booking copy ("Termin online
 # buchen") but no recognizable provider, set by booking_detector as a fallback.
 # 'none' means we found no booking signal at all.
+#
+# Order matters loosely: the first match wins, so put the most distinctive,
+# high-confidence providers first. Wix-internal bookings stay near the bottom
+# because many sites embed onedoc/doctolib INSIDE a Wix page, and the outer
+# Wix booking widget is less interesting than the actual provider.
 BOOKING_SIGNATURES = {
+    # ----- Switzerland-specific (highest interest for MedTheris) -----
     "onedoc": ["onedoc.ch", "onedoc.com"],
-    "doctolib": ["doctolib.ch", "doctolib.de", "doctolib.com"],
-    "samedi": ["samedi.de", "samedi.ch"],
-    "calendly": ["calendly.com"],
+    "medicosearch": ["medicosearch.ch", "medi.swiss"],
+    "calenso": ["calenso.com", "calenso.ch", "my.calenso.com"],
+    "agnes": ["agnes.ch", "med.agnes.ch"],
+    "deindoctor": ["deindoctor.ch"],
+    "deinarzt": ["deinarzt.ch"],
+    "eterminal": ["eterminal.ch"],
+    # ----- DACH region (strong Swiss penetration) -----
+    "doctolib": ["doctolib.ch", "doctolib.de", "doctolib.fr", "doctolib.com"],
+    "samedi": ["samedi.de", "samedi.ch", "patient.samedi"],
+    "terminland": ["terminland.de", "terminland.ch", "terminland.com"],
+    "appointmind": ["appointmind.com", "appointmind.net"],
+    "easyappointments": ["easyappointments.org", "/easy-appointments/"],
+    # ----- Physio-/health-specific clinic management with embedded booking -----
     "clinicmaster": ["clinicmaster.com", "clinicmaster.ch"],
+    "theramed": ["theramed.com", "theramed.ch", "theramed.de"],
+    "tomedo": ["tomedo.de", "tomedo.ch"],
     "physiotools": ["physiotools.com"],
-    "agnes": ["agnes.ch"],
-    "appointmind": ["appointmind.com"],
-    "terminland": ["terminland.de", "terminland.ch"],
-    "custom": [],
-    "none": [],
+    "deepcura": ["deepcura.com", "deepcura.ai"],
+    "elaine": ["elaine.io", "go.elaine.io"],
+    "timetap": ["timetap.com"],
+    "bookitit": ["bookitit.com"],
+    # ----- General/horizontal schedulers commonly used by physios -----
+    "calendly": ["calendly.com"],
+    "calcom": ["cal.com", "app.cal.com"],
+    "koalendar": ["koalendar.com"],
+    "youcanbookme": ["youcanbook.me", "youcanbookme.com"],
+    "tidycal": ["tidycal.com"],
+    "savvycal": ["savvycal.com"],
+    "vyte": ["vyte.in", "vyte.com"],
+    "picktime": ["picktime.com"],
+    "setmore": ["setmore.com", "go.setmore.com"],
+    "acuity": ["acuityscheduling.com", "app.squarespacescheduling.com"],
+    "square_appointments": ["squareup.com/appointments", "app.squareup.com/appointments"],
+    "schedulista": ["schedulista.com"],
+    "fresha": ["fresha.com", "www.fresha.com"],
+    "simplybook": ["simplybook.it", "simplybook.me"],
+    "bookafy": ["bookafy.com"],
+    "10to8": ["10to8.com"],
+    "microsoft_bookings": ["bookings.office.com", "outlook.office.com/bookwithme"],
+    "hubspot_meetings": ["meetings.hubspot.com", "hubspot.com/meetings"],
+    "zoho_bookings": ["bookings.zoho.com", "zohobookings"],
+    # ----- WordPress booking plugins (detected via class names / asset paths) -----
+    "wp_amelia": ["amelia/", "ameliabooking", "amelia-booking", "amelia-front"],
+    "wp_bookly": ["bookly-", "/bookly/", "bookly-form", "bookly-booking"],
+    "wp_latepoint": ["latepoint", "/latepoint/"],
+    "wp_motopress": ["mphb_", "motopress-appointment", "mphb-bookings"],
+    # ----- Wix-internal (only flagged if no third-party provider was matched) -----
+    "wix_bookings": [
+        "bookings.wixapps.net", "wixapps.net/api/bookings", "wix-bookings",
+        "_api/bookings/", "/bookings-checkout",
+    ],
+    "squarespace_scheduling": [
+        "scheduling.squarespace.com", "acuityscheduling.com/schedule.php",
+    ],
+    # ----- Sentinel buckets used by booking_detector logic -----
+    "custom": [],   # generic CTA found, no recognizable provider
+    "none": [],     # no booking signal at all
+}
+
+
+# Ordered tuple of providers we consider "high-confidence physio-relevant".
+# Used by the detector to score: hits on these get confidence='high', everything
+# else (calendly, generic horizontal schedulers) gets 'medium'. 'custom' = low.
+HIGH_CONFIDENCE_BOOKING_PROVIDERS = (
+    "onedoc", "medicosearch", "calenso", "agnes", "deindoctor", "deinarzt",
+    "eterminal", "doctolib", "samedi", "terminland", "appointmind",
+    "easyappointments", "clinicmaster", "theramed", "tomedo", "deepcura",
+    "elaine", "wp_amelia", "wp_bookly", "wp_latepoint",
+)
+
+
+# Signatures that identify which website-platform / CMS the practice runs on.
+# Important for sales because:
+#   - wix/jimdo/godaddy → low-tech, easy to migrate, cheap-renter target
+#   - wordpress → mid-range, has plugin booking systems we can replace
+#   - squarespace → polished but locked-in, harder to migrate
+#   - webflow → tech-savvy operator, evaluate ROI
+#   - custom/unknown → likely has a developer relationship, harder cold-pitch
+#
+# Detection sources (in order): <meta name="generator"> content, script src URLs,
+# stylesheet/link href URLs, body/html class attributes.
+# Each list is matched against lower-cased haystacks built from
+# (meta-generator content) + (script src URLs) + (raw HTML), in that order.
+# A short lower-case keyword ("squarespace", "wix") matches the
+# meta-generator string ("Squarespace 7.1", "Wix.com Website Builder") as
+# well as any URL/HTML occurrence — so we don't need separate `meta` signatures.
+WEBSITE_PLATFORM_SIGNATURES = {
+    "wix": ["wix.com", "wixstatic.com", "parastorage.com", "wix-code", "wix.com website builder"],
+    "squarespace": ["squarespace", "sqsp.net"],
+    "wordpress": ["/wp-content/", "/wp-includes/", "wp-json", "wordpress.com", "wordpress.org", "wordpress"],
+    "jimdo": ["jimdo.com", "jimdofree.com", "jimdosite.com", "jimdo"],
+    "webflow": ["webflow.com", "assets.website-files.com", "uploads-ssl.webflow", "webflow"],
+    "shopify": ["cdn.shopify.com", "shopify.com/s/files", "shopify"],
+    "godaddy": ["godaddysites.com", "img1.wsimg.com", "godaddy website builder"],
+    "weebly": ["weebly.com", "editmysite"],
+    "joomla": ["joomla!", "joomla"],
+    "drupal": ["drupal", "/sites/default/files/"],
+    "ghost": ["ghost.org", "ghost-cards", "ghost "],
+    "typo3": ["typo3"],
+    "custom": [],   # placeholder — set when none of the above matched
 }
