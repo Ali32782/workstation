@@ -16,7 +16,8 @@ COPY . .
 ENV AUTH_SECRET=build-placeholder \
     KEYCLOAK_ISSUER=https://auth.kineo360.work/realms/main \
     KEYCLOAK_CLIENT_ID=portal \
-    KEYCLOAK_CLIENT_SECRET=build-placeholder
+    KEYCLOAK_CLIENT_SECRET=build-placeholder \
+    NEXT_PUBLIC_JITSI_BASE_URL=https://meet.kineo360.work
 RUN npm run build
 
 # ─── runner ───────────────────────────────────────────────────────────
@@ -26,6 +27,24 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0
+
+# LibreOffice headless for the native Office Hub:
+#   • DOCX/XLSX → PDF export
+#   • Ingest of legacy .doc/.xls and OpenDocument .odt/.ods
+# Plus fonts so headless rendering doesn't fall back to embedded glyphs.
+# This adds ~280 MB to the image but is the simplest path to lossless PDF.
+RUN apk add --no-cache \
+        libreoffice \
+        libreoffice-lang-de \
+        font-noto \
+        font-noto-extra \
+        ttf-dejavu \
+        ttf-liberation \
+        ttf-freefont \
+        msttcorefonts-installer \
+        fontconfig && \
+    update-ms-fonts || true && \
+    fc-cache -f
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
