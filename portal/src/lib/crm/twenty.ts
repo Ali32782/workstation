@@ -1,0 +1,685 @@
+import "server-only";
+import { createAppFetch, AppApiError } from "@/lib/app-clients/base";
+import type { TwentyTenantConfig } from "./config";
+import type {
+  CompanyDetail,
+  CompanySummary,
+  NoteSummary,
+  OpportunitySummary,
+  PersonDetail,
+  PersonSummary,
+  TaskSummary,
+  WorkspaceMember,
+} from "./types";
+
+/**
+ * Native Twenty CRM client — multi-tenant.
+ *
+ * Every public function accepts a `TwentyTenantConfig` (workspace id +
+ * workspace-scoped JWT) so the same Twenty instance can serve multiple
+ * portal workspaces without leaking data between them. The caller resolves
+ * which tenant to use via `getTwentyTenant(coreWorkspace)` from `./config`.
+ *
+ * The transport details (URL, internal vs public origin, error mapping) are
+ * shared via the `lib/app-clients/base` helper.
+ */
+
+const PUBLIC = process.env.TWENTY_URL ?? "https://crm.kineo360.work";
+const INTERNAL = process.env.TWENTY_INTERNAL_URL ?? "http://twenty:3000";
+
+function createTenantFetch(tenant: TwentyTenantConfig) {
+  return createAppFetch({
+    app: "twenty",
+    origins: { internal: INTERNAL, public: PUBLIC },
+    authHeaders: () => ({ Authorization: `Bearer ${tenant.apiToken}` }),
+  });
+}
+
+async function gql<T = unknown>(
+  tenant: TwentyTenantConfig,
+  query: string,
+  variables: Record<string, unknown> = {},
+): Promise<T> {
+  const fetcher = createTenantFetch(tenant);
+  const r = await fetcher("/graphql", {
+    method: "POST",
+    json: { query, variables },
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new AppApiError("twenty", r.status, "/graphql", body);
+  }
+  const payload = (await r.json()) as { data?: T; errors?: { message: string }[] };
+  if (payload.errors?.length) {
+    throw new AppApiError(
+      "twenty",
+      400,
+      "/graphql",
+      payload.errors.map((e) => e.message).join("; "),
+    );
+  }
+  return (payload.data ?? ({} as T)) as T;
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                              Companies                                  */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+const COMPANY_LIST_FIELDS = `
+  id
+  name
+  domainName { primaryLinkUrl primaryLinkLabel }
+  address { addressCity addressCountry }
+  phone
+  generalEmail
+  bookingSystem
+  leadSource
+  employeeCountPhysio
+  googleRating
+  googleReviewCount
+  ownerName
+  ownerEmail
+  createdAt
+  updatedAt
+`;
+
+const COMPANY_DETAIL_FIELDS = `
+  id
+  name
+  domainName { primaryLinkUrl primaryLinkLabel secondaryLinks }
+  address {
+    addressStreet1 addressStreet2 addressCity addressState
+    addressPostcode addressCountry addressLat addressLng
+  }
+  phone
+  generalEmail
+  bookingSystem
+  leadSource
+  employeeCountPhysio
+  googleRating
+  googleReviewCount
+  ownerName
+  ownerEmail
+  ownerSource
+  leadTherapistName
+  leadTherapistEmail
+  linkedinLink { primaryLinkUrl primaryLinkLabel }
+  xLink { primaryLinkUrl primaryLinkLabel }
+  annualRecurringRevenue { amountMicros currencyCode }
+  idealCustomerProfile
+  tenant
+  specializations
+  languages
+  position
+  createdAt
+  updatedAt
+`;
+
+type RawCompany = Record<string, unknown> & {
+  id: string;
+  name?: string | null;
+  domainName?: { primaryLinkUrl?: string | null; primaryLinkLabel?: string | null } | null;
+  address?: { addressCity?: string | null; addressCountry?: string | null } | null;
+  phone?: string | null;
+  generalEmail?: string | null;
+  bookingSystem?: string | null;
+  leadSource?: string | null;
+  employeeCountPhysio?: number | null;
+  googleRating?: number | null;
+  googleReviewCount?: number | null;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function compactSummary(c: RawCompany): CompanySummary {
+  return {
+    id: c.id,
+    name: c.name ?? "",
+    domain: c.domainName?.primaryLinkUrl ?? null,
+    city: c.address?.addressCity ?? null,
+    country: c.address?.addressCountry ?? null,
+    phone: c.phone ?? null,
+    generalEmail: c.generalEmail ?? null,
+    bookingSystem: c.bookingSystem ?? null,
+    leadSource: c.leadSource ?? null,
+    employeeCountPhysio: c.employeeCountPhysio ?? null,
+    googleRating: c.googleRating ?? null,
+    googleReviewCount: c.googleReviewCount ?? null,
+    ownerName: c.ownerName ?? null,
+    ownerEmail: c.ownerEmail ?? null,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+  };
+}
+
+export async function listCompanies(
+  tenant: TwentyTenantConfig,
+  opts: {
+    search?: string;
+    limit?: number;
+    cursor?: string | null;
+  } = {},
+): Promise<{ items: CompanySummary[]; nextCursor: string | null }> {
+  const limit = Math.min(opts.limit ?? 50, 100);
+  const filter: Record<string, unknown> = {};
+  if (opts.search?.trim()) {
+    filter.name = { ilike: `%${opts.search.trim()}%` };
+  }
+
+  const data = await gql<{
+    companies: {
+      edges: { node: RawCompany; cursor: string }[];
+      pageInfo: { hasNextPage: boolean; endCursor?: string };
+    };
+  }>(
+    tenant,
+    `query Companies($first: Int!, $after: String, $filter: CompanyFilterInput, $orderBy: [CompanyOrderByInput!]) {
+      companies(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
+        edges { cursor node { ${COMPANY_LIST_FIELDS} } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`,
+    {
+      first: limit,
+      after: opts.cursor ?? null,
+      filter: Object.keys(filter).length ? filter : undefined,
+      orderBy: [{ name: "AscNullsLast" }],
+    },
+  );
+
+  return {
+    items: data.companies.edges.map((e) => compactSummary(e.node)),
+    nextCursor: data.companies.pageInfo.hasNextPage
+      ? data.companies.pageInfo.endCursor ?? null
+      : null,
+  };
+}
+
+export async function getCompany(
+  tenant: TwentyTenantConfig,
+  id: string,
+): Promise<CompanyDetail | null> {
+  const data = await gql<{ company: RawCompany | null }>(
+    tenant,
+    `query Company($filter: CompanyFilterInput!) {
+      company(filter: $filter) { ${COMPANY_DETAIL_FIELDS} }
+    }`,
+    { filter: { id: { eq: id } } },
+  );
+  if (!data.company) return null;
+  const c = data.company;
+  return {
+    ...compactSummary(c),
+    address: (c.address as CompanyDetail["address"]) ?? null,
+    domainName: (c.domainName as CompanyDetail["domainName"]) ?? null,
+    linkedinLink: (c.linkedinLink as CompanyDetail["linkedinLink"]) ?? null,
+    xLink: (c.xLink as CompanyDetail["xLink"]) ?? null,
+    annualRecurringRevenue:
+      (c.annualRecurringRevenue as CompanyDetail["annualRecurringRevenue"]) ?? null,
+    idealCustomerProfile: Boolean(c.idealCustomerProfile),
+    tenant: (c.tenant as string | null) ?? null,
+    specializations: (c.specializations as string | null) ?? null,
+    languages: (c.languages as string | null) ?? null,
+    leadTherapistName: (c.leadTherapistName as string | null | undefined) ?? null,
+    leadTherapistEmail: (c.leadTherapistEmail as string | null | undefined) ?? null,
+    ownerSource: (c.ownerSource as string | null) ?? null,
+    position: (c.position as number) ?? 0,
+  };
+}
+
+export async function updateCompany(
+  tenant: TwentyTenantConfig,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<CompanyDetail | null> {
+  await gql(
+    tenant,
+    `mutation UpdateCompany($id: UUID!, $data: CompanyUpdateInput!) {
+      updateCompany(id: $id, data: $data) { id }
+    }`,
+    { id, data: patch },
+  );
+  return getCompany(tenant, id);
+}
+
+export async function createCompany(
+  tenant: TwentyTenantConfig,
+  data: { name: string } & Record<string, unknown>,
+): Promise<CompanyDetail | null> {
+  const result = await gql<{ createCompany: { id: string } }>(
+    tenant,
+    `mutation CreateCompany($data: CompanyCreateInput!) {
+      createCompany(data: $data) { id }
+    }`,
+    { data },
+  );
+  return getCompany(tenant, result.createCompany.id);
+}
+
+export async function deleteCompany(
+  tenant: TwentyTenantConfig,
+  id: string,
+): Promise<boolean> {
+  await gql(
+    tenant,
+    `mutation DeleteCompany($id: UUID!) { deleteCompany(id: $id) { id } }`,
+    { id },
+  );
+  return true;
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                                People                                   */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+const PERSON_LIST_FIELDS = `
+  id
+  name { firstName lastName }
+  jobTitle
+  emails { primaryEmail }
+  phones { primaryPhoneNumber }
+  city
+  company { id name }
+  createdAt
+  updatedAt
+`;
+
+const PERSON_DETAIL_FIELDS = `
+  id
+  name { firstName lastName }
+  jobTitle
+  emails { primaryEmail additionalEmails }
+  phones { primaryPhoneNumber primaryPhoneCountryCode primaryPhoneCallingCode }
+  city
+  avatarUrl
+  linkedinLink { primaryLinkUrl primaryLinkLabel }
+  xLink { primaryLinkUrl primaryLinkLabel }
+  company { id name }
+  position
+  createdAt
+  updatedAt
+`;
+
+type RawPerson = {
+  id: string;
+  name?: { firstName?: string | null; lastName?: string | null } | null;
+  jobTitle?: string | null;
+  emails?: { primaryEmail?: string | null; additionalEmails?: string[] | null } | null;
+  phones?: {
+    primaryPhoneNumber?: string | null;
+    primaryPhoneCountryCode?: string | null;
+    primaryPhoneCallingCode?: string | null;
+  } | null;
+  city?: string | null;
+  avatarUrl?: string | null;
+  linkedinLink?: PersonDetail["linkedinLink"] | null;
+  xLink?: PersonDetail["xLink"] | null;
+  company?: { id?: string | null; name?: string | null } | null;
+  position?: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function personSummary(p: RawPerson): PersonSummary {
+  return {
+    id: p.id,
+    firstName: p.name?.firstName ?? "",
+    lastName: p.name?.lastName ?? "",
+    jobTitle: p.jobTitle ?? null,
+    email: p.emails?.primaryEmail ?? null,
+    phone: p.phones?.primaryPhoneNumber ?? null,
+    city: p.city ?? null,
+    companyId: p.company?.id ?? null,
+    companyName: p.company?.name ?? null,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  };
+}
+
+export async function listPeople(
+  tenant: TwentyTenantConfig,
+  opts: {
+    companyId?: string;
+    search?: string;
+    limit?: number;
+    cursor?: string | null;
+  } = {},
+): Promise<{ items: PersonSummary[]; nextCursor: string | null }> {
+  const limit = Math.min(opts.limit ?? 50, 100);
+  const filter: Record<string, unknown> = {};
+  if (opts.companyId) filter.companyId = { eq: opts.companyId };
+  if (opts.search?.trim()) {
+    filter.or = [
+      { name: { firstName: { ilike: `%${opts.search.trim()}%` } } },
+      { name: { lastName: { ilike: `%${opts.search.trim()}%` } } },
+      { emails: { primaryEmail: { ilike: `%${opts.search.trim()}%` } } },
+    ];
+  }
+
+  const data = await gql<{
+    people: {
+      edges: { node: RawPerson; cursor: string }[];
+      pageInfo: { hasNextPage: boolean; endCursor?: string };
+    };
+  }>(
+    tenant,
+    `query People($first: Int!, $after: String, $filter: PersonFilterInput, $orderBy: [PersonOrderByInput!]) {
+      people(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
+        edges { cursor node { ${PERSON_LIST_FIELDS} } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`,
+    {
+      first: limit,
+      after: opts.cursor ?? null,
+      filter: Object.keys(filter).length ? filter : undefined,
+      orderBy: [{ updatedAt: "DescNullsLast" }],
+    },
+  );
+
+  return {
+    items: data.people.edges.map((e) => personSummary(e.node)),
+    nextCursor: data.people.pageInfo.hasNextPage
+      ? data.people.pageInfo.endCursor ?? null
+      : null,
+  };
+}
+
+export async function getPerson(
+  tenant: TwentyTenantConfig,
+  id: string,
+): Promise<PersonDetail | null> {
+  const data = await gql<{ person: RawPerson | null }>(
+    tenant,
+    `query Person($filter: PersonFilterInput!) {
+      person(filter: $filter) { ${PERSON_DETAIL_FIELDS} }
+    }`,
+    { filter: { id: { eq: id } } },
+  );
+  if (!data.person) return null;
+  const p = data.person;
+  return {
+    ...personSummary(p),
+    emails: p.emails ?? null,
+    phones: p.phones ?? null,
+    avatarUrl: p.avatarUrl ?? null,
+    linkedinLink: p.linkedinLink ?? null,
+    xLink: p.xLink ?? null,
+    position: p.position ?? 0,
+  };
+}
+
+export async function updatePerson(
+  tenant: TwentyTenantConfig,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<PersonDetail | null> {
+  await gql(
+    tenant,
+    `mutation UpdatePerson($id: UUID!, $data: PersonUpdateInput!) {
+      updatePerson(id: $id, data: $data) { id }
+    }`,
+    { id, data: patch },
+  );
+  return getPerson(tenant, id);
+}
+
+export async function createPerson(
+  tenant: TwentyTenantConfig,
+  data: {
+    name: { firstName: string; lastName: string };
+    emails?: { primaryEmail: string };
+    companyId?: string;
+  },
+): Promise<PersonDetail | null> {
+  const result = await gql<{ createPerson: { id: string } }>(
+    tenant,
+    `mutation CreatePerson($data: PersonCreateInput!) {
+      createPerson(data: $data) { id }
+    }`,
+    { data },
+  );
+  return getPerson(tenant, result.createPerson.id);
+}
+
+export async function deletePerson(
+  tenant: TwentyTenantConfig,
+  id: string,
+): Promise<boolean> {
+  await gql(
+    tenant,
+    `mutation DeletePerson($id: UUID!) { deletePerson(id: $id) { id } }`,
+    { id },
+  );
+  return true;
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                            Opportunities                                */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+export async function listOpportunitiesForCompany(
+  tenant: TwentyTenantConfig,
+  companyId: string,
+): Promise<OpportunitySummary[]> {
+  const data = await gql<{
+    opportunities: {
+      edges: {
+        node: {
+          id: string;
+          name: string;
+          stage?: string | null;
+          amount?: { amountMicros?: number | null; currencyCode?: string | null } | null;
+          closeDate?: string | null;
+          company?: { id?: string | null; name?: string | null } | null;
+          createdAt: string;
+          updatedAt: string;
+        };
+      }[];
+    };
+  }>(
+    tenant,
+    `query Opps($filter: OpportunityFilterInput!) {
+      opportunities(filter: $filter, orderBy: [{ updatedAt: DescNullsLast }], first: 50) {
+        edges { node {
+          id name stage amount { amountMicros currencyCode } closeDate
+          company { id name } createdAt updatedAt
+        } }
+      }
+    }`,
+    { filter: { companyId: { eq: companyId } } },
+  );
+  return data.opportunities.edges.map((e) => ({
+    id: e.node.id,
+    name: e.node.name,
+    stage: e.node.stage ?? "",
+    amount: e.node.amount ?? null,
+    closeDate: e.node.closeDate ?? null,
+    companyId: e.node.company?.id ?? null,
+    companyName: e.node.company?.name ?? null,
+    createdAt: e.node.createdAt,
+    updatedAt: e.node.updatedAt,
+  }));
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                          Notes & Tasks (timeline)                       */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+export async function listNotesForCompany(
+  tenant: TwentyTenantConfig,
+  companyId: string,
+): Promise<NoteSummary[]> {
+  const data = await gql<{
+    noteTargets: {
+      edges: {
+        node: {
+          note: {
+            id: string;
+            title: string;
+            bodyV2?: { markdown?: string | null; blocknote?: string | null } | null;
+            createdAt: string;
+            updatedAt: string;
+          };
+        };
+      }[];
+    };
+  }>(
+    tenant,
+    `query CompanyNotes($filter: NoteTargetFilterInput!) {
+      noteTargets(filter: $filter, orderBy: [{ createdAt: DescNullsLast }], first: 50) {
+        edges { node { note {
+          id title bodyV2 { markdown blocknote } createdAt updatedAt
+        } } }
+      }
+    }`,
+    { filter: { targetCompanyId: { eq: companyId } } },
+  );
+  return data.noteTargets.edges
+    .filter((e) => e.node.note)
+    .map((e) => ({
+      id: e.node.note.id,
+      title: e.node.note.title ?? "",
+      bodyV2Markdown: e.node.note.bodyV2?.markdown ?? null,
+      bodyV2BlockNote: e.node.note.bodyV2?.blocknote ?? null,
+      createdAt: e.node.note.createdAt,
+      updatedAt: e.node.note.updatedAt,
+    }));
+}
+
+export async function createNoteForCompany(
+  tenant: TwentyTenantConfig,
+  companyId: string,
+  title: string,
+  body: string,
+): Promise<NoteSummary | null> {
+  const note = await gql<{ createNote: { id: string } }>(
+    tenant,
+    `mutation CreateNote($data: NoteCreateInput!) {
+      createNote(data: $data) { id }
+    }`,
+    {
+      data: {
+        title,
+        bodyV2: { markdown: body, blocknote: null },
+      },
+    },
+  );
+  await gql(
+    tenant,
+    `mutation CreateNoteTarget($data: NoteTargetCreateInput!) {
+      createNoteTarget(data: $data) { id }
+    }`,
+    { data: { noteId: note.createNote.id, targetCompanyId: companyId } },
+  );
+  const fresh = await gql<{ note: NoteSummary | null }>(
+    tenant,
+    `query OneNote($filter: NoteFilterInput!) {
+      note(filter: $filter) {
+        id title bodyV2 { markdown blocknote } createdAt updatedAt
+      }
+    }`,
+    { filter: { id: { eq: note.createNote.id } } },
+  );
+  return fresh.note;
+}
+
+export async function listTasksForCompany(
+  tenant: TwentyTenantConfig,
+  companyId: string,
+): Promise<TaskSummary[]> {
+  const data = await gql<{
+    taskTargets: {
+      edges: {
+        node: {
+          task: {
+            id: string;
+            title: string;
+            status: string;
+            bodyV2?: { markdown?: string | null } | null;
+            dueAt?: string | null;
+            assignee?: { id?: string | null; name?: { firstName?: string; lastName?: string } | null } | null;
+            createdAt: string;
+            updatedAt: string;
+          };
+        };
+      }[];
+    };
+  }>(
+    tenant,
+    `query CompanyTasks($filter: TaskTargetFilterInput!) {
+      taskTargets(filter: $filter, orderBy: [{ createdAt: DescNullsLast }], first: 50) {
+        edges { node { task {
+          id title status bodyV2 { markdown } dueAt
+          assignee { id name { firstName lastName } }
+          createdAt updatedAt
+        } } }
+      }
+    }`,
+    { filter: { targetCompanyId: { eq: companyId } } },
+  );
+  return data.taskTargets.edges
+    .filter((e) => e.node.task)
+    .map((e) => {
+      const t = e.node.task;
+      const a = t.assignee;
+      const aName = a?.name
+        ? `${a.name.firstName ?? ""} ${a.name.lastName ?? ""}`.trim()
+        : "";
+      return {
+        id: t.id,
+        title: t.title ?? "",
+        status: t.status ?? "TODO",
+        bodyV2Markdown: t.bodyV2?.markdown ?? null,
+        dueAt: t.dueAt ?? null,
+        assigneeId: a?.id ?? null,
+        assigneeName: aName || null,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+      };
+    });
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                            Workspace members                            */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+const memberCache = new Map<string, { ts: number; data: WorkspaceMember[] }>();
+
+export async function listWorkspaceMembers(
+  tenant: TwentyTenantConfig,
+): Promise<WorkspaceMember[]> {
+  const cached = memberCache.get(tenant.workspaceId);
+  if (cached && Date.now() - cached.ts < 60_000) return cached.data;
+  const data = await gql<{
+    workspaceMembers: {
+      edges: {
+        node: {
+          id: string;
+          name?: { firstName?: string; lastName?: string } | null;
+          userEmail?: string | null;
+          avatarUrl?: string | null;
+        };
+      }[];
+    };
+  }>(
+    tenant,
+    `query Members { workspaceMembers(first: 100) { edges { node {
+      id name { firstName lastName } userEmail avatarUrl
+    } } } }`,
+  );
+  const items = data.workspaceMembers.edges.map((e) => {
+    const fn = e.node.name?.firstName ?? "";
+    const ln = e.node.name?.lastName ?? "";
+    return {
+      id: e.node.id,
+      name: `${fn} ${ln}`.trim() || e.node.userEmail || "",
+      email: e.node.userEmail ?? "",
+      avatarUrl: e.node.avatarUrl ?? null,
+    };
+  });
+  memberCache.set(tenant.workspaceId, { ts: Date.now(), data: items });
+  return items;
+}
