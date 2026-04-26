@@ -89,6 +89,14 @@ einfließen (spätestens vor Onboarding erster externer Praxis).
   - 4 User migriert (ali, johannes, diana, richard) mit korrekten Group-Memberships.
   - Migration-Skript: `scripts/migrate-to-main-realm.sh` (idempotent).
   - **Rollback-Fähig**: alte Realms (`corehub`, `medtheris-internal`, `kineo`) bleiben enabled bis Smoke-Tests erfolgreich, danach disabled (nicht deleted) als Rollback-Option.
+- [x] **Nextcloud `TokenPasswordExpiredException` / "CSRF check failed"** (2026-04-26)
+  - Symptom: User klickt Doc → 412 Precondition Failed mit "CSRF check failed"-Seite. Auslöser ist eine alte `oc_authtoken`-Row deren AES-verschlüsseltes Passwort nicht mehr zum aktuellen NC-Hash passt (passiert bei jedem `user_oidc`-Login wenn die abgeleitete Passwort-Quelle leicht abweicht).
+  - Fix angewandt auf BEIDEN Instanzen (`nextcloud-corehub` + `nextcloud-medtheris`):
+    - `occ config:system:set remember_login_cookie_lifetime --type=integer --value=0` → es werden gar keine "remember-me"-Tokens mehr ausgestellt → `loginWithCookie()` wird nie mehr aufgerufen → keine `TokenPasswordExpiredException` mehr.
+    - `DELETE FROM oc_authtoken; DELETE FROM oc_bruteforce_attempts;` (per `mariadb`-Container, root-Pass aus Container-Env) → Bestehende stale Tokens + IP-Locks weg.
+    - `redis-cli FLUSHALL` → Session-Cache leer.
+  - Endbenutzer: muss einmalig Browser-Cookies für `files.kineo360.work` + `files.medtheris.kineo360.work` löschen, danach läuft alles über silent OIDC-Login (Keycloak SSO ist eh schon aktiv).
+  - **PENDING Persistence**: Wenn die NC-Volumes (`nc_corehub_data`, `nc_medtheris_data`) je gewipt werden, muss `remember_login_cookie_lifetime=0` re-applyed werden. TODO: Init-Hook unter `/docker-entrypoint-hooks.d/post-installation/00-disable-remember.sh` mounten.
 - [ ] **Fail2ban** auf Host für SSH + NPM Login-Brute-Force-Schutz
 - [ ] **Backup-Verschlüsselung** (S3 Hetzner Object Storage mit restic + Password)
 - [ ] **Audit-Log** in Keycloak aktivieren (Events → Login Events storage 14d)
