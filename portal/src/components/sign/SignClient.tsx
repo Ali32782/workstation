@@ -1,0 +1,1102 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  PenLine,
+  RefreshCw,
+  Search,
+  Upload,
+  ExternalLink,
+  Loader2,
+  Inbox,
+  Send,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Mail,
+  Trash2,
+  CornerUpRight,
+  FileSignature,
+  Calendar,
+  AlertCircle,
+  FileType2,
+  LayoutGrid,
+} from "lucide-react";
+import { FieldEditor } from "./FieldEditor";
+import {
+  ThreePaneLayout,
+  PaneHeader,
+  PaneEmptyState,
+} from "@/components/ui/ThreePaneLayout";
+import { DetailPane, SidebarSection } from "@/components/ui/DetailPane";
+import { Avatar } from "@/components/ui/Avatar";
+import { StatusPill, type StatusTone } from "@/components/ui/Pills";
+import type { WorkspaceId } from "@/lib/workspaces";
+import type {
+  DocumentDetail,
+  DocumentSummary,
+  RecipientSummary,
+  SignSigningStatus,
+  SignStatus,
+  SignTotals,
+} from "@/lib/sign/types";
+
+const STATUS_FILTERS: ReadonlyArray<{
+  id: SignStatus | "ALL";
+  label: string;
+  icon: typeof Inbox;
+}> = [
+  { id: "ALL", label: "Alle", icon: Inbox },
+  { id: "DRAFT", label: "Entwürfe", icon: FileSignature },
+  { id: "PENDING", label: "In Signatur", icon: Send },
+  { id: "COMPLETED", label: "Erledigt", icon: CheckCircle2 },
+  { id: "REJECTED", label: "Abgelehnt", icon: XCircle },
+];
+
+function statusLabel(s: SignStatus): string {
+  switch (s) {
+    case "DRAFT":
+      return "Entwurf";
+    case "PENDING":
+      return "In Signatur";
+    case "COMPLETED":
+      return "Erledigt";
+    case "REJECTED":
+      return "Abgelehnt";
+  }
+}
+
+function statusTone(s: SignStatus): StatusTone {
+  switch (s) {
+    case "DRAFT":
+      return "muted";
+    case "PENDING":
+      return "info";
+    case "COMPLETED":
+      return "success";
+    case "REJECTED":
+      return "danger";
+  }
+}
+
+function signingStatusLabel(s: SignSigningStatus): string {
+  switch (s) {
+    case "NOT_SIGNED":
+      return "Ausstehend";
+    case "SIGNED":
+      return "Unterzeichnet";
+    case "REJECTED":
+      return "Abgelehnt";
+  }
+}
+
+function signingStatusTone(s: SignSigningStatus): StatusTone {
+  switch (s) {
+    case "NOT_SIGNED":
+      return "warn";
+    case "SIGNED":
+      return "success";
+    case "REJECTED":
+      return "danger";
+  }
+}
+
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  const diff = (Date.now() - t) / 1000;
+  if (diff < 60) return "gerade eben";
+  if (diff < 3600) return `vor ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} h`;
+  if (diff < 86400 * 7) return `vor ${Math.floor(diff / 86400)} d`;
+  return new Date(iso).toLocaleDateString("de-DE", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("de-DE", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function SignClient({
+  workspaceId,
+  workspaceName,
+  accent,
+  documensoUrl,
+}: {
+  workspaceId: WorkspaceId;
+  workspaceName: string;
+  accent: string;
+  documensoUrl: string;
+}) {
+  const [docs, setDocs] = useState<DocumentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notConfigured, setNotConfigured] = useState<string | null>(null);
+  const [filter, setFilter] = useState<SignStatus | "ALL">("ALL");
+  const [search, setSearch] = useState("");
+  const [totals, setTotals] = useState<SignTotals | null>(null);
+
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<DocumentDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+
+  // Upload-Flow (PDF + Auto-Convert für DOCX/ODT/etc.)
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadInfo, setUploadInfo] = useState<string | null>(null);
+
+  const apiUrl = useCallback(
+    (path: string, params?: Record<string, string | undefined | null>) => {
+      const u = new URL(path, window.location.origin);
+      u.searchParams.set("ws", workspaceId);
+      if (params) {
+        for (const [k, v] of Object.entries(params)) {
+          if (v != null && v !== "") u.searchParams.set(k, v);
+        }
+      }
+      return u.toString();
+    },
+    [workspaceId],
+  );
+
+  const loadDocs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setNotConfigured(null);
+    try {
+      const r = await fetch(
+        apiUrl("/api/sign/documents", {
+          status: filter === "ALL" ? undefined : filter,
+          q: search.trim() || undefined,
+          totals: "1",
+        }),
+        { cache: "no-store" },
+      );
+      const j = await r.json();
+      if (r.status === 503 && j.code === "not_configured") {
+        setNotConfigured(j.error ?? "Sign ist für diesen Workspace nicht eingerichtet.");
+        setDocs([]);
+        return;
+      }
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setDocs(j.items ?? []);
+      if (j.totals) setTotals(j.totals);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiUrl, filter, search]);
+
+  const loadDetail = useCallback(
+    async (id: number) => {
+      setDetailLoading(true);
+      setDetailError(null);
+      try {
+        const r = await fetch(apiUrl(`/api/sign/document/${id}`), {
+          cache: "no-store",
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        setDetail(j.document);
+      } catch (e) {
+        setDetailError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [apiUrl],
+  );
+
+  useEffect(() => {
+    void loadDocs();
+  }, [loadDocs]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    void loadDetail(selectedId);
+  }, [selectedId, loadDetail]);
+
+  // Debounced search refresh
+  useEffect(() => {
+    const t = setTimeout(() => void loadDocs(), 300);
+    return () => clearTimeout(t);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Mutations ──────────────────────────────────────────────── */
+
+  const performAction = useCallback(
+    async (action: "send" | "remind") => {
+      if (!detail) return;
+      setActing(action);
+      try {
+        const r = await fetch(apiUrl(`/api/sign/document/${detail.id}`), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        await Promise.all([loadDocs(), loadDetail(detail.id)]);
+      } catch (e) {
+        alert(`Aktion fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      } finally {
+        setActing(null);
+      }
+    },
+    [detail, apiUrl, loadDocs, loadDetail],
+  );
+
+  const onDelete = useCallback(async () => {
+    if (!detail) return;
+    if (!confirm(`„${detail.title}“ wirklich löschen?`)) return;
+    setActing("delete");
+    try {
+      const r = await fetch(apiUrl(`/api/sign/document/${detail.id}`), {
+        method: "DELETE",
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error ?? `HTTP ${r.status}`);
+      }
+      setSelectedId(null);
+      setDetail(null);
+      await loadDocs();
+    } catch (e) {
+      alert(`Löschen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setActing(null);
+    }
+  }, [detail, apiUrl, loadDocs]);
+
+  /* ── Upload (with auto-PDF-conversion for non-PDF files) ─────── */
+
+  const triggerUpload = useCallback(() => {
+    setUploadError(null);
+    setUploadInfo(null);
+    fileInputRef.current?.click();
+  }, []);
+
+  const onFileChosen = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      e.target.value = ""; // erlauben, dieselbe Datei nochmal auszuwählen
+      if (!f) return;
+
+      setUploadError(null);
+      setUploadInfo(null);
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        // Standardtitel = Dateiname ohne Endung; Server fällt darauf zurück.
+        const r = await fetch(apiUrl("/api/sign/upload"), {
+          method: "POST",
+          body: fd,
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+
+        const docId = j.documentId as number;
+
+        setUploadInfo(
+          j.converted
+            ? `„${f.name}“ wurde nach PDF konvertiert und hochgeladen. Empfänger und Felder im Editor zuordnen.`
+            : `„${f.name}“ wurde hochgeladen. Empfänger und Felder im Editor zuordnen.`,
+        );
+        await loadDocs();
+        setSelectedId(docId);
+
+        setEditorOpen(true);
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setUploading(false);
+      }
+    },
+    [apiUrl, documensoUrl, loadDocs],
+  );
+
+  const documensoOpenUrl = useMemo(() => {
+    if (detail?.teamUrl) {
+      return `${documensoUrl}/t/${detail.teamUrl}/documents/${detail.id}`;
+    }
+    if (detail) return `${documensoUrl}/documents/${detail.id}`;
+    return `${documensoUrl}/documents`;
+  }, [detail, documensoUrl]);
+
+  /* ── Pane 1: Status-Filter ──────────────────────────────────── */
+  const primary = (
+    <>
+      <PaneHeader
+        title="Signaturen"
+        subtitle={workspaceName}
+        accent={accent}
+        icon={<PenLine size={14} style={{ color: accent }} />}
+        right={
+          <button
+            type="button"
+            onClick={() => void loadDocs()}
+            className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+            title="Neu laden"
+          >
+            <RefreshCw size={13} />
+          </button>
+        }
+      />
+
+      <nav className="flex-1 min-h-0 overflow-auto py-1">
+        {STATUS_FILTERS.map((f) => {
+          const active = filter === f.id;
+          const count =
+            f.id === "ALL"
+              ? totals
+                ? totals.draft + totals.pending + totals.completed + totals.rejected
+                : null
+              : totals
+              ? totals[
+                  f.id === "DRAFT"
+                    ? "draft"
+                    : f.id === "PENDING"
+                    ? "pending"
+                    : f.id === "COMPLETED"
+                    ? "completed"
+                    : "rejected"
+                ]
+              : null;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFilter(f.id)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left hover:bg-bg-overlay/60"
+              style={
+                active
+                  ? {
+                      background: `${accent}18`,
+                      color: accent,
+                      borderLeft: `2px solid ${accent}`,
+                      paddingLeft: 10,
+                    }
+                  : { borderLeft: "2px solid transparent" }
+              }
+            >
+              <f.icon size={13} className={active ? "" : "text-text-tertiary"} />
+              <span className="flex-1 font-medium">{f.label}</span>
+              {count != null && (
+                <span
+                  className={`text-[10.5px] tabular-nums ${
+                    active ? "" : "text-text-quaternary"
+                  }`}
+                  style={active ? { color: accent } : undefined}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="shrink-0 border-t border-stroke-1 p-2 space-y-1.5">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".pdf,.doc,.docx,.docm,.odt,.ott,.rtf,.txt,.xls,.xlsx,.xlsm,.ods,.csv,.ppt,.pptx,.odp,.png,.jpg,.jpeg"
+          onChange={onFileChosen}
+        />
+        <button
+          type="button"
+          onClick={triggerUpload}
+          disabled={uploading}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-white text-[11.5px] font-medium disabled:opacity-60"
+          style={{ background: accent }}
+          title="PDF, DOCX, ODT, RTF, TXT u.v.m. — Nicht-PDFs werden automatisch konvertiert"
+        >
+          {uploading ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <Upload size={13} />
+          )}
+          {uploading ? "Wird hochgeladen…" : "Dokument hochladen"}
+        </button>
+        <a
+          href={`${documensoUrl}/documents`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[10.5px]"
+        >
+          <ExternalLink size={11} />
+          In Documenso verwalten
+        </a>
+        <p className="text-[10px] text-text-quaternary text-center leading-snug flex items-center justify-center gap-1">
+          <FileType2 size={10} />
+          Word, ODT &amp; mehr werden automatisch zu PDF
+        </p>
+        {uploadError && (
+          <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[10.5px] p-2 leading-snug">
+            {uploadError}
+          </div>
+        )}
+        {uploadInfo && !uploadError && (
+          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10.5px] p-2 leading-snug">
+            {uploadInfo}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  /* ── Pane 2: Document list ──────────────────────────────────── */
+  const filteredDocs = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => d.title.toLowerCase().includes(q));
+  }, [docs, search]);
+
+  const secondary = (
+    <>
+      <PaneHeader
+        title={
+          STATUS_FILTERS.find((f) => f.id === filter)?.label ?? "Dokumente"
+        }
+        subtitle={`${filteredDocs.length} Dokument${filteredDocs.length === 1 ? "" : "e"}`}
+        accent={accent}
+      >
+        <div className="relative">
+          <Search
+            size={12}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-text-quaternary"
+          />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Titel suchen…"
+            className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
+          />
+        </div>
+      </PaneHeader>
+
+      {error && (
+        <div className="p-3">
+          <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11px] p-2 whitespace-pre-wrap">
+            {error}
+          </div>
+        </div>
+      )}
+
+      {notConfigured ? (
+        <div className="p-4">
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[12px] p-3 leading-relaxed">
+            <div className="flex items-start gap-2">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <div>
+                <strong>Sign noch nicht eingerichtet</strong>
+                <p className="mt-1 text-[11.5px] opacity-90">{notConfigured}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : loading && docs.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: accent }} />
+        </div>
+      ) : filteredDocs.length === 0 ? (
+        <PaneEmptyState
+          title={search ? "Keine Treffer" : "Noch keine Dokumente"}
+          hint={
+            search
+              ? "Versuche einen anderen Suchbegriff."
+              : "Lege das erste Dokument im Documenso an."
+          }
+          icon={<FileSignature size={28} />}
+        />
+      ) : (
+        <div className="flex-1 min-h-0 overflow-auto">
+          {filteredDocs.map((d) => (
+            <DocumentRow
+              key={d.id}
+              doc={d}
+              selected={d.id === selectedId}
+              onClick={() => setSelectedId(d.id)}
+              accent={accent}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  /* ── Pane 3: Detail ─────────────────────────────────────────── */
+
+  let detailNode;
+  if (notConfigured) {
+    detailNode = (
+      <PaneEmptyState
+        title="Native Sign-Integration"
+        hint="Sobald für diesen Workspace ein Documenso-Team konfiguriert ist, erscheinen hier die Dokumente."
+        icon={<PenLine size={32} />}
+      />
+    );
+  } else if (!selectedId) {
+    detailNode = (
+      <PaneEmptyState
+        title="Kein Dokument gewählt"
+        hint="Wähle links ein Dokument, um Status, Empfänger und Aktionen zu sehen — oder lege ein neues an."
+        icon={<FileSignature size={32} />}
+      />
+    );
+  } else if (detailLoading && !detail) {
+    detailNode = (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin" style={{ color: accent }} />
+      </div>
+    );
+  } else if (detailError) {
+    detailNode = (
+      <div className="p-4">
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[12px] p-3 whitespace-pre-wrap">
+          {detailError}
+        </div>
+      </div>
+    );
+  } else if (detail) {
+    detailNode = (
+      <DocumentDetailView
+        doc={detail}
+        accent={accent}
+        documensoOpenUrl={documensoOpenUrl}
+        acting={acting}
+        onSend={() => void performAction("send")}
+        onRemind={() => void performAction("remind")}
+        onDelete={() => void onDelete()}
+        onOpenEditor={() => setEditorOpen(true)}
+      />
+    );
+  }
+
+  const detailHeader = detail ? (
+    <div
+      className="flex-1 px-4 py-2.5 flex items-center gap-3 min-w-0"
+      style={{ boxShadow: `inset 0 -1px 0 0 ${accent}30` }}
+    >
+      <div
+        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+        style={{ background: `${accent}18`, color: accent }}
+      >
+        <PenLine size={16} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <h1 className="text-[13.5px] font-semibold leading-tight truncate">
+          {detail.title}
+        </h1>
+        <div className="flex items-center gap-1.5 text-[11px] text-text-tertiary mt-0.5">
+          <span>#{detail.id}</span>
+          <span>·</span>
+          <span>{formatRelative(detail.createdAt)}</span>
+          <span>·</span>
+          <StatusPill label={statusLabel(detail.status)} tone={statusTone(detail.status)} />
+        </div>
+      </div>
+      <a
+        href={documensoOpenUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
+      >
+        <ExternalLink size={11} />
+        In Documenso öffnen
+      </a>
+    </div>
+  ) : (
+    <div
+      className="flex-1 px-4 py-2.5 flex items-center gap-2"
+      style={{ boxShadow: `inset 0 -1px 0 0 ${accent}30` }}
+    >
+      <PenLine size={14} style={{ color: accent }} />
+      <h1 className="text-[12.5px] font-semibold leading-tight">
+        Sign ·{" "}
+        <span className="text-text-tertiary font-normal">{workspaceName}</span>
+      </h1>
+      <a
+        href={`${documensoUrl}/documents`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
+      >
+        <ExternalLink size={11} />
+        In Documenso öffnen
+      </a>
+    </div>
+  );
+
+  const detailWithHeader = (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="shrink-0 border-b border-stroke-1 bg-bg-chrome flex">
+        {detailHeader}
+      </div>
+      <div className="flex-1 min-h-0 flex">{detailNode}</div>
+    </div>
+  );
+
+  return (
+    <>
+      <ThreePaneLayout
+        primary={primary}
+        secondary={secondary}
+        detail={detailWithHeader}
+        storageKey={`sign:${workspaceId}`}
+        hasSelection={selectedId != null}
+        onMobileBack={() => setSelectedId(null)}
+      />
+      {editorOpen && detail && (
+        <FieldEditor
+          workspaceId={workspaceId}
+          doc={detail}
+          accent={accent}
+          onClose={() => {
+            setEditorOpen(false);
+            void loadDetail(detail.id);
+          }}
+          onSent={() => {
+            setEditorOpen(false);
+            void Promise.all([loadDocs(), loadDetail(detail.id)]);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                          Document list row                              */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+function DocumentRow({
+  doc,
+  selected,
+  onClick,
+  accent,
+}: {
+  doc: DocumentSummary;
+  selected: boolean;
+  onClick: () => void;
+  accent: string;
+}) {
+  const signers = doc.recipients.filter((r) => r.role === "SIGNER");
+  const signed = signers.filter((r) => r.signingStatus === "SIGNED").length;
+  const total = signers.length;
+  const pct = total === 0 ? 0 : Math.round((signed / total) * 100);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full block text-left px-3 py-2.5 border-b border-stroke-1 hover:bg-bg-overlay/40"
+      style={
+        selected
+          ? {
+              background: `${accent}14`,
+              borderLeft: `2px solid ${accent}`,
+              paddingLeft: 10,
+            }
+          : { borderLeft: "2px solid transparent" }
+      }
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[12.5px] font-semibold truncate flex-1">
+              {doc.title}
+            </span>
+            <StatusPill label={statusLabel(doc.status)} tone={statusTone(doc.status)} />
+          </div>
+          <div className="flex items-center gap-1.5 text-[10.5px] text-text-tertiary mt-1">
+            <Clock size={10} />
+            <span>{formatRelative(doc.createdAt)}</span>
+            {total > 0 && (
+              <>
+                <span>·</span>
+                <span>
+                  {signed}/{total} unterzeichnet
+                </span>
+              </>
+            )}
+          </div>
+          {/* Recipient avatars + progress bar */}
+          {total > 0 && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <div className="flex -space-x-1">
+                {signers.slice(0, 4).map((r) => (
+                  <Avatar
+                    key={r.id}
+                    name={r.name}
+                    email={r.email}
+                    size={18}
+                    ring
+                    title={`${r.name} · ${signingStatusLabel(r.signingStatus)}`}
+                  />
+                ))}
+                {signers.length > 4 && (
+                  <span
+                    className="inline-flex items-center justify-center rounded-full bg-bg-overlay text-text-tertiary font-semibold ring-2 ring-bg-base text-[9px]"
+                    style={{ width: 18, height: 18 }}
+                  >
+                    +{signers.length - 4}
+                  </span>
+                )}
+              </div>
+              {doc.status === "PENDING" && total > 0 && (
+                <div className="flex-1 h-1 rounded-full bg-bg-overlay overflow-hidden">
+                  <div
+                    className="h-full transition-all"
+                    style={{
+                      width: `${pct}%`,
+                      background: accent,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                            Detail view                                  */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+function DocumentDetailView({
+  doc,
+  accent,
+  documensoOpenUrl,
+  acting,
+  onSend,
+  onRemind,
+  onDelete,
+  onOpenEditor,
+}: {
+  doc: DocumentDetail;
+  accent: string;
+  documensoOpenUrl: string;
+  acting: string | null;
+  onSend: () => void;
+  onRemind: () => void;
+  onDelete: () => void;
+  onOpenEditor: () => void;
+}) {
+  const signers = doc.recipients.filter((r) => r.role === "SIGNER");
+  const totalSigners = signers.length;
+  const signedCount = signers.filter((r) => r.signingStatus === "SIGNED").length;
+  const pct = totalSigners === 0 ? 0 : Math.round((signedCount / totalSigners) * 100);
+
+  const main = (
+    <div className="px-6 py-5">
+      {/* Status bar */}
+      <div
+        className="rounded-lg p-4 mb-5"
+        style={{ background: `${accent}10`, border: `1px solid ${accent}25` }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: `${accent}25`, color: accent }}
+          >
+            {doc.status === "COMPLETED" ? (
+              <CheckCircle2 size={20} />
+            ) : doc.status === "PENDING" ? (
+              <Send size={18} />
+            ) : doc.status === "REJECTED" ? (
+              <XCircle size={20} />
+            ) : (
+              <FileSignature size={18} />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12.5px] font-semibold">
+              {doc.status === "COMPLETED"
+                ? "Alle Empfänger haben unterzeichnet"
+                : doc.status === "PENDING"
+                ? `${signedCount} von ${totalSigners} Empfängern haben unterzeichnet`
+                : doc.status === "REJECTED"
+                ? "Mindestens ein Empfänger hat abgelehnt"
+                : "Entwurf — noch nicht versendet"}
+            </p>
+            <p className="text-[11px] text-text-tertiary mt-0.5">
+              Erstellt {formatDate(doc.createdAt)}
+              {doc.completedAt
+                ? ` · Abgeschlossen ${formatDate(doc.completedAt)}`
+                : ""}
+            </p>
+          </div>
+        </div>
+        {totalSigners > 0 && doc.status !== "DRAFT" && (
+          <div className="mt-3 h-1.5 rounded-full bg-bg-overlay overflow-hidden">
+            <div
+              className="h-full transition-all"
+              style={{ width: `${pct}%`, background: accent }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Quick actions */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        {doc.status === "DRAFT" && (
+          <button
+            type="button"
+            onClick={onOpenEditor}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[12px] font-medium"
+            style={{ background: accent }}
+          >
+            <LayoutGrid size={12} />
+            Felder &amp; Empfänger im Editor
+          </button>
+        )}
+        {doc.status === "DRAFT" && (
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={acting === "send"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-medium disabled:opacity-60"
+            style={{ borderColor: accent, color: accent }}
+          >
+            {acting === "send" ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Send size={12} />
+            )}
+            Direkt senden
+          </button>
+        )}
+        {doc.status === "PENDING" && (
+          <button
+            type="button"
+            onClick={onRemind}
+            disabled={acting === "remind"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[12px] font-medium disabled:opacity-60"
+            style={{ background: accent }}
+          >
+            {acting === "remind" ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Mail size={12} />
+            )}
+            Erinnerung senden
+          </button>
+        )}
+        <a
+          href={documensoOpenUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary text-[12px]"
+        >
+          <CornerUpRight size={12} />
+          {doc.status === "DRAFT" ? "Entwurf öffnen" : "Detail öffnen"}
+        </a>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={acting === "delete"}
+          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 text-[12px] disabled:opacity-60"
+        >
+          {acting === "delete" ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Trash2 size={12} />
+          )}
+          Löschen
+        </button>
+      </div>
+
+      {/* Recipients */}
+      <h2 className="text-[11px] uppercase tracking-wide font-semibold text-text-tertiary mb-2">
+        Empfänger ({doc.recipients.length})
+      </h2>
+      {doc.recipients.length === 0 ? (
+        <p className="text-[12px] text-text-tertiary">
+          Noch keine Empfänger zugewiesen.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {[...doc.recipients]
+            .sort(
+              (a, b) =>
+                (a.signingOrder ?? 99) - (b.signingOrder ?? 99) ||
+                a.id - b.id,
+            )
+            .map((r) => (
+              <RecipientRow key={r.id} recipient={r} accent={accent} />
+            ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const rightSidebar = (
+    <>
+      <SidebarSection title="Status">
+        <div className="space-y-2 text-[11.5px]">
+          <Field label="Status">
+            <StatusPill label={statusLabel(doc.status)} tone={statusTone(doc.status)} />
+          </Field>
+          <Field label="Quelle">
+            <span className="text-text-secondary">
+              {doc.source === "DOCUMENT"
+                ? "Direkter Upload"
+                : doc.source === "TEMPLATE"
+                ? "Vorlage"
+                : "Vorlage (Direct Link)"}
+            </span>
+          </Field>
+          <Field label="Sichtbar">
+            <span className="text-text-secondary">
+              {doc.visibility === "EVERYONE"
+                ? "Team"
+                : doc.visibility === "MANAGER_AND_ABOVE"
+                ? "Manager+"
+                : "Admin"}
+            </span>
+          </Field>
+        </div>
+      </SidebarSection>
+
+      <SidebarSection title="Zeitstempel">
+        <div className="space-y-2 text-[11.5px]">
+          <Field label="Erstellt">
+            <span className="text-text-secondary inline-flex items-center gap-1">
+              <Calendar size={10} />
+              {formatDate(doc.createdAt)}
+            </span>
+          </Field>
+          <Field label="Aktualisiert">
+            <span className="text-text-secondary inline-flex items-center gap-1">
+              <Calendar size={10} />
+              {formatDate(doc.updatedAt)}
+            </span>
+          </Field>
+          {doc.completedAt && (
+            <Field label="Abgeschlossen">
+              <span className="text-text-secondary inline-flex items-center gap-1">
+                <CheckCircle2 size={10} className="text-emerald-400" />
+                {formatDate(doc.completedAt)}
+              </span>
+            </Field>
+          )}
+        </div>
+      </SidebarSection>
+
+      <SidebarSection title="Inhaber">
+        <div className="text-[11.5px] text-text-secondary truncate">
+          {doc.ownerEmail ?? "—"}
+        </div>
+      </SidebarSection>
+
+      {totalSigners > 0 && (
+        <SidebarSection title="Fortschritt">
+          <div className="text-[12px] font-semibold mb-1.5" style={{ color: accent }}>
+            {signedCount} / {totalSigners} unterzeichnet
+          </div>
+          <div className="h-1.5 rounded-full bg-bg-overlay overflow-hidden">
+            <div
+              className="h-full transition-all"
+              style={{ width: `${pct}%`, background: accent }}
+            />
+          </div>
+        </SidebarSection>
+      )}
+    </>
+  );
+
+  return <DetailPane main={main} rightSidebar={rightSidebar} />;
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-text-tertiary w-20 shrink-0">{label}</span>
+      <span className="min-w-0 truncate">{children}</span>
+    </div>
+  );
+}
+
+function RecipientRow({
+  recipient,
+  accent,
+}: {
+  recipient: RecipientSummary;
+  accent: string;
+}) {
+  const signed = recipient.signingStatus === "SIGNED";
+  const rejected = recipient.signingStatus === "REJECTED";
+  const opened = recipient.readStatus === "OPENED";
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-md border border-stroke-1 hover:border-stroke-2 bg-bg-elevated/40">
+      <Avatar name={recipient.name} email={recipient.email} size={32} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[12.5px] font-semibold truncate">
+            {recipient.name}
+          </span>
+          {recipient.signingOrder != null && (
+            <span
+              className="text-[10px] tabular-nums px-1.5 py-[1px] rounded-full"
+              style={{ background: `${accent}20`, color: accent }}
+              title={`Reihenfolge ${recipient.signingOrder}`}
+            >
+              #{recipient.signingOrder}
+            </span>
+          )}
+          <span className="text-[10px] text-text-quaternary uppercase tracking-wide">
+            {recipient.role}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[10.5px] text-text-tertiary mt-0.5">
+          <span className="truncate">{recipient.email}</span>
+          {opened && !signed && !rejected && (
+            <span className="text-text-quaternary">· Geöffnet</span>
+          )}
+          {recipient.signedAt && (
+            <span className="text-text-quaternary">
+              · {formatRelative(recipient.signedAt)}
+            </span>
+          )}
+        </div>
+        {recipient.rejectionReason && (
+          <p className="text-[11px] text-red-400 mt-1 italic">
+            „{recipient.rejectionReason}“
+          </p>
+        )}
+      </div>
+      <StatusPill
+        label={signingStatusLabel(recipient.signingStatus)}
+        tone={signingStatusTone(recipient.signingStatus)}
+      />
+    </div>
+  );
+}
