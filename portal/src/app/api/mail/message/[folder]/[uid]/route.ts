@@ -6,6 +6,7 @@ import {
   moveMessage,
   deleteMessage,
 } from "@/lib/mail/imap";
+import { resolveSessionMailbox } from "@/lib/mail/session-mailbox";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,11 +15,11 @@ type Params = Promise<{ folder: string; uid: string }>;
 
 export async function GET(_req: NextRequest, { params }: { params: Params }) {
   const session = await auth();
-  const email = session?.user?.email;
-  if (!email) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const mailbox = resolveSessionMailbox(session);
+  if (!mailbox) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const { folder, uid } = await params;
   try {
-    const msg = await getMessage(email, decodeURIComponent(folder), Number(uid));
+    const msg = await getMessage(mailbox, decodeURIComponent(folder), Number(uid));
     if (!msg) return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json(msg);
   } catch (e) {
@@ -31,16 +32,16 @@ export async function GET(_req: NextRequest, { params }: { params: Params }) {
 
 export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   const session = await auth();
-  const email = session?.user?.email;
-  if (!email) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const mailbox = resolveSessionMailbox(session);
+  if (!mailbox) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const { folder, uid } = await params;
   const body = (await req.json()) as { seen?: boolean; moveTo?: string };
   try {
     if (typeof body.seen === "boolean") {
-      await setSeen(email, decodeURIComponent(folder), Number(uid), body.seen);
+      await setSeen(mailbox, decodeURIComponent(folder), Number(uid), body.seen);
     }
     if (body.moveTo) {
-      await moveMessage(email, decodeURIComponent(folder), Number(uid), body.moveTo);
+      await moveMessage(mailbox, decodeURIComponent(folder), Number(uid), body.moveTo);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
@@ -53,11 +54,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
 
 export async function DELETE(_req: NextRequest, { params }: { params: Params }) {
   const session = await auth();
-  const email = session?.user?.email;
-  if (!email) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const mailbox = resolveSessionMailbox(session);
+  if (!mailbox) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const { folder, uid } = await params;
   try {
-    await deleteMessage(email, decodeURIComponent(folder), Number(uid));
+    await deleteMessage(mailbox, decodeURIComponent(folder), Number(uid));
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { sendMessage } from "@/lib/mail/smtp";
+import { resolveSessionMailbox } from "@/lib/mail/session-mailbox";
 import type { MailAddress } from "@/lib/mail/types";
 
 export const dynamic = "force-dynamic";
@@ -48,8 +49,8 @@ function hasPayload(body: SendBody, fileCount: number): boolean {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  const email = session?.user?.email;
-  if (!email) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const mailbox = resolveSessionMailbox(session);
+  if (!mailbox) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const ct = req.headers.get("content-type") ?? "";
   let body: SendBody;
@@ -128,8 +129,8 @@ export async function POST(req: NextRequest) {
   try {
     const result = await Promise.race([
       sendMessage({
-        from: email,
-        fromName: session.user?.name ?? undefined,
+        from: mailbox,
+        fromName: session?.user?.name ?? undefined,
         to: parseAddrList(body.to),
         cc: parseAddrList(body.cc),
         bcc: parseAddrList(body.bcc),

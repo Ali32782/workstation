@@ -18,6 +18,7 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { resolveSessionMailbox } from "@/lib/mail/session-mailbox";
 import { createSnappyMailSso, SNAPPYMAIL_PUBLIC_BASE } from "@/lib/snappymail";
 
 export const dynamic = "force-dynamic";
@@ -48,16 +49,17 @@ a{display:inline-block;margin-top:14px;padding:8px 16px;background:#1e4d8c;color
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session?.user?.email) {
+  const sessionMailbox = resolveSessionMailbox(session);
+  if (!sessionMailbox) {
     const back = new URL("/login", req.url);
     back.searchParams.set("callbackUrl", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(back);
   }
 
-  let email = session.user.email;
+  let email = sessionMailbox;
   const override = req.nextUrl.searchParams.get("email");
   if (override) {
-    const username = (session.user.username ?? "").toLowerCase();
+    const username = (session?.user?.username ?? "").toLowerCase();
     if (!ADMIN_USERNAMES.includes(username)) {
       return htmlError(
         "Zugriff verweigert",

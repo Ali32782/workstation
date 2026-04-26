@@ -28,6 +28,13 @@ async function withClient<T>(
     greetingTimeout: 5000,
     connectionTimeout: 8000,
   });
+  // ImapFlow re-emits socket failures as 'error' events; if nothing is
+  // listening, Node escalates them to uncaughtException and crashes the whole
+  // Next.js server. A noop listener keeps the promise rejection (which we
+  // already handle) as the single source of truth.
+  c.on("error", () => {
+    /* swallowed — surfaced via the await below */
+  });
   await c.connect();
   try {
     return await fn(c);

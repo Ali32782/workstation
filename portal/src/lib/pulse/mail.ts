@@ -29,6 +29,11 @@ export async function getMailPulse(email: string): Promise<PulseModuleResult> {
       greetingTimeout: 5000,
       connectionTimeout: 8000,
     });
+    // Without an 'error' listener ImapFlow promotes socket errors into
+    // uncaughtExceptions which kill the Node process.
+    client.on("error", () => {
+      /* swallowed — surfaced through the awaited connect/status promise */
+    });
 
     await client.connect();
     const status = await client.status("INBOX", { unseen: true, messages: true });

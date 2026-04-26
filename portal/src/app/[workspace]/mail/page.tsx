@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getWorkspace } from "@/lib/workspaces";
 import { listFolders } from "@/lib/mail/imap";
+import { resolveSessionMailbox } from "@/lib/mail/session-mailbox";
 import { MailClient } from "@/components/mail/MailClient";
 import type { MailFolder } from "@/lib/mail/types";
 
@@ -17,12 +18,13 @@ export default async function MailPage({
   if (!workspace) notFound();
 
   const session = await auth();
-  if (!session?.user?.email) redirect("/login");
+  const mailbox = resolveSessionMailbox(session);
+  if (!mailbox) redirect("/login");
 
   let folders: MailFolder[] = [];
   let error: string | null = null;
   try {
-    folders = await listFolders(session.user.email);
+    folders = await listFolders(mailbox);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -35,7 +37,7 @@ export default async function MailPage({
             Postfach nicht erreichbar
           </h1>
           <p className="text-text-secondary text-sm">
-            Das IMAP-Login für <span className="font-mono">{session.user.email}</span>{" "}
+            Das IMAP-Login für <span className="font-mono">{mailbox}</span>{" "}
             ist fehlgeschlagen. Eventuell wurde das Passwort noch nicht synchronisiert.
           </p>
           <pre className="text-text-tertiary text-xs whitespace-pre-wrap text-left bg-bg-elevated border border-stroke-1 rounded p-3">
@@ -50,8 +52,8 @@ export default async function MailPage({
     <div className="h-full">
       <MailClient
         initialFolders={folders}
-        selfEmail={session.user.email}
-        selfName={session.user.name ?? undefined}
+        selfEmail={mailbox}
+        selfName={session?.user?.name ?? undefined}
       />
     </div>
   );

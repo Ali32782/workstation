@@ -158,6 +158,9 @@ async function appendToSent(opts: { email: string; raw: Buffer }): Promise<void>
     auth: { user: opts.email, pass: derivePassword("mail", opts.email) },
     logger: false,
   });
+  c.on("error", () => {
+    /* swallowed — surfaced via the awaited promise below */
+  });
   await c.connect();
   try {
     const folders = (await c.list()) as Array<{ path: string; specialUse?: string }>;

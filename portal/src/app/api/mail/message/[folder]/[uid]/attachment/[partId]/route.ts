@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getAttachment } from "@/lib/mail/imap";
+import { resolveSessionMailbox } from "@/lib/mail/session-mailbox";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -9,12 +10,12 @@ type Params = Promise<{ folder: string; uid: string; partId: string }>;
 
 export async function GET(_req: NextRequest, { params }: { params: Params }) {
   const session = await auth();
-  const email = session?.user?.email;
-  if (!email) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const mailbox = resolveSessionMailbox(session);
+  if (!mailbox) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const { folder, uid, partId } = await params;
   try {
     const att = await getAttachment(
-      email,
+      mailbox,
       decodeURIComponent(folder),
       Number(uid),
       decodeURIComponent(partId),
