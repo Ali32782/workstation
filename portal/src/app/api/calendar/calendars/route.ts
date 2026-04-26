@@ -12,7 +12,11 @@ export async function GET(req: NextRequest) {
   }
   const workspace = req.nextUrl.searchParams.get("workspace") ?? "corehub";
   try {
-    const calendars = await listCalendars(workspace, session.user.username);
+    const calendars = await listCalendars(
+      workspace,
+      session.user.username,
+      session.accessToken,
+    );
     return NextResponse.json({ calendars });
   } catch (e) {
     console.error("[/api/calendar/calendars] failed:", e);

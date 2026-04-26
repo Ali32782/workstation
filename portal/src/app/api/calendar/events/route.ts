@@ -30,18 +30,32 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const cals = await listCalendars(workspace, session.user.username);
+    const accessToken = session.accessToken;
+    const username = session.user.username;
+    const selfEmail = (session.user.email ?? "").toLowerCase();
+    const cals = await listCalendars(workspace, username, accessToken);
     const all = await Promise.all(
       cals.map(async (c) => {
         try {
           const events = await rangeQuery(
             workspace,
-            session.user!.username!,
+            username,
             c.id,
             from,
             to,
+            accessToken,
           );
-          return events.map((e) => ({ ...e, color: c.color }));
+          return events.map((e): CalendarEvent => {
+            const self =
+              e.attendees.find((a) => a.email.toLowerCase() === selfEmail) ?? null;
+            return {
+              ...e,
+              color: c.color,
+              isOrganizer:
+                e.organizer.toLowerCase() === selfEmail || !e.organizer,
+              selfAttendee: self,
+            };
+          });
         } catch (e) {
           console.warn(`[calendar] skip ${c.id}:`, e);
           return [] as CalendarEvent[];

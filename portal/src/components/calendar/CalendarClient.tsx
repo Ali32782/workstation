@@ -11,10 +11,29 @@ import {
   Users as UsersIcon,
   Loader2,
   CalendarDays,
+  Video,
+  VideoOff,
+  Copy,
+  ExternalLink,
+  Globe,
+  Bell,
+  Repeat,
+  Check,
+  HelpCircle,
+  CalendarClock,
 } from "lucide-react";
-import type { Calendar, CalendarEvent, EventInput } from "@/lib/calendar/types";
+import type {
+  Attendee,
+  AttendeeStatus,
+  Calendar,
+  CalendarEvent,
+  EventInput,
+  FreeBusySlot,
+  Recurrence,
+  Reminder,
+} from "@/lib/calendar/types";
 
-type View = "month" | "week" | "day";
+type View = "month" | "week" | "day" | "scheduling";
 
 const WEEKDAYS_DE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const MONTHS_DE = [
@@ -32,21 +51,20 @@ const MONTHS_DE = [
   "Dezember",
 ];
 
-/** Local-day key used for grouping events into the month grid. */
+/* ── Date helpers (existing logic preserved) ──────────────────────────── */
+
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 function endOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 }
-/** Monday-based start-of-week for German UX. */
 function startOfWeek(d: Date): Date {
-  const day = d.getDay(); // 0 = Sun
-  const diff = (day + 6) % 7; // Mon=0 … Sun=6
+  const day = d.getDay();
+  const diff = (day + 6) % 7;
   const out = new Date(d);
   out.setDate(d.getDate() - diff);
   out.setHours(0, 0, 0, 0);
@@ -63,7 +81,6 @@ function addDays(d: Date, n: number): Date {
   out.setDate(d.getDate() + n);
   return out;
 }
-
 function buildMonthCells(anchor: Date): Date[] {
   const start = startOfWeek(startOfMonth(anchor));
   const cells: Date[] = [];
@@ -89,10 +106,51 @@ function inputTimeValue(d: Date): string {
 }
 
 function localDateTime(date: string, time: string): string {
-  // Build a JS Date in local time, then emit ISO. Using `new Date("YYYY-MM-DDTHH:mm")`
-  // is parsed as local-tz, which is what the Outlook-style picker expects.
   return new Date(`${date}T${time}`).toISOString();
 }
+
+/* ── Time-zone helpers ────────────────────────────────────────────────── */
+
+const browserTz: string =
+  typeof Intl !== "undefined"
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    : "UTC";
+
+/** Short display of a TZ name (Europe/Berlin → Berlin). */
+function shortTz(tz: string): string {
+  if (!tz) return "";
+  const parts = tz.split("/");
+  return (parts[parts.length - 1] || tz).replace(/_/g, " ");
+}
+
+function fmtTimeIn(iso: string, tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: tz,
+    }).format(new Date(iso));
+  } catch {
+    return fmtTime(iso);
+  }
+}
+
+function tzOffsetLabel(tz: string, at: Date = new Date()): string {
+  if (!tz) return "";
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "shortOffset",
+    })
+      .formatToParts(at)
+      .find((p) => p.type === "timeZoneName")?.value;
+    return parts?.replace(/^GMT/, "GMT") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/* ── Compose state (now richer) ──────────────────────────────────────── */
 
 type ComposeState = {
   calendarId: string;
@@ -104,7 +162,136 @@ type ComposeState = {
   endTime: string;
   allDay: boolean;
   attendees: string;
+  videoUrl: string;
+  reminders: Reminder[];
+  recurrence: Recurrence | null;
 };
+
+const JITSI_BASE =
+  process.env.NEXT_PUBLIC_JITSI_BASE_URL?.replace(/\/$/, "") ||
+  "https://meet.kineo360.work";
+
+function freshJitsiRoom(workspace: string, title: string): string {
+  const slug = (title || "termin")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 24) || "termin";
+  const rand =
+    Math.random().toString(36).slice(2, 8) +
+    Math.random().toString(36).slice(2, 5);
+  return `${JITSI_BASE}/${workspace}-${slug}-${rand}`;
+}
+
+const REMINDER_PRESETS: Array<{ label: string; minutes: number }> = [
+  { label: "5 min vorher", minutes: 5 },
+  { label: "15 min vorher", minutes: 15 },
+  { label: "30 min vorher", minutes: 30 },
+  { label: "1 Std. vorher", minutes: 60 },
+  { label: "1 Tag vorher", minutes: 24 * 60 },
+];
+
+const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurrence }> = [
+  {
+    id: "none",
+    label: "Einmalig",
+    build: () => ({
+      freq: "DAILY",
+      interval: 1,
+      until: null,
+      count: null,
+      byday: [],
+      exdates: [],
+      raw: "",
+    }),
+  },
+  {
+    id: "daily",
+    label: "Täglich",
+    build: () => ({
+      freq: "DAILY",
+      interval: 1,
+      until: null,
+      count: null,
+      byday: [],
+      exdates: [],
+      raw: "FREQ=DAILY",
+    }),
+  },
+  {
+    id: "weekly",
+    label: "Wöchentlich",
+    build: () => ({
+      freq: "WEEKLY",
+      interval: 1,
+      until: null,
+      count: null,
+      byday: [],
+      exdates: [],
+      raw: "FREQ=WEEKLY",
+    }),
+  },
+  {
+    id: "biweekly",
+    label: "Alle 2 Wochen",
+    build: () => ({
+      freq: "WEEKLY",
+      interval: 2,
+      until: null,
+      count: null,
+      byday: [],
+      exdates: [],
+      raw: "FREQ=WEEKLY;INTERVAL=2",
+    }),
+  },
+  {
+    id: "monthly",
+    label: "Monatlich",
+    build: () => ({
+      freq: "MONTHLY",
+      interval: 1,
+      until: null,
+      count: null,
+      byday: [],
+      exdates: [],
+      raw: "FREQ=MONTHLY",
+    }),
+  },
+  {
+    id: "yearly",
+    label: "Jährlich",
+    build: () => ({
+      freq: "YEARLY",
+      interval: 1,
+      until: null,
+      count: null,
+      byday: [],
+      exdates: [],
+      raw: "FREQ=YEARLY",
+    }),
+  },
+];
+
+function recurrencePresetId(r: Recurrence | null): string {
+  if (!r) return "none";
+  if (r.freq === "DAILY" && r.interval === 1) return "daily";
+  if (r.freq === "WEEKLY" && r.interval === 1) return "weekly";
+  if (r.freq === "WEEKLY" && r.interval === 2) return "biweekly";
+  if (r.freq === "MONTHLY" && r.interval === 1) return "monthly";
+  if (r.freq === "YEARLY" && r.interval === 1) return "yearly";
+  return "custom";
+}
+
+function recurrenceLabel(r: Recurrence): string {
+  const id = recurrencePresetId(r);
+  if (id !== "custom") {
+    return RECURRENCE_PRESETS.find((p) => p.id === id)?.label ?? id;
+  }
+  return `${r.freq} · alle ${r.interval}`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
 
 export function CalendarClient({
   workspace,
@@ -126,9 +313,8 @@ export function CalendarClient({
   const [error, setError] = useState<string | null>(null);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const [compose, setCompose] = useState<ComposeState | null>(null);
+  const [rsvpBusy, setRsvpBusy] = useState<string | null>(null);
   const inflight = useRef(false);
-
-  /* ----------------------------- Range to fetch ---------------------------- */
 
   const range = useMemo(() => {
     if (view === "month") {
@@ -136,15 +322,13 @@ export function CalendarClient({
       const end = addDays(start, 42);
       return { from: start, to: end };
     }
-    if (view === "week") {
+    if (view === "week" || view === "scheduling") {
       return { from: startOfWeek(anchor), to: addDays(endOfWeek(anchor), 1) };
     }
     const dayStart = new Date(anchor);
     dayStart.setHours(0, 0, 0, 0);
     return { from: dayStart, to: addDays(dayStart, 1) };
   }, [view, anchor]);
-
-  /* -------------------------------- Fetcher -------------------------------- */
 
   const refresh = useCallback(async () => {
     if (inflight.current) return;
@@ -174,8 +358,6 @@ export function CalendarClient({
     refresh();
   }, [refresh]);
 
-  /* ------------------------------- Derived view ---------------------------- */
-
   const filteredEvents = useMemo(
     () => events.filter((e) => !hiddenCals.has(e.calendarId)),
     [events, hiddenCals],
@@ -199,30 +381,25 @@ export function CalendarClient({
     return map;
   }, [filteredEvents]);
 
-  /* ------------------------------- Navigation ------------------------------ */
-
   const goPrev = () => {
     const d = new Date(anchor);
     if (view === "month") d.setMonth(d.getMonth() - 1);
-    else if (view === "week") d.setDate(d.getDate() - 7);
+    else if (view === "week" || view === "scheduling") d.setDate(d.getDate() - 7);
     else d.setDate(d.getDate() - 1);
     setAnchor(d);
   };
   const goNext = () => {
     const d = new Date(anchor);
     if (view === "month") d.setMonth(d.getMonth() + 1);
-    else if (view === "week") d.setDate(d.getDate() + 7);
+    else if (view === "week" || view === "scheduling") d.setDate(d.getDate() + 7);
     else d.setDate(d.getDate() + 1);
     setAnchor(d);
   };
   const goToday = () => setAnchor(new Date());
 
-  /* ------------------------------- Composition ----------------------------- */
-
   const openCompose = (date?: Date) => {
     const start = date ? new Date(date) : new Date();
     if (!date) {
-      // Default to next half-hour slot.
       start.setMinutes(start.getMinutes() < 30 ? 30 : 0);
       if (start.getMinutes() === 0) start.setHours(start.getHours() + 1);
       start.setSeconds(0, 0);
@@ -243,6 +420,9 @@ export function CalendarClient({
       endTime: inputTimeValue(end),
       allDay: false,
       attendees: "",
+      videoUrl: "",
+      reminders: [{ minutesBefore: 15, action: "DISPLAY" }],
+      recurrence: null,
     });
   };
 
@@ -262,10 +442,14 @@ export function CalendarClient({
       start: startIso,
       end: endIso,
       allDay: compose.allDay,
+      tzid: browserTz,
       attendees: compose.attendees
         .split(/[,\s;]+/)
         .map((a) => a.trim())
         .filter(Boolean),
+      videoUrl: compose.videoUrl || undefined,
+      reminders: compose.reminders,
+      recurrence: compose.recurrence,
     };
     const r = await fetch(
       `/api/calendar/event?workspace=${encodeURIComponent(workspace)}`,
@@ -298,6 +482,63 @@ export function CalendarClient({
     }
   };
 
+  const sendRsvp = async (ev: CalendarEvent, status: AttendeeStatus) => {
+    setRsvpBusy(status);
+    try {
+      const r = await fetch(
+        `/api/calendar/event?workspace=${encodeURIComponent(workspace)}&id=${encodeURIComponent(ev.id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ rsvp: status }),
+        },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error ?? `HTTP ${r.status}`);
+      }
+      await refresh();
+      // Re-look-up the event so the drawer reflects the new PARTSTAT.
+      setActiveEvent((cur) => {
+        if (!cur || cur.id !== ev.id) return cur;
+        const updated: CalendarEvent = {
+          ...cur,
+          selfAttendee: cur.selfAttendee
+            ? { ...cur.selfAttendee, status }
+            : null,
+          attendees: cur.attendees.map((a) =>
+            a.email.toLowerCase() === selfEmail.toLowerCase()
+              ? { ...a, status }
+              : a,
+          ),
+        };
+        return updated;
+      });
+    } catch (e) {
+      alert(`RSVP fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setRsvpBusy(null);
+    }
+  };
+
+  const skipOccurrence = async (ev: CalendarEvent, dateIso: string) => {
+    if (!confirm("Diesen Termin aus der Serie ausblenden?")) return;
+    const r = await fetch(
+      `/api/calendar/event?workspace=${encodeURIComponent(workspace)}&id=${encodeURIComponent(ev.id)}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ addExdate: dateIso }),
+      },
+    );
+    if (r.ok) {
+      setActiveEvent(null);
+      await refresh();
+    } else {
+      alert(`Konnte nicht ausgenommen werden (HTTP ${r.status})`);
+    }
+  };
+
   const toggleCal = (id: string) => {
     setHiddenCals((s) => {
       const n = new Set(s);
@@ -307,13 +548,11 @@ export function CalendarClient({
     });
   };
 
-  /* ------------------------------- Header label ---------------------------- */
-
   const headerLabel = useMemo(() => {
     if (view === "month") {
       return `${MONTHS_DE[anchor.getMonth()]} ${anchor.getFullYear()}`;
     }
-    if (view === "week") {
+    if (view === "week" || view === "scheduling") {
       const ws = startOfWeek(anchor);
       const we = endOfWeek(anchor);
       const sameMonth = ws.getMonth() === we.getMonth();
@@ -324,11 +563,9 @@ export function CalendarClient({
     return `${WEEKDAYS_DE[(anchor.getDay() + 6) % 7]}, ${anchor.getDate()}. ${MONTHS_DE[anchor.getMonth()]} ${anchor.getFullYear()}`;
   }, [view, anchor]);
 
-  /* --------------------------------- Render -------------------------------- */
-
   return (
     <div className="h-full flex">
-      {/* ─────────────── Left rail: calendars + mini month ─────────────── */}
+      {/* ─────────────── Left rail ─────────────── */}
       <aside className="w-64 shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col">
         <div className="p-3 border-b border-stroke-1">
           <button
@@ -376,12 +613,18 @@ export function CalendarClient({
             <span className="truncate">{selfName}</span>
           </div>
           <div className="truncate font-mono mt-0.5">{selfEmail}</div>
+          <div
+            className="mt-2 flex items-center gap-1.5 text-[11px] text-text-quaternary"
+            title="Browser-Zeitzone"
+          >
+            <Globe size={11} />
+            {shortTz(browserTz)} · {tzOffsetLabel(browserTz)}
+          </div>
         </div>
       </aside>
 
       {/* ─────────────── Main pane ─────────────── */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* toolbar */}
         <div className="h-12 shrink-0 border-b border-stroke-1 bg-bg-chrome px-3 flex items-center gap-2">
           <button
             onClick={goToday}
@@ -407,7 +650,7 @@ export function CalendarClient({
             {headerLabel}
           </h1>
           {loading && (
-            <Loader2 size={14} className="ml-2 spin text-text-tertiary" />
+            <Loader2 size={14} className="ml-2 animate-spin text-text-tertiary" />
           )}
           <div className="ml-auto flex items-center gap-1">
             <button
@@ -418,13 +661,20 @@ export function CalendarClient({
               <RefreshCw size={15} />
             </button>
             <div className="ml-2 inline-flex rounded border border-stroke-1 overflow-hidden text-xs">
-              {(["month", "week", "day"] as View[]).map((v) => (
+              {(["month", "week", "day", "scheduling"] as View[]).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
                   className={`px-3 py-1.5 ${view === v ? "bg-bg-overlay text-text-primary" : "text-text-secondary hover:bg-bg-overlay hover:text-text-primary"}`}
+                  title={v === "scheduling" ? "Frei/Gebucht-Sicht über mehrere Personen" : undefined}
                 >
-                  {v === "month" ? "Monat" : v === "week" ? "Woche" : "Tag"}
+                  {v === "month"
+                    ? "Monat"
+                    : v === "week"
+                      ? "Woche"
+                      : v === "day"
+                        ? "Tag"
+                        : "Planung"}
                 </button>
               ))}
             </div>
@@ -437,7 +687,6 @@ export function CalendarClient({
           </div>
         )}
 
-        {/* grid */}
         <div className="flex-1 overflow-auto">
           {view === "month" && (
             <MonthGrid
@@ -464,6 +713,36 @@ export function CalendarClient({
               onSelectEvent={setActiveEvent}
             />
           )}
+          {view === "scheduling" && (
+            <SchedulingAssistant
+              workspace={workspace}
+              anchor={anchor}
+              accent={accent}
+              selfEvents={filteredEvents}
+              selfEmail={selfEmail}
+              onPickSlot={(start) => {
+                const end = new Date(start);
+                end.setHours(start.getHours() + 1);
+                setCompose({
+                  calendarId:
+                    calendars.find((c) => c.owner)?.id ??
+                    calendars[0]?.id ??
+                    "personal",
+                  title: "",
+                  description: "",
+                  location: "",
+                  date: inputDateValue(start),
+                  startTime: inputTimeValue(start),
+                  endTime: inputTimeValue(end),
+                  allDay: false,
+                  attendees: "",
+                  videoUrl: "",
+                  reminders: [{ minutesBefore: 15, action: "DISPLAY" }],
+                  recurrence: null,
+                });
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -471,8 +750,17 @@ export function CalendarClient({
       {activeEvent && (
         <EventDrawer
           event={activeEvent}
+          selfEmail={selfEmail}
+          rsvpBusy={rsvpBusy}
           onClose={() => setActiveEvent(null)}
           onDelete={() => deleteEvent(activeEvent)}
+          onRsvp={(status) => sendRsvp(activeEvent, status)}
+          onSkipOccurrence={() =>
+            skipOccurrence(
+              activeEvent,
+              activeEvent.start.split("T")[0],
+            )
+          }
         />
       )}
 
@@ -482,6 +770,7 @@ export function CalendarClient({
           state={compose}
           calendars={calendars.filter((c) => c.owner)}
           accent={accent}
+          workspace={workspace}
           onChange={setCompose}
           onCancel={() => setCompose(null)}
           onSubmit={submitCompose}
@@ -512,7 +801,6 @@ function MonthGrid({
 
   return (
     <div className="h-full flex flex-col">
-      {/* weekday header */}
       <div className="grid grid-cols-7 border-b border-stroke-1 bg-bg-chrome shrink-0">
         {WEEKDAYS_DE.map((d) => (
           <div
@@ -523,7 +811,6 @@ function MonthGrid({
           </div>
         ))}
       </div>
-      {/* 6 rows × 7 cols */}
       <div className="grid grid-cols-7 grid-rows-6 flex-1 min-h-0">
         {cells.map((d, idx) => {
           const k = dayKey(d);
@@ -570,6 +857,7 @@ function MonthGrid({
                   >
                     {e.allDay ? "" : `${fmtTime(e.start)} `}
                     <span className="text-text-primary">{e.title}</span>
+                    {e.recurring && <Repeat size={9} className="inline ml-1 opacity-60" />}
                   </button>
                 ))}
                 {more > 0 && (
@@ -639,8 +927,18 @@ function WeekOrDayList({
                   <span className="text-xs font-mono text-text-tertiary w-24 shrink-0">
                     {fmtRange(e.start, e.end, e.allDay)}
                   </span>
-                  <span className="text-sm text-text-primary flex-1 truncate">
+                  <span className="text-sm text-text-primary flex-1 truncate flex items-center gap-1.5">
                     {e.title}
+                    {e.recurring && <Repeat size={11} className="opacity-60" />}
+                    {e.reminders.length > 0 && <Bell size={11} className="opacity-60" />}
+                    {e.tzid && e.tzid !== browserTz && (
+                      <span
+                        className="text-[10px] text-text-quaternary px-1 py-px rounded bg-bg-overlay"
+                        title={`Termin-TZ: ${e.tzid}`}
+                      >
+                        {shortTz(e.tzid)}
+                      </span>
+                    )}
                   </span>
                   {e.location && (
                     <span className="text-xs text-text-tertiary truncate max-w-[200px]">
@@ -662,13 +960,28 @@ function WeekOrDayList({
 
 function EventDrawer({
   event,
+  selfEmail,
+  rsvpBusy,
   onClose,
   onDelete,
+  onRsvp,
+  onSkipOccurrence,
 }: {
   event: CalendarEvent;
+  selfEmail: string;
+  rsvpBusy: string | null;
   onClose: () => void;
   onDelete: () => void;
+  onRsvp: (status: AttendeeStatus) => void;
+  onSkipOccurrence: () => void;
 }) {
+  const me = event.attendees.find(
+    (a) => a.email.toLowerCase() === selfEmail.toLowerCase(),
+  );
+  const showRsvp = !event.isOrganizer && me;
+  const eventTz = event.tzid || browserTz;
+  const showRemoteTz = event.tzid && event.tzid !== browserTz;
+
   return (
     <div className="w-96 shrink-0 border-l border-stroke-1 bg-bg-chrome flex flex-col">
       <div className="h-12 shrink-0 border-b border-stroke-1 px-3 flex items-center">
@@ -691,11 +1004,22 @@ function EventDrawer({
             aria-hidden
           />
           <div className="text-xs text-text-tertiary">{event.calendarId}</div>
+          {event.recurring && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-text-tertiary uppercase tracking-wide">
+              <Repeat size={11} /> Serie
+            </span>
+          )}
         </div>
+
         <div>
           <div className="text-xs text-text-tertiary uppercase mb-1">Wann</div>
           <div className="text-sm text-text-primary">
             {fmtRange(event.start, event.end, event.allDay)}
+            {!event.allDay && (
+              <span className="ml-2 text-[11px] text-text-tertiary">
+                {tzOffsetLabel(eventTz)} · {shortTz(eventTz)}
+              </span>
+            )}
           </div>
           <div className="text-xs text-text-tertiary mt-0.5">
             {new Date(event.start).toLocaleDateString("de-DE", {
@@ -705,13 +1029,105 @@ function EventDrawer({
               year: "numeric",
             })}
           </div>
+          {showRemoteTz && (
+            <div className="mt-2 rounded-md bg-bg-overlay/60 border border-stroke-1 px-2 py-1.5 text-[11px] text-text-secondary flex items-center gap-2">
+              <Globe size={11} className="text-text-tertiary" />
+              <span>
+                Bei dir:{" "}
+                <strong>
+                  {fmtTimeIn(event.start, browserTz)}–
+                  {fmtTimeIn(event.end, browserTz)}
+                </strong>{" "}
+                ({shortTz(browserTz)})
+              </span>
+            </div>
+          )}
         </div>
+
+        {showRsvp && (
+          <div>
+            <div className="text-xs text-text-tertiary uppercase mb-1">
+              Deine Antwort
+            </div>
+            <div className="flex items-center gap-1.5">
+              {(
+                [
+                  ["accepted", "Annehmen", Check],
+                  ["tentative", "Vielleicht", HelpCircle],
+                  ["declined", "Ablehnen", X],
+                ] as const
+              ).map(([status, label, Icon]) => {
+                const active = me?.status === status;
+                const busy = rsvpBusy === status;
+                const tone =
+                  status === "accepted"
+                    ? "text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/10"
+                    : status === "declined"
+                      ? "text-red-400 border-red-500/40 hover:bg-red-500/10"
+                      : "text-amber-400 border-amber-500/40 hover:bg-amber-500/10";
+                return (
+                  <button
+                    key={status}
+                    onClick={() => onRsvp(status)}
+                    disabled={busy || active}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 text-[12px] rounded border transition ${tone} ${active ? "ring-1 ring-current" : ""} disabled:opacity-50`}
+                  >
+                    {busy ? (
+                      <Loader2 size={11} className="animate-spin" />
+                    ) : (
+                      <Icon size={11} />
+                    )}
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {me?.status && me.status !== "needs-action" && (
+              <div className="mt-1.5 text-[11px] text-text-tertiary">
+                Aktuell: <strong>{partstatLabel(me.status)}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
         {event.location && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">Ort</div>
             <div className="text-sm text-text-primary flex items-center gap-2">
               <MapPin size={14} />
               {event.location}
+            </div>
+          </div>
+        )}
+        {event.videoUrl && (
+          <div>
+            <div className="text-xs text-text-tertiary uppercase mb-1">
+              Video-Call
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={event.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md bg-success/15 text-success border border-success/30 hover:bg-success/25 px-3 py-1.5 text-sm font-medium"
+              >
+                <Video size={14} />
+                Jetzt beitreten
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(event.videoUrl);
+                }}
+                className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs text-text-tertiary hover:text-text-primary"
+                title="Link kopieren"
+              >
+                <Copy size={12} />
+                Link kopieren
+              </button>
+            </div>
+            <div className="text-[11px] text-text-quaternary mt-1.5 break-all">
+              {event.videoUrl}
             </div>
           </div>
         )}
@@ -722,12 +1138,61 @@ function EventDrawer({
             </div>
             <ul className="text-sm text-text-primary space-y-1">
               {event.attendees.map((a) => (
-                <li key={a} className="flex items-center gap-2">
-                  <UsersIcon size={14} className="text-text-tertiary" />
-                  {a}
+                <li
+                  key={a.email}
+                  className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-bg-overlay/40"
+                >
+                  <UsersIcon size={12} className="text-text-tertiary shrink-0" />
+                  <span className="truncate flex-1">{a.name || a.email}</span>
+                  <PartstatPill status={a.status} />
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+        {event.reminders.length > 0 && (
+          <div>
+            <div className="text-xs text-text-tertiary uppercase mb-1">
+              Erinnerungen
+            </div>
+            <ul className="text-sm text-text-primary space-y-1">
+              {event.reminders.map((r, i) => (
+                <li key={i} className="flex items-center gap-2 text-[12.5px]">
+                  <Bell size={12} className="text-text-tertiary" />
+                  {reminderLabel(r)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {event.recurrence && (
+          <div>
+            <div className="text-xs text-text-tertiary uppercase mb-1">
+              Wiederholung
+            </div>
+            <div className="text-sm text-text-primary flex items-center gap-2">
+              <Repeat size={13} className="text-text-tertiary" />
+              {recurrenceLabel(event.recurrence)}
+              {event.recurrence.until && (
+                <span className="text-[11px] text-text-tertiary">
+                  bis {event.recurrence.until}
+                </span>
+              )}
+              {event.recurrence.count != null && (
+                <span className="text-[11px] text-text-tertiary">
+                  · {event.recurrence.count} Termine
+                </span>
+              )}
+            </div>
+            {event.recurring && (
+              <button
+                type="button"
+                onClick={onSkipOccurrence}
+                className="mt-2 text-[11.5px] text-amber-400 hover:underline"
+              >
+                Diesen Termin aus Serie ausnehmen
+              </button>
+            )}
           </div>
         )}
         {event.description && (
@@ -740,23 +1205,65 @@ function EventDrawer({
             </div>
           </div>
         )}
-        {event.recurring && (
-          <div className="text-xs text-text-tertiary border-t border-stroke-1 pt-3">
-            Serientermin · {event.rrule}
-          </div>
-        )}
       </div>
-      <div className="mt-auto p-3 border-t border-stroke-1">
-        <button
-          onClick={onDelete}
-          className="w-full flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium text-danger border border-stroke-1 hover:bg-bg-overlay"
-        >
-          <Trash2 size={14} />
-          Löschen
-        </button>
-      </div>
+      {event.isOrganizer && (
+        <div className="mt-auto p-3 border-t border-stroke-1">
+          <button
+            onClick={onDelete}
+            className="w-full flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium text-danger border border-stroke-1 hover:bg-bg-overlay"
+          >
+            <Trash2 size={14} />
+            Löschen
+          </button>
+        </div>
+      )}
     </div>
   );
+}
+
+function partstatLabel(s: AttendeeStatus): string {
+  switch (s) {
+    case "accepted":
+      return "Zugesagt";
+    case "declined":
+      return "Abgelehnt";
+    case "tentative":
+      return "Vielleicht";
+    case "needs-action":
+      return "Offen";
+    case "delegated":
+      return "Delegiert";
+    default:
+      return "—";
+  }
+}
+
+function PartstatPill({ status }: { status: AttendeeStatus }) {
+  const tone =
+    status === "accepted"
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      : status === "declined"
+        ? "bg-red-500/15 text-red-400 border-red-500/30"
+        : status === "tentative"
+          ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+          : "bg-bg-overlay text-text-tertiary border-stroke-1";
+  return (
+    <span
+      className={`text-[10px] px-1.5 py-px rounded border ${tone}`}
+      title={partstatLabel(status)}
+    >
+      {partstatLabel(status)}
+    </span>
+  );
+}
+
+function reminderLabel(r: Reminder): string {
+  const m = r.minutesBefore;
+  let unit = "";
+  if (m < 60) unit = `${m} min`;
+  else if (m < 24 * 60) unit = `${Math.round(m / 60)} Std.`;
+  else unit = `${Math.round(m / (24 * 60))} Tag(e)`;
+  return `${unit} vorher · ${r.action === "EMAIL" ? "E-Mail" : "Pop-up"}`;
 }
 
 /* ============================== Compose ================================ */
@@ -765,6 +1272,7 @@ function ComposeModal({
   state,
   calendars,
   accent,
+  workspace,
   onChange,
   onCancel,
   onSubmit,
@@ -772,10 +1280,13 @@ function ComposeModal({
   state: ComposeState;
   calendars: Calendar[];
   accent: string;
+  workspace: string;
   onChange: (s: ComposeState) => void;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const recurrenceId = recurrencePresetId(state.recurrence);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-bg-elevated border border-stroke-1 rounded-lg shadow-2xl flex flex-col max-h-[90vh]">
@@ -847,34 +1358,40 @@ function ComposeModal({
             />
           </div>
           {!state.allDay && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-text-tertiary mb-1">
-                  Beginn
-                </label>
-                <input
-                  type="time"
-                  className="input"
-                  value={state.startTime}
-                  onChange={(e) =>
-                    onChange({ ...state, startTime: e.target.value })
-                  }
-                />
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">
+                    Beginn
+                  </label>
+                  <input
+                    type="time"
+                    className="input"
+                    value={state.startTime}
+                    onChange={(e) =>
+                      onChange({ ...state, startTime: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">
+                    Ende
+                  </label>
+                  <input
+                    type="time"
+                    className="input"
+                    value={state.endTime}
+                    onChange={(e) =>
+                      onChange({ ...state, endTime: e.target.value })
+                    }
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-text-tertiary mb-1">
-                  Ende
-                </label>
-                <input
-                  type="time"
-                  className="input"
-                  value={state.endTime}
-                  onChange={(e) =>
-                    onChange({ ...state, endTime: e.target.value })
-                  }
-                />
+              <div className="text-[11px] text-text-quaternary flex items-center gap-1.5">
+                <Globe size={11} /> Zeiten in {shortTz(browserTz)} (
+                {tzOffsetLabel(browserTz)})
               </div>
-            </div>
+            </>
           )}
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
@@ -889,6 +1406,149 @@ function ComposeModal({
               placeholder="Raum, Adresse oder Link"
             />
           </div>
+
+          {/* Recurrence */}
+          <div>
+            <label className="block text-xs text-text-tertiary mb-1">
+              <Repeat size={11} className="inline mr-1" />
+              Wiederholung
+            </label>
+            <select
+              className="input"
+              value={recurrenceId}
+              onChange={(e) => {
+                const preset = RECURRENCE_PRESETS.find(
+                  (p) => p.id === e.target.value,
+                );
+                if (!preset) return;
+                onChange({
+                  ...state,
+                  recurrence:
+                    preset.id === "none" ? null : preset.build(),
+                });
+              }}
+            >
+              {RECURRENCE_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+              {recurrenceId === "custom" && (
+                <option value="custom">Benutzerdefiniert</option>
+              )}
+            </select>
+            {state.recurrence && (
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">
+                    Endet am
+                  </label>
+                  <input
+                    type="date"
+                    className="input"
+                    value={state.recurrence.until ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...state,
+                        recurrence: state.recurrence
+                          ? {
+                              ...state.recurrence,
+                              until: e.target.value || null,
+                              count: e.target.value
+                                ? null
+                                : state.recurrence.count,
+                            }
+                          : null,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">
+                    Nach N Terminen
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="input"
+                    placeholder="optional"
+                    value={state.recurrence.count ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...state,
+                        recurrence: state.recurrence
+                          ? {
+                              ...state.recurrence,
+                              count: e.target.value
+                                ? Math.max(1, Number(e.target.value))
+                                : null,
+                              until: e.target.value
+                                ? null
+                                : state.recurrence.until,
+                            }
+                          : null,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Reminders */}
+          <div>
+            <label className="block text-xs text-text-tertiary mb-1">
+              <Bell size={11} className="inline mr-1" />
+              Erinnerungen
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {REMINDER_PRESETS.map((p) => {
+                const active = state.reminders.some(
+                  (r) => r.minutesBefore === p.minutes,
+                );
+                return (
+                  <button
+                    key={p.minutes}
+                    type="button"
+                    onClick={() => {
+                      const next = active
+                        ? state.reminders.filter(
+                            (r) => r.minutesBefore !== p.minutes,
+                          )
+                        : [
+                            ...state.reminders,
+                            {
+                              minutesBefore: p.minutes,
+                              action: "DISPLAY" as const,
+                            },
+                          ];
+                      onChange({ ...state, reminders: next });
+                    }}
+                    className={`text-[11px] px-2 py-1 rounded border ${active ? "border-current" : "border-stroke-1 text-text-tertiary hover:text-text-primary"}`}
+                    style={
+                      active
+                        ? { color: accent, background: `${accent}20` }
+                        : undefined
+                    }
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            {state.reminders.length === 0 && (
+              <p className="text-[11px] text-text-quaternary mt-1">
+                Keine Erinnerung gesetzt.
+              </p>
+            )}
+          </div>
+
+          <VideoCallSection
+            workspace={workspace}
+            videoUrl={state.videoUrl}
+            title={state.title}
+            onChange={(videoUrl) => onChange({ ...state, videoUrl })}
+          />
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
               Teilnehmer (komma-getrennt)
@@ -901,6 +1561,12 @@ function ComposeModal({
               }
               placeholder="diana@corehub.kineo360.work, …"
             />
+            {state.attendees.trim() && (
+              <p className="text-[11px] text-text-quaternary mt-1">
+                Teilnehmer erhalten eine Einladung mit
+                Annehmen-/Ablehnen-Buttons (RFC 5545 ATTENDEE/RSVP).
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
@@ -933,6 +1599,370 @@ function ComposeModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* --------------------------- Video-Call section --------------------------- */
+
+function VideoCallSection({
+  workspace,
+  videoUrl,
+  title,
+  onChange,
+}: {
+  workspace: string;
+  videoUrl: string;
+  title: string;
+  onChange: (videoUrl: string) => void;
+}) {
+  const enabled = !!videoUrl;
+
+  function toggle() {
+    if (enabled) {
+      onChange("");
+    } else {
+      onChange(freshJitsiRoom(workspace, title));
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-stroke-1 bg-bg-overlay/30 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-text-primary">
+          {enabled ? (
+            <Video size={14} className="text-success" />
+          ) : (
+            <VideoOff size={14} className="text-text-tertiary" />
+          )}
+          <span>Video-Call</span>
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          className={
+            "px-2.5 py-1 text-xs rounded-md border transition-colors " +
+            (enabled
+              ? "border-danger/40 text-danger hover:bg-danger/10"
+              : "border-stroke-2 text-text-secondary hover:text-text-primary hover:bg-bg-overlay")
+          }
+        >
+          {enabled ? "Entfernen" : "Hinzufügen"}
+        </button>
+      </div>
+      {enabled ? (
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              className="input flex-1 text-xs"
+              value={videoUrl}
+              onChange={(e) => onChange(e.target.value)}
+              spellCheck={false}
+            />
+            <a
+              href={videoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-text-tertiary hover:text-text-primary"
+              title="Raum testen"
+            >
+              <ExternalLink size={12} />
+            </a>
+          </div>
+          <p className="text-[11px] text-text-quaternary leading-snug">
+            Eindeutiger Jitsi-Raum. Wird in der Termin-Beschreibung als
+            klickbarer Link verteilt und für moderne Clients zusätzlich als
+            RFC-7986-CONFERENCE-Property gespeichert (Outlook 2024+ /
+            Apple Calendar zeigen automatisch einen „Beitreten"-Button).
+          </p>
+        </>
+      ) : (
+        <p className="text-[11px] text-text-quaternary leading-snug">
+          Hinzufügen erzeugt einen neuen Jitsi-Raum, hängt den Beitritts-Link
+          ans Event und lädt alle Teilnehmer im iCal-Standard ein — wie eine
+          Outlook-/Teams-Termineinladung.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ===================== Scheduling Assistant view ====================== */
+
+/**
+ * Multi-person free/busy lane view. Defaults to the current week. Users
+ * type comma-separated emails / usernames in a header bar; we POST the
+ * list to `/api/calendar/freebusy` and render a 7×24 lane per user with
+ * red blocks for BUSY and amber for BUSY-TENTATIVE. Self events are
+ * overlaid on the first lane so the organizer can spot conflicts quickly.
+ */
+function SchedulingAssistant({
+  workspace,
+  anchor,
+  accent,
+  selfEvents,
+  selfEmail,
+  onPickSlot,
+}: {
+  workspace: string;
+  anchor: Date;
+  accent: string;
+  selfEvents: CalendarEvent[];
+  selfEmail: string;
+  onPickSlot: (start: Date) => void;
+}) {
+  const [participants, setParticipants] = useState("");
+  const [slots, setSlots] = useState<FreeBusySlot[]>([]);
+  const [loadingFb, setLoadingFb] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i)),
+    [anchor],
+  );
+
+  const users = useMemo(
+    () =>
+      participants
+        .split(/[,\s;]+/)
+        .map((u) => u.trim())
+        .filter(Boolean),
+    [participants],
+  );
+
+  const refreshFb = useCallback(async () => {
+    if (users.length === 0) {
+      setSlots([]);
+      return;
+    }
+    setLoadingFb(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/calendar/freebusy?workspace=${encodeURIComponent(workspace)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            users,
+            from: days[0].toISOString(),
+            to: addDays(days[6], 1).toISOString(),
+          }),
+        },
+      );
+      const j = (await r.json()) as { slots?: FreeBusySlot[]; error?: string };
+      if (j.error) setError(j.error);
+      setSlots(j.slots ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingFb(false);
+    }
+  }, [users, days, workspace]);
+
+  useEffect(() => {
+    void refreshFb();
+  }, [refreshFb]);
+
+  const slotsByUser = useMemo(() => {
+    const m = new Map<string, FreeBusySlot[]>();
+    for (const s of slots) {
+      const arr = m.get(s.user) ?? [];
+      arr.push(s);
+      m.set(s.user, arr);
+    }
+    return m;
+  }, [slots]);
+
+  const lanes: Array<{ user: string; slots: FreeBusySlot[]; isSelf: boolean }> = useMemo(() => {
+    const selfBusy: FreeBusySlot[] = selfEvents
+      .filter((e) => !e.allDay)
+      .map((e) => ({
+        user: "self",
+        start: e.start,
+        end: e.end,
+        status: e.status === "tentative" ? "busy-tentative" : "busy",
+      }));
+    const out: Array<{ user: string; slots: FreeBusySlot[]; isSelf: boolean }> = [
+      { user: selfEmail || "Du", slots: selfBusy, isSelf: true },
+    ];
+    for (const u of users) {
+      const key = u.includes("@") ? u.split("@", 1)[0].toLowerCase() : u.toLowerCase();
+      out.push({ user: u, slots: slotsByUser.get(key) ?? [], isSelf: false });
+    }
+    return out;
+  }, [users, slotsByUser, selfEvents, selfEmail]);
+
+  return (
+    <div className="flex flex-col">
+      <div className="px-4 py-3 border-b border-stroke-1 bg-bg-chrome flex items-start gap-3">
+        <CalendarClock size={16} className="text-text-tertiary mt-1" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-text-primary">
+            Planungs-Assistent
+          </div>
+          <div className="text-[12px] text-text-tertiary mt-0.5">
+            Vergleicht freie/gebuchte Zeiten mehrerer Personen — klick eine
+            Lücke an, um direkt einen Termin zu erstellen.
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <UsersIcon size={12} className="text-text-tertiary" />
+            <input
+              className="input flex-1 text-[12px]"
+              placeholder="Personen kommagetrennt (z.B. mara, diana@kineo360.work)"
+              value={participants}
+              onChange={(e) => setParticipants(e.target.value)}
+              spellCheck={false}
+            />
+            {loadingFb && <Loader2 size={12} className="animate-spin text-text-tertiary" />}
+          </div>
+          {error && (
+            <div className="mt-1 text-[11px] text-red-400">{error}</div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto">
+        <table className="text-[11.5px] w-full border-collapse">
+          <thead className="bg-bg-chrome sticky top-0 z-10">
+            <tr>
+              <th className="border-b border-r border-stroke-1 px-2 py-1 text-left text-text-tertiary w-32">
+                Person
+              </th>
+              {days.map((d) => (
+                <th
+                  key={dayKey(d)}
+                  className="border-b border-r border-stroke-1 px-1 py-1 text-text-tertiary text-center"
+                >
+                  {WEEKDAYS_DE[(d.getDay() + 6) % 7]} {d.getDate()}.
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {lanes.map((lane) => (
+              <tr key={lane.user}>
+                <td className="border-b border-r border-stroke-1 px-2 py-1.5 text-text-secondary truncate w-32">
+                  <div className="truncate font-medium">{lane.user}</div>
+                  {lane.isSelf && (
+                    <div className="text-[9.5px] text-text-quaternary">
+                      du · live
+                    </div>
+                  )}
+                </td>
+                {days.map((d) => (
+                  <td
+                    key={dayKey(d)}
+                    className="border-b border-r border-stroke-1 p-0 align-top"
+                  >
+                    <DayLane
+                      day={d}
+                      slots={lane.slots}
+                      accent={accent}
+                      onPickHour={(h) => {
+                        const start = new Date(d);
+                        start.setHours(h, 0, 0, 0);
+                        onPickSlot(start);
+                      }}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {lanes.length === 1 && (
+              <tr>
+                <td
+                  colSpan={1 + days.length}
+                  className="border-b border-stroke-1 px-3 py-6 text-[12px] text-text-tertiary text-center"
+                >
+                  Personen oben eingeben, um deren Verfügbarkeit zu sehen.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DayLane({
+  day,
+  slots,
+  accent,
+  onPickHour,
+}: {
+  day: Date;
+  slots: FreeBusySlot[];
+  accent: string;
+  onPickHour: (hour: number) => void;
+}) {
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setHours(24, 0, 0, 0);
+
+  const overlapping = slots.filter((s) => {
+    const a = new Date(s.start).getTime();
+    const b = new Date(s.end).getTime();
+    return b > dayStart.getTime() && a < dayEnd.getTime();
+  });
+
+  // Each lane shows business hours 06:00 → 22:00 (16 cells, 1px per minute = 60px each).
+  const HOUR_FROM = 6;
+  const HOUR_TO = 22;
+  const totalMinutes = (HOUR_TO - HOUR_FROM) * 60;
+  const minuteOffset = (date: Date) =>
+    Math.max(
+      0,
+      Math.min(
+        totalMinutes,
+        (date.getTime() - dayStart.getTime()) / 60000 - HOUR_FROM * 60,
+      ),
+    );
+
+  return (
+    <div className="relative h-10 bg-bg-base/40">
+      {Array.from({ length: HOUR_TO - HOUR_FROM }, (_, i) => i).map((h) => (
+        <button
+          key={h}
+          type="button"
+          onClick={() => onPickHour(HOUR_FROM + h)}
+          className="absolute top-0 bottom-0 hover:bg-bg-overlay/40 cursor-pointer"
+          style={{
+            left: `${(h * 60 * 100) / totalMinutes}%`,
+            width: `${(60 * 100) / totalMinutes}%`,
+            borderRight:
+              h < HOUR_TO - HOUR_FROM - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+          }}
+          title={`${day.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })} ${HOUR_FROM + h}:00`}
+        />
+      ))}
+      {overlapping.map((s, i) => {
+        const a = new Date(s.start);
+        const b = new Date(s.end);
+        const left = minuteOffset(a);
+        const right = minuteOffset(b);
+        const width = Math.max(2, right - left);
+        const bg =
+          s.status === "busy-tentative"
+            ? "rgba(245,158,11,0.55)"
+            : s.user === "self"
+              ? `${accent}cc`
+              : "rgba(244,63,94,0.55)";
+        return (
+          <div
+            key={i}
+            className="absolute top-0.5 bottom-0.5 rounded-sm pointer-events-none"
+            style={{
+              left: `${(left * 100) / totalMinutes}%`,
+              width: `${(width * 100) / totalMinutes}%`,
+              background: bg,
+            }}
+            title={`${a.toLocaleString("de-DE")} – ${b.toLocaleString("de-DE")}`}
+          />
+        );
+      })}
     </div>
   );
 }
