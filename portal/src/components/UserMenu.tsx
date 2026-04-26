@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { LogOut, RefreshCcw, User, Settings } from "lucide-react";
+import { LogOut, RefreshCcw, User, Settings, Palette, Languages } from "lucide-react";
 import { signOutAction } from "@/app/actions";
+import { ThemeToggle } from "./ThemeToggle";
+import { LanguageToggle } from "./LanguageToggle";
+import { useT } from "./LocaleProvider";
 
 export function UserMenu({
   name,
@@ -19,6 +22,7 @@ export function UserMenu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -70,7 +74,7 @@ export function UserMenu({
               className="flex items-center gap-2.5 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-overlay transition-colors"
             >
               <User size={14} />
-              Account verwalten
+              {t("menu.account")}
             </a>
             <a
               href="https://auth.kineo360.work/realms/main/account/#/security/signing-in"
@@ -82,17 +86,31 @@ export function UserMenu({
               MFA / Passwort
             </a>
           </div>
+          <div className="py-2 px-3 border-t border-stroke-1 flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-text-tertiary text-xs">
+              <Palette size={13} />
+              {t("menu.theme")}
+            </span>
+            <ThemeToggle compact />
+          </div>
+          <div className="py-2 px-3 border-t border-stroke-1 flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-text-tertiary text-xs">
+              <Languages size={13} />
+              {t("menu.language")}
+            </span>
+            <LanguageToggle compact />
+          </div>
           <div className="py-1 border-t border-stroke-1">
             <a
               href="/api/portal/full-logout"
               className="w-full flex items-start gap-2.5 px-3 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-overlay transition-colors"
-              title="Beendet die Sessions in allen Apps (Nextcloud, Chat, Code, Plane …) und meldet dich anschlie\u00dfend ab."
+              title="Beendet die Sessions in allen Apps (Nextcloud, Chat, Code, Plane …) und meldet dich anschließend ab."
             >
               <RefreshCcw size={14} className="mt-0.5 shrink-0" />
               <span className="flex flex-col leading-tight">
                 <span className="text-text-primary">Aus allen Apps abmelden</span>
                 <span className="text-text-quaternary text-[11px]">
-                  Empfohlen f\u00fcr User-Wechsel oder Test-Szenarien
+                  Empfohlen für User-Wechsel oder Test-Szenarien
                 </span>
               </span>
             </a>
@@ -100,10 +118,10 @@ export function UserMenu({
               <button
                 type="submit"
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text-secondary hover:text-danger hover:bg-bg-overlay transition-colors"
-                title="Beendet nur die Portal-Session. App-Sessions (Nextcloud, Chat \u2026) bleiben aktiv."
+                title="Beendet nur die Portal-Session. App-Sessions (Nextcloud, Chat …) bleiben aktiv."
               >
                 <LogOut size={14} />
-                Nur Portal-Session beenden
+                {t("menu.logout")}
               </button>
             </form>
           </div>

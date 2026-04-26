@@ -33,10 +33,10 @@ export function TopBar({
     .map((id) => WORKSPACES[id]);
 
   return (
-    <header className="h-16 px-5 flex items-center gap-4 bg-bg-chrome border-b border-stroke-1">
+    <header className="h-16 px-3 md:px-5 flex items-center gap-2 md:gap-4 bg-bg-chrome border-b border-stroke-1">
       <Link
         href={`/${workspace.id}/dashboard`}
-        className="flex items-center gap-3 hover:opacity-90 transition-opacity"
+        className="flex items-center gap-3 hover:opacity-90 transition-opacity shrink-0"
       >
         <div className="relative shrink-0">
           <span
@@ -53,7 +53,7 @@ export function TopBar({
             className="relative"
           />
         </div>
-        <div className="flex flex-col leading-tight">
+        <div className="hidden md:flex flex-col leading-tight">
           <span className="text-text-primary text-[15px] font-semibold tracking-tight">
             Corehub Workstation
           </span>
@@ -65,8 +65,8 @@ export function TopBar({
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1.5 rounded-full border border-stroke-1 bg-bg-base/40 p-1">
-        <span className="text-text-tertiary text-[11px] uppercase tracking-wider px-2.5">
+      <div className="flex items-center gap-1.5 rounded-full border border-stroke-1 bg-bg-base/40 p-1 overflow-x-auto max-w-full">
+        <span className="hidden sm:inline text-text-tertiary text-[11px] uppercase tracking-wider px-2.5 shrink-0">
           Workspace
         </span>
         {visibleWorkspaces.map((ws) => {
@@ -75,7 +75,7 @@ export function TopBar({
             <Link
               key={ws.id}
               href={`/${ws.id}/dashboard`}
-              className="rounded-full text-xs font-medium inline-flex items-center gap-2 px-3 py-1.5 transition-all"
+              className="rounded-full text-xs font-medium inline-flex items-center gap-2 px-3 py-1.5 transition-all whitespace-nowrap shrink-0"
               style={{
                 background: active ? `${ws.accent}22` : "transparent",
                 color: active
@@ -102,7 +102,7 @@ export function TopBar({
       {isAdmin && (
         <Link
           href="/admin/onboarding"
-          className="inline-flex items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1.5 border border-stroke-1 text-text-tertiary hover:text-text-primary hover:border-stroke-2 transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1.5 border border-stroke-1 text-text-tertiary hover:text-text-primary hover:border-stroke-2 transition-colors"
           title="Onboarding-Tool: Mitglieder & Clients verwalten"
         >
           <ShieldCheck size={12} />
@@ -110,7 +110,7 @@ export function TopBar({
         </Link>
       )}
 
-      <div className="w-px h-6 bg-stroke-1" />
+      <div className="hidden md:block w-px h-6 bg-stroke-1" />
 
       <UserMenu
         name={user.name}

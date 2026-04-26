@@ -4,7 +4,7 @@ import { isAdminUsername } from "@/lib/admin-allowlist";
 import { fetchHealthSummary } from "@/lib/health";
 import { getWorkspace, type WorkspaceId } from "@/lib/workspaces";
 import { TopBar } from "@/components/TopBar";
-import { Sidebar } from "@/components/Sidebar";
+import { MobileShell } from "@/components/MobileShell";
 
 export default async function WorkspaceLayout({
   children,
@@ -33,14 +33,13 @@ export default async function WorkspaceLayout({
         isAdmin={isAdmin}
         groups={session?.groups ?? []}
       />
-      <div className="flex flex-1 min-h-0">
-        <Sidebar
-          workspaceId={workspace.id as WorkspaceId}
-          isAdmin={isAdmin}
-          health={health}
-        />
-        <main className="flex-1 min-w-0 overflow-hidden">{children}</main>
-      </div>
+      <MobileShell
+        workspaceId={workspace.id as WorkspaceId}
+        isAdmin={isAdmin}
+        health={health}
+      >
+        {children}
+      </MobileShell>
     </div>
   );
 }
