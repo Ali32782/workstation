@@ -14,22 +14,66 @@ import {
   Phone,
   Maximize2,
   Paperclip,
+  ChevronRight,
+  Users as UsersIcon,
+  Settings,
+  MessageSquarePlus,
+  FolderPlus,
+  UserPlus,
+  UserMinus,
+  Archive,
+  FileText,
+  Globe,
+  Crown,
+  Shield,
 } from "lucide-react";
-import type { ChatMessage, ChatRoom, ChatUserSummary } from "@/lib/chat/types";
+import type {
+  ChatMessage,
+  ChatRoom,
+  ChatTeam,
+  ChatUserSummary,
+} from "@/lib/chat/types";
+
+type RoomMember = {
+  id: string;
+  username: string;
+  name?: string;
+  status?: "online" | "away" | "busy" | "offline";
+  isOwner?: boolean;
+  isModerator?: boolean;
+};
+
+type RoomFile = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  uploadedAt: string;
+  uploadedBy: string;
+  url: string;
+};
 
 type Me = { username: string; id: string };
 
 export function ChatClient({
+  workspace,
+  workspaceLabel,
   initialRooms,
+  initialTeams,
   initialMe,
   rocketChatWebBase,
 }: {
+  /** Portal workspace slug (`kineo` | `corehub` | `medtheris`). */
+  workspace: string;
+  workspaceLabel: string;
   initialRooms: ChatRoom[];
+  initialTeams: ChatTeam[];
   initialMe: Me;
   /** Public https://chat… — used to resolve /file-upload/… links. */
   rocketChatWebBase: string;
 }) {
   const [rooms, setRooms] = useState<ChatRoom[]>(initialRooms);
+  const [teams, setTeams] = useState<ChatTeam[]>(initialTeams);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(initialRooms[0]?.id ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -41,8 +85,23 @@ export function ChatClient({
   const [callPanelOpen, setCallPanelOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
+  const [showNewChannel, setShowNewChannel] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const createMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close the create-menu popover whenever the user clicks elsewhere.
+  useEffect(() => {
+    if (!createMenuOpen) return;
+    const onDown = (ev: MouseEvent) => {
+      const node = createMenuRef.current;
+      if (node && !node.contains(ev.target as Node)) setCreateMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [createMenuOpen]);
 
   // Stable lookup by ID. Re-runs only when rooms list or selection changes.
   const activeRoom = useMemo(
@@ -66,10 +125,14 @@ export function ChatClient({
     roomsInFlight.current = true;
     setRoomsLoading(true);
     try {
-      const r = await fetch("/api/chat/rooms", { cache: "no-store" });
+      const r = await fetch(
+        `/api/chat/rooms?ws=${encodeURIComponent(workspace)}`,
+        { cache: "no-store" },
+      );
       if (r.ok) {
-        const j = (await r.json()) as { rooms: ChatRoom[] };
+        const j = (await r.json()) as { rooms: ChatRoom[]; teams?: ChatTeam[] };
         setRooms(j.rooms);
+        if (j.teams) setTeams(j.teams);
       }
     } catch {
       // swallow — keep last good state
@@ -77,7 +140,7 @@ export function ChatClient({
       setRoomsLoading(false);
       roomsInFlight.current = false;
     }
-  }, []);
+  }, [workspace]);
 
   const refreshMessages = useCallback(
     async (roomId: string, type: ChatRoom["type"], showSpinner = true) => {
@@ -245,11 +308,56 @@ export function ChatClient({
   const visibleRooms = useMemo(() => {
     if (!search.trim()) return rooms;
     const q = search.toLowerCase();
-    return rooms.filter((r) => r.name.toLowerCase().includes(q));
+    return rooms.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.displayName.toLowerCase().includes(q),
+    );
   }, [rooms, search]);
 
-  const channelRooms = visibleRooms.filter((r) => r.type === "c" || r.type === "p");
-  const dmRooms = visibleRooms.filter((r) => r.type === "d");
+  // Group channels into teams. Anything without a teamId becomes a "loose"
+  // channel rendered above the team sections.
+  const { teamGroups, looseChannels, dmRooms } = useMemo(() => {
+    const teamGroups = new Map<
+      string,
+      { team: ChatTeam; main: ChatRoom | null; subs: ChatRoom[] }
+    >();
+    const teamById = new Map(teams.map((t) => [t.id, t]));
+    const loose: ChatRoom[] = [];
+    const dms: ChatRoom[] = [];
+    for (const r of visibleRooms) {
+      if (r.type === "d") {
+        dms.push(r);
+        continue;
+      }
+      if (r.teamId && teamById.has(r.teamId)) {
+        const g = teamGroups.get(r.teamId) ?? {
+          team: teamById.get(r.teamId)!,
+          main: null,
+          subs: [],
+        };
+        if (r.teamMain) g.main = r;
+        else g.subs.push(r);
+        teamGroups.set(r.teamId, g);
+      } else {
+        loose.push(r);
+      }
+    }
+    // Stable team order: by display name
+    const sortedGroups = [...teamGroups.values()].sort((a, b) =>
+      a.team.displayName.localeCompare(b.team.displayName, "de"),
+    );
+    // Sort sub-channels alphabetically
+    for (const g of sortedGroups) {
+      g.subs.sort((a, b) =>
+        prettyChannelName(a, g.team).localeCompare(
+          prettyChannelName(b, g.team),
+          "de",
+        ),
+      );
+    }
+    return { teamGroups: sortedGroups, looseChannels: loose, dmRooms: dms };
+  }, [visibleRooms, teams]);
 
   /* ─────────────────────────────── UI ───────────────────────────── */
 
@@ -271,22 +379,84 @@ export function ChatClient({
               className="w-full bg-bg-base border border-stroke-1 rounded-md text-[12px] py-1.5 pl-7 pr-2 outline-none focus:border-stroke-2"
             />
           </div>
-          <button
-            onClick={() => setShowNewChat(true)}
-            className="p-1.5 rounded-md bg-[#5b5fc7] hover:bg-[#4f52b2] text-white"
-            title="Neuer Chat"
-          >
-            <Plus size={14} />
-          </button>
+          <div className="relative" ref={createMenuRef}>
+            <button
+              onClick={() => setCreateMenuOpen((v) => !v)}
+              className="p-1.5 rounded-md bg-[#5b5fc7] hover:bg-[#4f52b2] text-white"
+              title="Neu erstellen"
+              aria-haspopup="menu"
+              aria-expanded={createMenuOpen}
+            >
+              <Plus size={14} />
+            </button>
+            {createMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full mt-1 w-48 z-30 rounded-md border border-stroke-1 bg-bg-elevated shadow-lg overflow-hidden"
+              >
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setShowNewChat(true);
+                    setCreateMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] text-text-primary hover:bg-bg-overlay"
+                >
+                  <MessageSquarePlus size={14} className="text-text-secondary" />
+                  Direktnachricht
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setShowNewChannel(true);
+                    setCreateMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] text-text-primary hover:bg-bg-overlay border-t border-stroke-1"
+                >
+                  <FolderPlus size={14} className="text-text-secondary" />
+                  Neuer Kanal …
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
-          <SidebarSection
-            label="Kanäle"
-            rooms={channelRooms}
-            activeId={activeRoomId}
-            onSelect={setActiveRoomId}
-          />
+          {/* Workspace label so the user always knows where they are */}
+          <div className="px-3 pt-1 pb-2 text-[11px] uppercase tracking-wider text-text-tertiary font-semibold flex items-center gap-1.5">
+            <UsersIcon size={11} />
+            <span>{workspaceLabel}</span>
+          </div>
+
+          {/* Loose channels (no team) — rare; mostly legacy / general */}
+          {looseChannels.length > 0 && (
+            <SidebarSection
+              label="Kanäle"
+              rooms={looseChannels}
+              activeId={activeRoomId}
+              onSelect={setActiveRoomId}
+            />
+          )}
+
+          {/* MS-Teams-style team sections */}
+          {teamGroups.length === 0 && looseChannels.length === 0 && (
+            <div className="px-3 py-3 text-text-tertiary text-[11px] italic">
+              Keine Team-Kanäle in {workspaceLabel}.
+              <br />
+              Du kannst rechts unten eine Direktnachricht starten.
+            </div>
+          )}
+          {teamGroups.map(({ team, main, subs }) => (
+            <TeamSection
+              key={team.id}
+              team={team}
+              main={main}
+              subs={subs}
+              activeId={activeRoomId}
+              onSelect={setActiveRoomId}
+            />
+          ))}
+
           <SidebarSection
             label="Direktnachrichten"
             rooms={dmRooms}
@@ -322,8 +492,39 @@ export function ChatClient({
             <div className="px-5 py-3 border-b border-stroke-1 flex items-center gap-3 bg-bg-base">
               <RoomIcon room={activeRoom} />
               <div className="flex-1 min-w-0">
-                <h1 className="text-[15px] font-semibold text-text-primary truncate">
-                  {activeRoom.name}
+                <h1 className="text-[15px] font-semibold text-text-primary truncate flex items-center gap-2">
+                  {(() => {
+                    const team = activeRoom.teamId
+                      ? teams.find((t) => t.id === activeRoom.teamId)
+                      : null;
+                    const label = activeRoom.teamMain
+                      ? "Allgemein"
+                      : team
+                        ? prettyChannelName(activeRoom, team)
+                        : activeRoom.displayName;
+                    return (
+                      <>
+                        {team && (
+                          <>
+                            <span className="text-text-tertiary font-normal">
+                              {team.displayName}
+                            </span>
+                            <span className="text-text-tertiary font-normal">
+                              ›
+                            </span>
+                          </>
+                        )}
+                        <span>{label}</span>
+                        {activeRoom.type === "p" && (
+                          <Lock
+                            size={12}
+                            className="text-text-tertiary inline-block"
+                            aria-label="Privat"
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                 </h1>
                 {activeRoom.lastMessage && (
                   <div className="text-text-tertiary text-[11px] truncate">
@@ -343,6 +544,16 @@ export function ChatClient({
                 <Video size={14} />
                 Anruf starten
               </button>
+              {activeRoom.type !== "d" && (
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary border border-transparent hover:border-stroke-1"
+                  title="Kanal-Einstellungen"
+                  aria-label="Kanal-Einstellungen"
+                >
+                  <Settings size={16} />
+                </button>
+              )}
             </div>
 
             {/* Messages */}
@@ -412,7 +623,7 @@ export function ChatClient({
                   placeholder={
                     pendingFile
                       ? "Optional: Bildunterschrift …"
-                      : `Nachricht an ${activeRoom.name}`
+                      : `Nachricht an ${activeRoom.displayName || activeRoom.name}`
                   }
                   className="flex-1 bg-transparent border-0 outline-none resize-none text-[13px] text-text-primary placeholder:text-text-tertiary py-1 max-h-32"
                   style={{
@@ -456,6 +667,39 @@ export function ChatClient({
       {showNewChat && (
         <NewChatModal onCancel={() => setShowNewChat(false)} onPick={startDM} />
       )}
+
+      {/* ─── New Channel Modal ──────────────────────────────────── */}
+      {showNewChannel && (
+        <NewChannelModal
+          workspace={workspace}
+          workspaceLabel={workspaceLabel}
+          teams={teams}
+          onCancel={() => setShowNewChannel(false)}
+          onCreated={async (roomId) => {
+            await refreshRooms();
+            setActiveRoomId(roomId);
+            setShowNewChannel(false);
+          }}
+        />
+      )}
+
+      {/* ─── Channel Settings Drawer ────────────────────────────── */}
+      {showSettings && activeRoom && activeRoom.type !== "d" && (
+        <ChannelSettingsDrawer
+          room={activeRoom}
+          selfUsername={initialMe.username}
+          rocketChatWebBase={rocketChatWebBase}
+          onClose={() => setShowSettings(false)}
+          onUpdated={async () => {
+            await refreshRooms();
+          }}
+          onArchived={async () => {
+            await refreshRooms();
+            setShowSettings(false);
+            setActiveRoomId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -490,19 +734,145 @@ function SidebarSection({
   );
 }
 
+/**
+ * MS-Teams-style collapsible team section. Renders the team name as a
+ * clickable header, with the main channel rendered as "Allgemein" and
+ * sub-channels listed below. Private channels show a 🔒 icon.
+ */
+function TeamSection({
+  team,
+  main,
+  subs,
+  activeId,
+  onSelect,
+}: {
+  team: ChatTeam;
+  main: ChatRoom | null;
+  subs: ChatRoom[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const initial = (() => {
+    try {
+      return localStorage.getItem(`chat:team:${team.id}:open`) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [open, setOpen] = useState<boolean>(initial);
+  useEffect(() => {
+    try {
+      localStorage.setItem(`chat:team:${team.id}:open`, open ? "1" : "0");
+    } catch {
+      // ignore (private mode etc.)
+    }
+  }, [team.id, open]);
+
+  // Mark active if any room inside is active
+  const hasActive =
+    (main && main.id === activeId) || subs.some((s) => s.id === activeId);
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`w-full flex items-center gap-1.5 px-2 py-1.5 text-left text-[12px] font-semibold uppercase tracking-wide ${
+          hasActive ? "text-text-primary" : "text-text-secondary"
+        } hover:bg-bg-elevated rounded-sm`}
+        title={team.name}
+      >
+        <ChevronRight
+          size={12}
+          className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        <TeamAvatar team={team} />
+        <span className="flex-1 truncate normal-case tracking-normal text-[13px]">
+          {team.displayName}
+        </span>
+      </button>
+      {open && (
+        <div className="ml-2 border-l border-stroke-1 pl-1">
+          {main && (
+            <RoomRow
+              room={main}
+              active={main.id === activeId}
+              onClick={() => onSelect(main.id)}
+              labelOverride="Allgemein"
+              indent
+            />
+          )}
+          {subs.map((r) => (
+            <RoomRow
+              key={r.id}
+              room={r}
+              active={r.id === activeId}
+              onClick={() => onSelect(r.id)}
+              labelOverride={prettyChannelName(r, team)}
+              indent
+            />
+          ))}
+          {!main && subs.length === 0 && (
+            <div className="px-3 py-1 text-text-tertiary text-[11px] italic">
+              Noch keine Kanäle
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamAvatar({ team }: { team: ChatTeam }) {
+  // Stable color from team id, MS-Teams-style coloured square avatar
+  const palette = [
+    "#5b5fc7", // teams purple
+    "#0e7c87",
+    "#7e3c95",
+    "#1f6feb",
+    "#9c27b0",
+    "#c95a23",
+  ];
+  const hash = Array.from(team.id).reduce(
+    (a, c) => (a * 31 + c.charCodeAt(0)) >>> 0,
+    0,
+  );
+  const bg = palette[hash % palette.length];
+  const initials = team.displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+  return (
+    <span
+      className="inline-flex items-center justify-center w-5 h-5 rounded text-white text-[10px] font-semibold shrink-0"
+      style={{ background: bg }}
+      aria-hidden
+    >
+      {initials || "T"}
+    </span>
+  );
+}
+
 function RoomRow({
   room,
   active,
   onClick,
+  labelOverride,
+  indent,
 }: {
   room: ChatRoom;
   active: boolean;
   onClick: () => void;
+  labelOverride?: string;
+  indent?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors ${
+      className={`w-full flex items-center gap-2 ${
+        indent ? "pl-3 pr-2" : "px-3"
+      } py-1.5 text-left text-[13px] transition-colors ${
         active
           ? "bg-bg-overlay text-text-primary border-l-2 border-l-[#5b5fc7]"
           : "border-l-2 border-l-transparent text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
@@ -514,7 +884,7 @@ function RoomRow({
           room.unread > 0 ? "font-semibold text-text-primary" : ""
         }`}
       >
-        {room.name}
+        {labelOverride ?? room.displayName}
       </span>
       {room.unread > 0 && (
         <span className="text-[10px] font-bold bg-[#5b5fc7] text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
@@ -523,6 +893,28 @@ function RoomRow({
       )}
     </button>
   );
+}
+
+/**
+ * Strip a team's slug prefix from a channel name and Title-Case it so
+ * `kineo-escherwyss` under team `kineo-physiotherapie` reads as "Escherwyss"
+ * and `bereichsleitungs-board` under team `kineo` becomes "Bereichsleitungs Board".
+ * Falls back to the room's display name if no useful transformation applies.
+ */
+function prettyChannelName(room: ChatRoom, team: ChatTeam): string {
+  const fname = room.displayName ?? room.name;
+  if (fname && fname !== room.name) return fname;
+  const slug = room.name;
+  const teamPrefix = team.name + "-";
+  let trimmed = slug.startsWith(teamPrefix) ? slug.slice(teamPrefix.length) : slug;
+  // For physio, collapse the "kineo-" location prefix → just the location
+  if (team.name === "kineo-physiotherapie" && trimmed.startsWith("kineo-")) {
+    trimmed = "Kineo " + trimmed.slice("kineo-".length);
+  }
+  return trimmed
+    .split("-")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
 }
 
 function RoomIcon({ room, small }: { room: ChatRoom; small?: boolean }) {
@@ -981,6 +1373,971 @@ function stringHash(s: string): number {
     h |= 0;
   }
   return Math.abs(h);
+}
+
+/* ─────────────────────────────── Channel management ─────────────────────── */
+
+function NewChannelModal({
+  workspace,
+  workspaceLabel,
+  teams,
+  onCancel,
+  onCreated,
+}: {
+  workspace: string;
+  workspaceLabel: string;
+  teams: ChatTeam[];
+  onCancel: () => void;
+  onCreated: (roomId: string) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [topic, setTopic] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [teamId, setTeamId] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const slug = useMemo(() => slugify(name), [name]);
+
+  // Filter teams to those visible in this workspace, but always allow "no team".
+  const wsTeams = useMemo(
+    () => teams.filter((t) => t.workspace === workspace),
+    [teams, workspace],
+  );
+
+  const submit = async () => {
+    setError(null);
+    if (slug.length < 2) {
+      setError("Name muss mindestens 2 Zeichen haben");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/chat/channels", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: slug,
+          isPrivate,
+          workspace,
+          topic: topic.trim() || undefined,
+          teamId: teamId || undefined,
+          displayName: name.trim() || undefined,
+        }),
+      });
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        if (j.error === "name-already-in-use") {
+          setError("Ein Kanal mit diesem Namen existiert bereits.");
+        } else {
+          setError(j.error ?? `Fehler ${r.status}`);
+        }
+        return;
+      }
+      const j = (await r.json()) as { roomId: string };
+      await onCreated(j.roomId);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-start justify-center pt-20 z-50"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-bg-base border border-stroke-1 rounded-lg shadow-xl w-[460px] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
+          <FolderPlus size={14} />
+          <h3 className="font-semibold text-[13px] flex-1">
+            Neuer Kanal in {workspaceLabel}
+          </h3>
+          <button
+            onClick={onCancel}
+            className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-tertiary mb-1">
+              Name
+            </label>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="z.B. kineo-retail"
+              className="w-full bg-bg-elevated border border-stroke-1 rounded-md text-[13px] py-2 px-3 outline-none focus:border-stroke-2"
+              maxLength={64}
+            />
+            {slug && slug !== name && (
+              <p className="text-[11px] text-text-tertiary mt-1">
+                Wird gespeichert als <span className="font-mono">#{slug}</span>
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-tertiary mb-1">
+              Beschreibung (optional)
+            </label>
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="Worüber wird hier gesprochen?"
+              className="w-full bg-bg-elevated border border-stroke-1 rounded-md text-[13px] py-2 px-3 outline-none focus:border-stroke-2"
+              maxLength={200}
+            />
+          </div>
+
+          {wsTeams.length > 0 && (
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-tertiary mb-1">
+                Team (optional)
+              </label>
+              <select
+                value={teamId}
+                onChange={(e) => setTeamId(e.target.value)}
+                className="w-full bg-bg-elevated border border-stroke-1 rounded-md text-[13px] py-2 px-3 outline-none focus:border-stroke-2"
+              >
+                <option value="">— Kein Team —</option>
+                {wsTeams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.displayName}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-text-tertiary mt-1">
+                Teams gruppieren zusammengehörende Kanäle in der Seitenleiste.
+              </p>
+            </div>
+          )}
+
+          <div className="rounded-md border border-stroke-1 bg-bg-elevated p-3 space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="privacy"
+                checked={!isPrivate}
+                onChange={() => setIsPrivate(false)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 text-[13px] font-medium text-text-primary">
+                  <Globe size={12} />
+                  Öffentlich
+                </div>
+                <p className="text-[11px] text-text-tertiary">
+                  Jede:r in {workspaceLabel} kann beitreten und mitlesen.
+                </p>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="privacy"
+                checked={isPrivate}
+                onChange={() => setIsPrivate(true)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 text-[13px] font-medium text-text-primary">
+                  <Lock size={12} />
+                  Privat
+                </div>
+                <p className="text-[11px] text-text-tertiary">
+                  Nur eingeladene Mitglieder sehen den Kanal und seine Inhalte.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {error && (
+            <div className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="px-4 py-3 border-t border-stroke-1 flex items-center justify-end gap-2 bg-bg-chrome">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 rounded-md text-[12px] text-text-secondary hover:bg-bg-overlay"
+            disabled={submitting}
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || slug.length < 2}
+            className="px-3 py-1.5 rounded-md bg-[#5b5fc7] hover:bg-[#4f52b2] disabled:opacity-50 text-white text-[12px] font-medium flex items-center gap-1.5"
+          >
+            {submitting && <Loader2 size={12} className="spin" />}
+            Kanal erstellen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChannelSettingsDrawer({
+  room,
+  selfUsername,
+  rocketChatWebBase,
+  onClose,
+  onUpdated,
+  onArchived,
+}: {
+  room: ChatRoom;
+  selfUsername: string;
+  rocketChatWebBase: string;
+  onClose: () => void;
+  onUpdated: () => void | Promise<void>;
+  onArchived: () => void | Promise<void>;
+}) {
+  type Tab = "members" | "files" | "settings";
+  const [tab, setTab] = useState<Tab>("members");
+  const [members, setMembers] = useState<RoomMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [files, setFiles] = useState<RoomFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const type = room.type;
+
+  const refreshMembers = useCallback(async () => {
+    setMembersLoading(true);
+    try {
+      const r = await fetch(
+        `/api/chat/channels/${encodeURIComponent(room.id)}/members?type=${type}`,
+        { cache: "no-store" },
+      );
+      if (r.ok) {
+        const j = (await r.json()) as { members: RoomMember[] };
+        setMembers(j.members);
+      }
+    } finally {
+      setMembersLoading(false);
+    }
+  }, [room.id, type]);
+
+  const refreshFiles = useCallback(async () => {
+    setFilesLoading(true);
+    try {
+      const r = await fetch(
+        `/api/chat/channels/${encodeURIComponent(room.id)}/files?type=${type}`,
+        { cache: "no-store" },
+      );
+      if (r.ok) {
+        const j = (await r.json()) as { files: RoomFile[] };
+        setFiles(j.files);
+      }
+    } finally {
+      setFilesLoading(false);
+    }
+  }, [room.id, type]);
+
+  useEffect(() => {
+    if (tab === "members") void refreshMembers();
+    if (tab === "files") void refreshFiles();
+  }, [tab, refreshMembers, refreshFiles]);
+
+  const me = members.find((m) => m.username === selfUsername);
+  const isOwnerOrMod = !!(me?.isOwner || me?.isModerator);
+
+  return (
+    <aside className="w-[min(100%,420px)] sm:w-[400px] shrink-0 border-l border-stroke-1 bg-bg-chrome flex flex-col shadow-2xl">
+      <div className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2 bg-bg-elevated">
+        <div className="w-8 h-8 rounded bg-[#5b5fc7]/20 flex items-center justify-center shrink-0">
+          {type === "p" ? (
+            <Lock size={14} className="text-[#5b5fc7]" />
+          ) : (
+            <Hash size={14} className="text-[#5b5fc7]" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-[13px] text-text-primary leading-tight truncate">
+            {room.displayName || room.name}
+          </h3>
+          <p className="text-[10px] text-text-tertiary truncate font-mono">
+            #{room.name}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+          title="Schließen"
+        >
+          <X size={15} />
+        </button>
+      </div>
+
+      <div className="border-b border-stroke-1 flex">
+        {(
+          [
+            ["members", "Mitglieder", UsersIcon],
+            ["files", "Dateien", FileText],
+            ["settings", "Einstellungen", Settings],
+          ] as const
+        ).map(([key, label, Icon]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-medium border-b-2 ${
+              tab === key
+                ? "border-[#5b5fc7] text-text-primary"
+                : "border-transparent text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            <Icon size={13} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {error && (
+          <div className="m-3 text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        {tab === "members" && (
+          <MembersTab
+            members={members}
+            loading={membersLoading}
+            canEdit={isOwnerOrMod}
+            roomId={room.id}
+            roomType={type}
+            onChange={async () => {
+              await refreshMembers();
+              await onUpdated();
+            }}
+            onError={setError}
+            assetBase={rocketChatWebBase}
+          />
+        )}
+
+        {tab === "files" && (
+          <FilesTab
+            files={files}
+            loading={filesLoading}
+            assetBase={rocketChatWebBase}
+            onRefresh={refreshFiles}
+          />
+        )}
+
+        {tab === "settings" && (
+          <SettingsTab
+            room={room}
+            canEdit={isOwnerOrMod}
+            onUpdated={async () => {
+              await onUpdated();
+            }}
+            onArchived={async () => {
+              await onArchived();
+            }}
+            onError={setError}
+          />
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function MembersTab({
+  members,
+  loading,
+  canEdit,
+  roomId,
+  roomType,
+  onChange,
+  onError,
+  assetBase,
+}: {
+  members: RoomMember[];
+  loading: boolean;
+  canEdit: boolean;
+  roomId: string;
+  roomType: "c" | "p" | "d";
+  onChange: () => void | Promise<void>;
+  onError: (msg: string | null) => void;
+  assetBase: string;
+}) {
+  void assetBase;
+  const [addOpen, setAddOpen] = useState(false);
+
+  const remove = async (username: string) => {
+    if (!confirm(`@${username} wirklich aus diesem Kanal entfernen?`)) return;
+    onError(null);
+    const r = await fetch(
+      `/api/chat/channels/${encodeURIComponent(roomId)}/members?username=${encodeURIComponent(username)}&type=${roomType}`,
+      { method: "DELETE" },
+    );
+    if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      onError(
+        j.error === "forbidden"
+          ? "Keine Berechtigung. Nur Owner/Moderatoren können Mitglieder entfernen."
+          : (j.error ?? `Fehler ${r.status}`),
+      );
+      return;
+    }
+    await onChange();
+  };
+
+  return (
+    <div className="p-3 space-y-3">
+      {canEdit && (
+        <button
+          onClick={() => setAddOpen(true)}
+          className="w-full flex items-center justify-center gap-2 rounded-md border border-dashed border-stroke-1 bg-bg-elevated hover:bg-bg-overlay text-text-secondary hover:text-text-primary py-2 text-[12px] font-medium"
+        >
+          <UserPlus size={13} />
+          Mitglied einladen
+        </button>
+      )}
+
+      {loading && members.length === 0 && (
+        <div className="text-text-tertiary text-xs flex items-center justify-center py-8">
+          <Loader2 size={14} className="spin mr-2" />
+          Lade Mitglieder …
+        </div>
+      )}
+
+      <ul className="divide-y divide-stroke-1 -mx-1">
+        {members.map((m) => (
+          <li
+            key={m.id}
+            className="flex items-center gap-2 px-1 py-2 group"
+          >
+            <Avatar name={m.username} size={28} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[12.5px] text-text-primary truncate flex items-center gap-1.5">
+                {m.name ?? m.username}
+                {m.isOwner && (
+                  <Crown
+                    size={11}
+                    className="text-amber-400"
+                    aria-label="Owner"
+                  />
+                )}
+                {m.isModerator && !m.isOwner && (
+                  <Shield
+                    size={11}
+                    className="text-sky-400"
+                    aria-label="Moderator"
+                  />
+                )}
+              </div>
+              <div className="text-[11px] text-text-tertiary truncate">
+                @{m.username}
+                {m.status === "online" && (
+                  <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 align-middle" />
+                )}
+              </div>
+            </div>
+            {canEdit && !m.isOwner && (
+              <button
+                onClick={() => void remove(m.username)}
+                className="p-1.5 rounded text-text-tertiary hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
+                title={`@${m.username} entfernen`}
+              >
+                <UserMinus size={13} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {!loading && members.length === 0 && (
+        <div className="text-text-tertiary text-xs text-center py-8">
+          Noch keine Mitglieder
+        </div>
+      )}
+
+      {addOpen && (
+        <AddMemberPicker
+          roomId={roomId}
+          roomType={roomType}
+          existing={members.map((m) => m.username)}
+          onCancel={() => setAddOpen(false)}
+          onAdded={async () => {
+            setAddOpen(false);
+            await onChange();
+          }}
+          onError={onError}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddMemberPicker({
+  roomId,
+  roomType,
+  existing,
+  onCancel,
+  onAdded,
+  onError,
+}: {
+  roomId: string;
+  roomType: "c" | "p" | "d";
+  existing: string[];
+  onCancel: () => void;
+  onAdded: () => void | Promise<void>;
+  onError: (msg: string | null) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<ChatUserSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const existingSet = useMemo(() => new Set(existing), [existing]);
+
+  useEffect(() => {
+    let aborted = false;
+    if (!q || q.length < 2) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/chat/users?q=${encodeURIComponent(q)}`);
+        if (!aborted && r.ok) {
+          const j = (await r.json()) as { users: ChatUserSummary[] };
+          setResults(j.users);
+        }
+      } finally {
+        if (!aborted) setLoading(false);
+      }
+    }, 250);
+    return () => {
+      aborted = true;
+      clearTimeout(t);
+    };
+  }, [q]);
+
+  const invite = async (username: string) => {
+    onError(null);
+    setSubmitting(username);
+    try {
+      const r = await fetch(
+        `/api/chat/channels/${encodeURIComponent(roomId)}/members`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username, type: roomType }),
+        },
+      );
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        onError(
+          j.error === "forbidden"
+            ? "Keine Berechtigung. Nur Owner/Moderatoren können einladen."
+            : j.error === "user-not-found"
+              ? `@${username} existiert nicht im Chat.`
+              : (j.error ?? `Fehler ${r.status}`),
+        );
+        return;
+      }
+      await onAdded();
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-start justify-center pt-24 z-50"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-bg-base border border-stroke-1 rounded-lg shadow-xl w-[400px] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
+          <UserPlus size={14} />
+          <h3 className="font-semibold text-[13px] flex-1">
+            Mitglied einladen
+          </h3>
+          <button
+            onClick={onCancel}
+            className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className="p-3 border-b border-stroke-1">
+          <input
+            autoFocus
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Name oder @username"
+            className="w-full bg-bg-elevated border border-stroke-1 rounded-md text-[13px] py-2 px-3 outline-none focus:border-stroke-2"
+          />
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          {loading && (
+            <div className="p-4 text-text-tertiary text-xs text-center">
+              <Loader2 size={16} className="spin inline mr-1" /> Suche …
+            </div>
+          )}
+          {!loading && q.length >= 2 && results.length === 0 && (
+            <div className="p-4 text-text-tertiary text-xs text-center">
+              Niemand gefunden
+            </div>
+          )}
+          {results.map((u) => {
+            const already = existingSet.has(u.username);
+            return (
+              <button
+                key={u.id}
+                disabled={already || submitting === u.username}
+                onClick={() => void invite(u.username)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left ${
+                  already
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-bg-elevated"
+                }`}
+              >
+                <Avatar name={u.username} size={32} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] text-text-primary font-medium">
+                    {u.name ?? u.username}
+                  </div>
+                  <div className="text-text-tertiary text-[11px]">
+                    @{u.username}
+                  </div>
+                </div>
+                {already ? (
+                  <span className="text-[10px] text-text-tertiary uppercase tracking-wide">
+                    Mitglied
+                  </span>
+                ) : submitting === u.username ? (
+                  <Loader2 size={14} className="spin text-text-tertiary" />
+                ) : (
+                  <UserPlus size={14} className="text-text-tertiary" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilesTab({
+  files,
+  loading,
+  assetBase,
+  onRefresh,
+}: {
+  files: RoomFile[];
+  loading: boolean;
+  assetBase: string;
+  onRefresh: () => void | Promise<void>;
+}) {
+  return (
+    <div className="p-3 space-y-2">
+      <div className="flex items-center justify-between text-[11px] text-text-tertiary">
+        <span>{files.length} Datei{files.length === 1 ? "" : "en"} im Kanal</span>
+        <button
+          onClick={() => void onRefresh()}
+          className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+          title="Aktualisieren"
+        >
+          <RefreshCw size={11} />
+        </button>
+      </div>
+      {loading && files.length === 0 && (
+        <div className="text-text-tertiary text-xs flex items-center justify-center py-8">
+          <Loader2 size={14} className="spin mr-2" />
+          Lade Dateien …
+        </div>
+      )}
+      {!loading && files.length === 0 && (
+        <div className="text-text-tertiary text-xs text-center py-8">
+          Noch keine Dateien geteilt
+        </div>
+      )}
+      <ul className="space-y-1">
+        {files.map((f) => {
+          const href = resolveRcAssetUrl(f.url, assetBase);
+          return (
+            <li key={f.id}>
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-2 py-2 rounded hover:bg-bg-elevated"
+              >
+                <div className="w-8 h-8 rounded bg-bg-overlay flex items-center justify-center shrink-0">
+                  <FileText size={14} className="text-text-secondary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] text-text-primary truncate font-medium">
+                    {f.name}
+                  </div>
+                  <div className="text-[11px] text-text-tertiary truncate">
+                    {humanFileSize(f.size)}
+                    {" · "}
+                    @{f.uploadedBy}
+                    {f.uploadedAt && (
+                      <>
+                        {" · "}
+                        {new Date(f.uploadedAt).toLocaleDateString("de-DE")}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function SettingsTab({
+  room,
+  canEdit,
+  onUpdated,
+  onArchived,
+  onError,
+}: {
+  room: ChatRoom;
+  canEdit: boolean;
+  onUpdated: () => void | Promise<void>;
+  onArchived: () => void | Promise<void>;
+  onError: (msg: string | null) => void;
+}) {
+  const [topic, setTopic] = useState(room.topic ?? "");
+  const [savingTopic, setSavingTopic] = useState(false);
+  const [togglingPrivacy, setTogglingPrivacy] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const dirtyTopic = topic !== (room.topic ?? "");
+
+  const saveTopic = async () => {
+    onError(null);
+    setSavingTopic(true);
+    try {
+      const r = await fetch(
+        `/api/chat/channels/${encodeURIComponent(room.id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ topic, type: room.type }),
+        },
+      );
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        onError(j.error ?? `Fehler ${r.status}`);
+        return;
+      }
+      await onUpdated();
+    } finally {
+      setSavingTopic(false);
+    }
+  };
+
+  const togglePrivacy = async () => {
+    const target = room.type === "p" ? "öffentlich" : "privat";
+    if (
+      !confirm(
+        `Diesen Kanal wirklich auf ${target} stellen? Bestehende Mitglieder bleiben erhalten.`,
+      )
+    ) {
+      return;
+    }
+    onError(null);
+    setTogglingPrivacy(true);
+    try {
+      const r = await fetch(
+        `/api/chat/channels/${encodeURIComponent(room.id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            isPrivate: room.type !== "p",
+            type: room.type,
+          }),
+        },
+      );
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        onError(j.error ?? `Fehler ${r.status}`);
+        return;
+      }
+      await onUpdated();
+    } finally {
+      setTogglingPrivacy(false);
+    }
+  };
+
+  const archive = async () => {
+    if (
+      !confirm(
+        "Kanal wirklich archivieren? Er bleibt erhalten, ist aber nicht mehr aktiv.",
+      )
+    )
+      return;
+    onError(null);
+    setArchiving(true);
+    try {
+      const r = await fetch(
+        `/api/chat/channels/${encodeURIComponent(room.id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ archive: true, type: room.type }),
+        },
+      );
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        onError(j.error ?? `Fehler ${r.status}`);
+        return;
+      }
+      await onArchived();
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  return (
+    <div className="p-3 space-y-5">
+      <section>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
+          Beschreibung
+        </h4>
+        <textarea
+          rows={2}
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          disabled={!canEdit}
+          placeholder="Worüber wird hier gesprochen?"
+          className="w-full bg-bg-elevated border border-stroke-1 rounded-md text-[12.5px] py-2 px-3 outline-none focus:border-stroke-2 resize-none disabled:opacity-60"
+          maxLength={250}
+        />
+        {canEdit && dirtyTopic && (
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              onClick={() => setTopic(room.topic ?? "")}
+              className="px-3 py-1.5 text-[12px] text-text-secondary hover:bg-bg-overlay rounded-md"
+            >
+              Verwerfen
+            </button>
+            <button
+              onClick={() => void saveTopic()}
+              disabled={savingTopic}
+              className="px-3 py-1.5 rounded-md bg-[#5b5fc7] hover:bg-[#4f52b2] disabled:opacity-50 text-white text-[12px] font-medium flex items-center gap-1.5"
+            >
+              {savingTopic && <Loader2 size={11} className="spin" />}
+              Speichern
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
+          Sichtbarkeit
+        </h4>
+        <div className="rounded-md border border-stroke-1 bg-bg-elevated p-3 flex items-start gap-3">
+          <div className="w-7 h-7 rounded bg-bg-overlay flex items-center justify-center shrink-0">
+            {room.type === "p" ? (
+              <Lock size={13} className="text-text-secondary" />
+            ) : (
+              <Globe size={13} className="text-text-secondary" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12.5px] font-medium text-text-primary">
+              {room.type === "p" ? "Privat" : "Öffentlich"}
+            </div>
+            <p className="text-[11px] text-text-tertiary">
+              {room.type === "p"
+                ? "Nur eingeladene Mitglieder sehen diesen Kanal."
+                : "Jede:r im Workspace kann diesen Kanal sehen und beitreten."}
+            </p>
+          </div>
+          {canEdit && (
+            <button
+              onClick={() => void togglePrivacy()}
+              disabled={togglingPrivacy}
+              className="px-2.5 py-1 text-[11px] rounded-md border border-stroke-1 text-text-secondary hover:bg-bg-overlay hover:text-text-primary disabled:opacity-50 flex items-center gap-1"
+            >
+              {togglingPrivacy && <Loader2 size={10} className="spin" />}
+              Auf {room.type === "p" ? "öffentlich" : "privat"} stellen
+            </button>
+          )}
+        </div>
+      </section>
+
+      {canEdit && (
+        <section>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
+            Gefahrenzone
+          </h4>
+          <button
+            onClick={() => void archive()}
+            disabled={archiving}
+            className="w-full flex items-center justify-center gap-2 rounded-md border border-stroke-1 bg-bg-elevated hover:border-amber-500/40 hover:text-amber-300 text-text-secondary py-2 text-[12px] disabled:opacity-50"
+          >
+            {archiving ? (
+              <Loader2 size={12} className="spin" />
+            ) : (
+              <Archive size={12} />
+            )}
+            Kanal archivieren
+          </button>
+          <p className="text-[10.5px] text-text-tertiary mt-1.5">
+            Archivierte Kanäle werden ausgeblendet, aber nicht gelöscht. Ein
+            Workspace-Admin kann sie reaktivieren.
+          </p>
+        </section>
+      )}
+
+      {!canEdit && (
+        <p className="text-[11px] text-text-tertiary italic">
+          Nur Owner und Moderatoren können Kanal-Einstellungen ändern.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function humanFileSize(bytes: number): string {
+  if (!bytes || bytes < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 /**

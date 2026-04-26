@@ -1,9 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getWorkspace } from "@/lib/workspaces";
-import { ensureUser, listRoomsForUser } from "@/lib/chat/rocketchat";
+import {
+  ensureUser,
+  listRoomsForUser,
+  listTeams,
+} from "@/lib/chat/rocketchat";
 import { ChatClient } from "@/components/chat/ChatClient";
-import type { ChatRoom } from "@/lib/chat/types";
+import type { ChatRoom, ChatTeam } from "@/lib/chat/types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +25,10 @@ export default async function ChatPage({
   const username = session?.user?.username ?? session?.user?.name;
   if (!email || !username) redirect("/login");
 
+  const ws = workspaceParam.toLowerCase();
+
   let rooms: ChatRoom[] = [];
+  let teams: ChatTeam[] = [];
   let me = { username, id: "" };
   let error: string | null = null;
 
@@ -32,7 +39,26 @@ export default async function ChatPage({
       name: session.user?.name ?? username,
     });
     me = { username, id: rcUserId };
-    rooms = await listRoomsForUser(rcUserId);
+    const [allRooms, allTeams] = await Promise.all([
+      listRoomsForUser(rcUserId),
+      listTeams(),
+    ]);
+    const teamWsById = new Map<string, string | null>(
+      allTeams.map((t) => [t.id, t.workspace]),
+    );
+    rooms = allRooms.filter((r) => {
+      if (r.type === "d") return true;
+      const teamWs = r.teamId ? teamWsById.get(r.teamId) ?? null : null;
+      const effective = r.workspace ?? teamWs;
+      if (!effective) return false;
+      return effective === ws;
+    });
+    const visibleTeamIds = new Set(
+      rooms.map((r) => r.teamId).filter(Boolean) as string[],
+    );
+    teams = allTeams.filter(
+      (t) => visibleTeamIds.has(t.id) && t.workspace === ws,
+    );
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -65,7 +91,10 @@ export default async function ChatPage({
   return (
     <div className="h-full">
       <ChatClient
+        workspace={ws}
+        workspaceLabel={workspace.name}
         initialRooms={rooms}
+        initialTeams={teams}
         initialMe={me}
         rocketChatWebBase={rocketChatWebBase}
       />

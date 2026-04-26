@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   ChatRoom,
   ChatRoomType,
+  ChatTeam,
   ChatUserSummary,
 } from "./types";
 import { getOrCreateUserAuthToken, invalidateUserToken } from "./user-tokens";
@@ -127,6 +128,9 @@ const userIdCache = new Map<string, string>();
 export async function getUserIdByUsername(username: string): Promise<string> {
   const cached = userIdCache.get(username);
   if (cached) return cached;
+  // Rocket.Chat's `users.info?username=` is case-sensitive. We try the value
+  // as-is first, then fall back to a case-insensitive `users.list` query so
+  // a Portal-side `ali` correctly resolves to a chat user named `Ali`.
   try {
     const r = await rcAdmin<{ user: { _id: string } }>(
       `/api/v1/users.info?username=${encodeURIComponent(username)}`,
@@ -135,13 +139,29 @@ export async function getUserIdByUsername(username: string): Promise<string> {
     return r.user._id;
   } catch (e) {
     if (
-      e instanceof Error &&
-      /404|user.?not.?found|users-not-allowed-to-view/i.test(e.message)
+      !(e instanceof Error) ||
+      !/404|user.?not.?found|users-not-allowed-to-view/i.test(e.message)
     ) {
-      throw new Error(`USER_NOT_IN_CHAT:${username}`);
+      throw e;
     }
-    throw e;
   }
+  try {
+    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const q = encodeURIComponent(
+      JSON.stringify({ username: { $regex: `^${escaped}$`, $options: "i" } }),
+    );
+    const r = await rcAdmin<{ users: Array<{ _id: string; username: string }> }>(
+      `/api/v1/users.list?count=1&query=${q}`,
+    );
+    const u = r.users?.[0];
+    if (u?._id) {
+      userIdCache.set(username, u._id);
+      return u._id;
+    }
+  } catch {
+    // fall through to NOT_IN_CHAT
+  }
+  throw new Error(`USER_NOT_IN_CHAT:${username}`);
 }
 
 async function getUserIdByEmail(email: string): Promise<string | null> {
@@ -224,6 +244,9 @@ type RcChannel = {
   usersCount?: number;
   lastMessage?: { msg: string; ts: string; u?: { username: string } };
   t?: ChatRoomType;
+  teamId?: string;
+  teamMain?: boolean;
+  customFields?: { workspace?: string };
 };
 
 type RcRoomLite = {
@@ -235,11 +258,70 @@ type RcRoomLite = {
   usernames?: string[];
   lastMessage?: { msg: string; ts: string; u?: { username: string } };
   t?: ChatRoomType;
+  teamId?: string;
+  teamMain?: boolean;
+  customFields?: { workspace?: string };
 };
 
 type RcImLite = RcRoomLite & {
   usernames?: string[];
 };
+
+function lastMessageOf(
+  m?: { msg: string; ts: string; u?: { username: string } } | null,
+) {
+  return m
+    ? { text: m.msg, at: m.ts, by: m.u?.username ?? "unknown" }
+    : undefined;
+}
+
+function workspaceOf(r: RcRoomLite | RcChannel): string | null {
+  const ws = r.customFields?.workspace;
+  if (ws && typeof ws === "string") return ws.toLowerCase();
+  // Heuristic fallback: legacy channels created before the customField
+  // convention. If the slug starts with a known workspace prefix, use that.
+  const name = (r.name ?? "").toLowerCase();
+  for (const w of ["kineo", "corehub", "medtheris"]) {
+    if (name === w || name.startsWith(`${w}-`)) return w;
+  }
+  return null;
+}
+
+function mapRoom(
+  r: RcRoomLite,
+  type: ChatRoomType,
+  selfUsername: string,
+): ChatRoom {
+  const baseName = r.name ?? "(no name)";
+  const display = r.fname && r.fname !== baseName ? r.fname : baseName;
+  if (type === "d") {
+    const partner =
+      (r.usernames ?? []).find((u) => u !== selfUsername) ??
+      r.usernames?.[0] ??
+      "(direct)";
+    return {
+      id: r._id,
+      type,
+      name: partner,
+      displayName: partner,
+      unread: 0,
+      lastMessage: lastMessageOf(r.lastMessage),
+      dmPartnerUsername: partner,
+      workspace: null,
+    };
+  }
+  return {
+    id: r._id,
+    type,
+    name: baseName,
+    displayName: display,
+    unread: 0,
+    lastMessage: lastMessageOf(r.lastMessage),
+    teamId: r.teamId || undefined,
+    teamMain: r.teamMain || undefined,
+    workspace: workspaceOf(r),
+  };
+}
 
 export async function listRoomsForUser(userId: string): Promise<ChatRoom[]> {
   // Rocket.Chat doesn't expose a single "all subscriptions" endpoint that
@@ -256,55 +338,9 @@ export async function listRoomsForUser(userId: string): Promise<ChatRoom[]> {
   ]);
 
   const rooms: ChatRoom[] = [];
-
-  for (const c of channels.channels) {
-    rooms.push({
-      id: c._id,
-      type: "c",
-      name: c.fname ?? c.name ?? "(no name)",
-      unread: 0,
-      lastMessage: c.lastMessage
-        ? {
-            text: c.lastMessage.msg,
-            at: c.lastMessage.ts,
-            by: c.lastMessage.u?.username ?? "unknown",
-          }
-        : undefined,
-    });
-  }
-  for (const g of groups.groups) {
-    rooms.push({
-      id: g._id,
-      type: "p",
-      name: g.fname ?? g.name ?? "(no name)",
-      unread: 0,
-      lastMessage: g.lastMessage
-        ? {
-            text: g.lastMessage.msg,
-            at: g.lastMessage.ts,
-            by: g.lastMessage.u?.username ?? "unknown",
-          }
-        : undefined,
-    });
-  }
-  for (const i of ims.ims) {
-    const partner =
-      i.usernames?.find((u) => u !== me.username) ?? i.usernames?.[0] ?? "(direct)";
-    rooms.push({
-      id: i._id,
-      type: "d",
-      name: partner,
-      unread: 0,
-      lastMessage: i.lastMessage
-        ? {
-            text: i.lastMessage.msg,
-            at: i.lastMessage.ts,
-            by: i.lastMessage.u?.username ?? "unknown",
-          }
-        : undefined,
-      dmPartnerUsername: partner,
-    });
-  }
+  for (const c of channels.channels) rooms.push(mapRoom(c, "c", me.username));
+  for (const g of groups.groups) rooms.push(mapRoom(g, "p", me.username));
+  for (const i of ims.ims) rooms.push(mapRoom(i, "d", me.username));
 
   rooms.sort((a, b) => {
     const at = a.lastMessage?.at ?? "";
@@ -312,6 +348,58 @@ export async function listRoomsForUser(userId: string): Promise<ChatRoom[]> {
     return bt.localeCompare(at);
   });
   return rooms;
+}
+
+/** Map of teamId → ChatTeam. Cached briefly because teams change rarely. */
+type TeamMeta = { _id: string; name: string; roomId?: string };
+let teamCache: { at: number; map: Map<string, ChatTeam> } | null = null;
+const TEAM_TTL_MS = 60_000;
+
+const TEAM_DISPLAY_OVERRIDES: Record<string, string> = {
+  kineo: "Kineo",
+  "kineo-physiotherapie": "Kineo Physiotherapie",
+  "kineo-fitness": "Kineo Fitness",
+  "kineo-sportwissenschaften": "Kineo Sportwissenschaften",
+};
+
+function prettifyTeamName(slug: string): string {
+  if (TEAM_DISPLAY_OVERRIDES[slug]) return TEAM_DISPLAY_OVERRIDES[slug];
+  return slug
+    .split("-")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+function teamWorkspaceFromName(name: string): string | null {
+  const n = name.toLowerCase();
+  for (const w of ["kineo", "corehub", "medtheris"]) {
+    if (n === w || n.startsWith(`${w}-`)) return w;
+  }
+  return null;
+}
+
+export async function listTeams(): Promise<ChatTeam[]> {
+  if (teamCache && Date.now() - teamCache.at < TEAM_TTL_MS) {
+    return [...teamCache.map.values()];
+  }
+  const r = await rcAdmin<{ teams: TeamMeta[] }>(
+    `/api/v1/teams.listAll?count=200`,
+  ).catch(() => ({ teams: [] }));
+  const map = new Map<string, ChatTeam>();
+  for (const t of r.teams ?? []) {
+    map.set(t._id, {
+      id: t._id,
+      name: t.name,
+      displayName: prettifyTeamName(t.name),
+      workspace: teamWorkspaceFromName(t.name),
+    });
+  }
+  teamCache = { at: Date.now(), map };
+  return [...map.values()];
+}
+
+export function invalidateTeamCache() {
+  teamCache = null;
 }
 
 export async function getRoomInfo(
@@ -598,4 +686,315 @@ export async function postCallInvite(
   ].join("\n");
   const msg = await postMessage(asUserId, roomId, text);
   return { link, messageId: msg.id };
+}
+
+// ─── Channel/Group management ────────────────────────────────────────────────
+
+export type CreateRoomInput = {
+  /** Slug-style name (lowercase, hyphenated). RC will normalise it anyway. */
+  name: string;
+  /** `false` => public channel (channels.create). `true` => private group. */
+  isPrivate: boolean;
+  /** Workspace tag (kineo|corehub|medtheris) → stored as customFields.workspace. */
+  workspace: string;
+  /** Optional human display name. Stored as `fname`. */
+  displayName?: string;
+  /** Optional one-liner for the channel header. */
+  topic?: string;
+  /** Optional initial member usernames (besides the creator). */
+  memberUsernames?: string[];
+  /** Optional team to attach this channel to (its sub-channel). */
+  teamId?: string;
+  /** Optional team name (alternative to teamId). */
+  teamName?: string;
+};
+
+/** Slugify a free-form name into a Rocket.Chat-acceptable channel name. */
+export function slugifyChannelName(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+/**
+ * Create a channel (public) or group (private). Acts AS the requesting user
+ * so they automatically become the owner. Tags the room with `customFields.
+ * workspace=<workspace>` for portal filtering.
+ */
+export async function createRoom(
+  asUserId: string,
+  input: CreateRoomInput,
+): Promise<{ roomId: string; type: "c" | "p" }> {
+  const path = input.isPrivate ? "/api/v1/groups.create" : "/api/v1/channels.create";
+  const body: Record<string, unknown> = {
+    name: slugifyChannelName(input.name),
+    members: input.memberUsernames ?? [],
+    customFields: { workspace: input.workspace.toLowerCase() },
+    extraData: input.teamId
+      ? { teamId: input.teamId }
+      : input.teamName
+        ? { teamId: input.teamName }
+        : undefined,
+  };
+  // RC ignores unknown top-level keys; pass these for completeness.
+  if (input.displayName) body.fname = input.displayName;
+  if (input.topic) body.topic = input.topic;
+
+  const r = await rcAs<{ channel?: { _id: string }; group?: { _id: string } }>(
+    asUserId,
+    path,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  const id = r.channel?._id ?? r.group?._id;
+  if (!id) throw new Error("rocketchat createRoom: no _id in response");
+
+  // RC sometimes ignores customFields on create — set explicitly via admin too,
+  // so workspace filtering works regardless of which version we're talking to.
+  try {
+    const setPath = input.isPrivate
+      ? "/api/v1/groups.setCustomFields"
+      : "/api/v1/channels.setCustomFields";
+    await rcAdmin(setPath, {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: id,
+        customFields: { workspace: input.workspace.toLowerCase() },
+      }),
+    });
+  } catch {
+    // Best-effort. Heuristic name-prefix fallback in workspaceOf() will still
+    // catch the room if it's named e.g. `kineo-foo`.
+  }
+  if (input.displayName) {
+    try {
+      const setNamePath = input.isPrivate
+        ? "/api/v1/groups.setName"
+        : "/api/v1/channels.setName";
+      await rcAs(asUserId, setNamePath, {
+        method: "POST",
+        body: JSON.stringify({ roomId: id, name: slugifyChannelName(input.name) }),
+      });
+    } catch {
+      // ignore — name is already set on creation
+    }
+  }
+  return { roomId: id, type: input.isPrivate ? "p" : "c" };
+}
+
+/** Toggle channel ↔ group (public ↔ private). RC implements this as setType. */
+export async function setRoomPrivacy(
+  asUserId: string,
+  roomId: string,
+  isPrivate: boolean,
+): Promise<void> {
+  // RC quirk: from a public channel you call channels.setType; from a private
+  // group you call groups.setType. Caller knows the current type, so they pass
+  // the *desired* state and we infer the source endpoint.
+  const path = isPrivate ? "/api/v1/channels.setType" : "/api/v1/groups.setType";
+  await rcAs(asUserId, path, {
+    method: "POST",
+    body: JSON.stringify({ roomId, type: isPrivate ? "p" : "c" }),
+  });
+}
+
+export async function setRoomTopic(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+  topic: string,
+): Promise<void> {
+  const path =
+    type === "p" ? "/api/v1/groups.setTopic" : "/api/v1/channels.setTopic";
+  await rcAs(asUserId, path, {
+    method: "POST",
+    body: JSON.stringify({ roomId, topic }),
+  });
+}
+
+export async function renameRoom(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+  newName: string,
+): Promise<void> {
+  const path =
+    type === "p" ? "/api/v1/groups.setName" : "/api/v1/channels.setName";
+  await rcAs(asUserId, path, {
+    method: "POST",
+    body: JSON.stringify({ roomId, name: slugifyChannelName(newName) }),
+  });
+}
+
+export async function archiveRoom(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+  archive: boolean,
+): Promise<void> {
+  const verb = archive ? "archive" : "unarchive";
+  const path =
+    type === "p"
+      ? `/api/v1/groups.${verb}`
+      : `/api/v1/channels.${verb}`;
+  await rcAs(asUserId, path, {
+    method: "POST",
+    body: JSON.stringify({ roomId }),
+  });
+}
+
+export async function inviteToRoom(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+  userIdToAdd: string,
+): Promise<void> {
+  const path =
+    type === "p" ? "/api/v1/groups.invite" : "/api/v1/channels.invite";
+  await rcAs(asUserId, path, {
+    method: "POST",
+    body: JSON.stringify({ roomId, userId: userIdToAdd }),
+  });
+}
+
+export async function kickFromRoom(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+  userIdToKick: string,
+): Promise<void> {
+  const path =
+    type === "p" ? "/api/v1/groups.kick" : "/api/v1/channels.kick";
+  await rcAs(asUserId, path, {
+    method: "POST",
+    body: JSON.stringify({ roomId, userId: userIdToKick }),
+  });
+}
+
+export type RoomMember = {
+  id: string;
+  username: string;
+  name?: string;
+  status?: "online" | "away" | "busy" | "offline";
+  isOwner?: boolean;
+  isModerator?: boolean;
+};
+
+export async function listRoomMembers(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+): Promise<RoomMember[]> {
+  const path =
+    type === "d"
+      ? `/api/v1/im.members?roomId=${roomId}&count=100`
+      : type === "p"
+        ? `/api/v1/groups.members?roomId=${roomId}&count=100`
+        : `/api/v1/channels.members?roomId=${roomId}&count=100`;
+  const r = await rcAs<{
+    members: Array<{
+      _id: string;
+      username: string;
+      name?: string;
+      status?: string;
+    }>;
+    // groups.members and channels.members also return roles via a separate
+    // endpoint; we fetch them in parallel below.
+  }>(asUserId, path);
+
+  // Fetch roles to mark owner / moderator (best-effort).
+  let owners = new Set<string>();
+  let mods = new Set<string>();
+  if (type !== "d") {
+    try {
+      const rolesPath =
+        type === "p" ? "/api/v1/groups.roles" : "/api/v1/channels.roles";
+      const rr = await rcAs<{
+        roles: Array<{ u: { _id: string }; roles: string[] }>;
+      }>(asUserId, `${rolesPath}?roomId=${roomId}`);
+      for (const e of rr.roles ?? []) {
+        if (e.roles.includes("owner")) owners.add(e.u._id);
+        if (e.roles.includes("moderator")) mods.add(e.u._id);
+      }
+    } catch {
+      owners = new Set();
+      mods = new Set();
+    }
+  }
+
+  return r.members.map((m) => ({
+    id: m._id,
+    username: m.username,
+    name: m.name,
+    status: (m.status as RoomMember["status"]) ?? "offline",
+    isOwner: owners.has(m._id),
+    isModerator: mods.has(m._id),
+  }));
+}
+
+export type RoomFile = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  uploadedAt: string;
+  uploadedBy: string;
+  /** Direct download URL (Rocket.Chat-relative, e.g. `/file-upload/<id>/<name>`). */
+  url: string;
+};
+
+export async function listRoomFiles(
+  asUserId: string,
+  roomId: string,
+  type: ChatRoomType,
+  count: number = 50,
+): Promise<RoomFile[]> {
+  const path =
+    type === "d"
+      ? "/api/v1/im.files"
+      : type === "p"
+        ? "/api/v1/groups.files"
+        : "/api/v1/channels.files";
+  const r = await rcAs<{
+    files: Array<{
+      _id: string;
+      name: string;
+      type?: string;
+      size?: number;
+      uploadedAt?: string;
+      url?: string;
+      path?: string;
+      user?: { username?: string };
+      userId?: string;
+    }>;
+  }>(asUserId, `${path}?roomId=${roomId}&count=${count}&sort=${encodeURIComponent('{"uploadedAt":-1}')}`);
+  return (r.files ?? []).map((f) => ({
+    id: f._id,
+    name: f.name,
+    type: f.type ?? "application/octet-stream",
+    size: f.size ?? 0,
+    uploadedAt: f.uploadedAt ?? "",
+    uploadedBy: f.user?.username ?? "unknown",
+    url:
+      f.url ??
+      f.path ??
+      `/file-upload/${f._id}/${encodeURIComponent(f.name)}`,
+  }));
+}
+
+/**
+ * Resolve a username → Rocket.Chat user id, but only if a user exists.
+ * Differs from getUserIdByUsername() in that it doesn't throw when missing —
+ * useful for invite flows where we want to surface a friendly "user not found".
+ */
+export async function findUserIdByUsername(username: string): Promise<string | null> {
+  try {
+    return await getUserIdByUsername(username);
+  } catch {
+    return null;
+  }
 }
