@@ -26,9 +26,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.expiresAt = account.expires_at;
       }
       if (profile) {
-        const p = profile as { preferred_username?: string; groups?: string[] };
+        const p = profile as {
+          preferred_username?: string;
+          groups?: string[];
+          mailbox?: string;
+        };
         token.preferredUsername = p.preferred_username;
         token.groups = Array.isArray(p.groups) ? p.groups : [];
+        if (typeof p.mailbox === "string" && p.mailbox.includes("@")) {
+          token.mailbox = p.mailbox.toLowerCase().trim();
+        }
       }
       return token;
     },
@@ -36,7 +43,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.preferredUsername && session.user) {
         session.user.username = token.preferredUsername as string;
       }
+      if (session.user) {
+        const mailbox = (token.mailbox as string | undefined) ?? undefined;
+        session.user.mailbox = mailbox && mailbox.includes("@") ? mailbox : session.user.email ?? undefined;
+      }
       session.idToken = token.idToken as string | undefined;
+      session.accessToken = token.accessToken as string | undefined;
+      session.accessTokenExpiresAt = token.expiresAt as number | undefined;
       session.groups = (token.groups as string[] | undefined) ?? [];
       return session;
     },
