@@ -47,29 +47,35 @@ import type {
   SignStatus,
   SignTotals,
 } from "@/lib/sign/types";
+import { useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
 
 const STATUS_FILTERS: ReadonlyArray<{
   id: SignStatus | "ALL";
-  label: string;
+  labelKey: keyof Messages;
+  fallback: string;
   icon: typeof Inbox;
 }> = [
-  { id: "ALL", label: "Alle", icon: Inbox },
-  { id: "DRAFT", label: "Entwürfe", icon: FileSignature },
-  { id: "PENDING", label: "In Signatur", icon: Send },
-  { id: "COMPLETED", label: "Erledigt", icon: CheckCircle2 },
-  { id: "REJECTED", label: "Abgelehnt", icon: XCircle },
+  { id: "ALL", labelKey: "sign.scope.all", fallback: "Alle", icon: Inbox },
+  { id: "DRAFT", labelKey: "sign.status.draft", fallback: "Entwürfe", icon: FileSignature },
+  { id: "PENDING", labelKey: "sign.status.pending", fallback: "In Signatur", icon: Send },
+  { id: "COMPLETED", labelKey: "sign.status.completed", fallback: "Erledigt", icon: CheckCircle2 },
+  { id: "REJECTED", labelKey: "sign.status.rejected", fallback: "Abgelehnt", icon: XCircle },
 ];
 
-function statusLabel(s: SignStatus): string {
+function statusLabel(
+  s: SignStatus,
+  t?: (k: keyof Messages, fallback?: string) => string,
+): string {
   switch (s) {
     case "DRAFT":
-      return "Entwurf";
+      return t ? t("sign.status.draft", "Entwurf") : "Entwurf";
     case "PENDING":
-      return "In Signatur";
+      return t ? t("sign.status.pending", "In Signatur") : "In Signatur";
     case "COMPLETED":
-      return "Erledigt";
+      return t ? t("sign.status.completed", "Erledigt") : "Erledigt";
     case "REJECTED":
-      return "Abgelehnt";
+      return t ? t("sign.status.rejected", "Abgelehnt") : "Abgelehnt";
   }
 }
 
@@ -146,6 +152,7 @@ export function SignClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState<string | null>(null);
+  const t = useT();
   const [filter, setFilter] = useState<SignStatus | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [totals, setTotals] = useState<SignTotals | null>(null);
@@ -350,7 +357,7 @@ export function SignClient({
   const primary = (
     <>
       <PaneHeader
-        title="Signaturen"
+        title={t("sign.documents")}
         subtitle={workspaceName}
         accent={accent}
         icon={<PenLine size={14} style={{ color: accent }} />}
@@ -360,7 +367,7 @@ export function SignClient({
               type="button"
               onClick={() => void loadDocs()}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Neu laden"
+              title={t("common.refresh")}
             >
               <RefreshCw size={13} />
             </button>
@@ -369,7 +376,7 @@ export function SignClient({
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Sign-Einstellungen (Documenso)"
+              title={t("common.settings") + " (Documenso)"}
             >
               <SettingsIcon size={13} />
             </a>
@@ -414,7 +421,7 @@ export function SignClient({
               }
             >
               <f.icon size={13} className={active ? "" : "text-text-tertiary"} />
-              <span className="flex-1 font-medium">{f.label}</span>
+              <span className="flex-1 font-medium">{t(f.labelKey, f.fallback)}</span>
               {count != null && (
                 <span
                   className={`text-[10.5px] tabular-nums ${
@@ -490,9 +497,10 @@ export function SignClient({
   const secondary = (
     <>
       <PaneHeader
-        title={
-          STATUS_FILTERS.find((f) => f.id === filter)?.label ?? "Dokumente"
-        }
+        title={(() => {
+          const tab = STATUS_FILTERS.find((f) => f.id === filter);
+          return tab ? t(tab.labelKey, tab.fallback) : t("sign.documents");
+        })()}
         subtitle={`${filteredDocs.length} Dokument${filteredDocs.length === 1 ? "" : "e"}`}
         accent={accent}
       >
@@ -629,7 +637,7 @@ export function SignClient({
           <span>·</span>
           <span>{formatRelative(detail.createdAt)}</span>
           <span>·</span>
-          <StatusPill label={statusLabel(detail.status)} tone={statusTone(detail.status)} />
+          <StatusPill label={statusLabel(detail.status, t)} tone={statusTone(detail.status)} />
         </div>
       </div>
       <a
@@ -717,6 +725,7 @@ function DocumentRow({
   onClick: () => void;
   accent: string;
 }) {
+  const t = useT();
   const signers = doc.recipients.filter((r) => r.role === "SIGNER");
   const signed = signers.filter((r) => r.signingStatus === "SIGNED").length;
   const total = signers.length;
@@ -743,7 +752,7 @@ function DocumentRow({
             <span className="text-[12.5px] font-semibold truncate flex-1">
               {doc.title}
             </span>
-            <StatusPill label={statusLabel(doc.status)} tone={statusTone(doc.status)} />
+            <StatusPill label={statusLabel(doc.status, t)} tone={statusTone(doc.status)} />
           </div>
           <div className="flex items-center gap-1.5 text-[10.5px] text-text-tertiary mt-1">
             <Clock size={10} />
@@ -822,6 +831,7 @@ function DocumentDetailView({
   onDelete: () => void;
   onOpenEditor: () => void;
 }) {
+  const t = useT();
   const signers = doc.recipients.filter((r) => r.role === "SIGNER");
   const totalSigners = signers.length;
   const signedCount = signers.filter((r) => r.signingStatus === "SIGNED").length;
@@ -974,8 +984,8 @@ function DocumentDetailView({
     <>
       <SidebarSection title="Status">
         <div className="space-y-2 text-[11.5px]">
-          <Field label="Status">
-            <StatusPill label={statusLabel(doc.status)} tone={statusTone(doc.status)} />
+          <Field label={t("common.status")}>
+            <StatusPill label={statusLabel(doc.status, t)} tone={statusTone(doc.status)} />
           </Field>
           <Field label="Quelle">
             <span className="text-text-secondary">

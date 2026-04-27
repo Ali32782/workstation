@@ -65,6 +65,7 @@ import {
 } from "@/components/ui/Pills";
 import { groupByDate, shortTime } from "@/components/ui/datetime";
 import { clickToCallUrl } from "@/lib/calls/click-to-call";
+import { useT } from "@/components/LocaleProvider";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type {
   MacroSummary,
@@ -150,6 +151,7 @@ export function HelpdeskClient({
   workspaceName: string;
   accent: string;
 }) {
+  const t = useT();
   /** Threads `ws=<workspaceId>` through every helpdesk call so the server
    * resolves the right Zammad tenant and never leaks tickets across portals. */
   const apiUrl = useCallback(
@@ -518,7 +520,7 @@ export function HelpdeskClient({
   const primary = (
     <>
       <PaneHeader
-        title="Tickets"
+        title={t("helpdesk.tickets")}
         subtitle={workspaceName}
         accent={accent}
         icon={<Headphones size={14} style={{ color: accent }} />}
@@ -528,14 +530,14 @@ export function HelpdeskClient({
               type="button"
               onClick={() => void loadList(search, stateFilter, scopeFilter)}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Neu laden"
+              title={t("common.refresh")}
             >
               <RefreshCw size={13} />
             </button>
             <Link
               href={`/${workspaceId}/helpdesk/settings`}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Einstellungen (Gruppen, Absender, Kanäle)"
+              title={t("helpdesk.settings")}
             >
               <SettingsIcon size={13} />
             </Link>
@@ -547,7 +549,7 @@ export function HelpdeskClient({
               }}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px]"
               style={{ background: accent }}
-              title="Neues Ticket"
+              title={t("helpdesk.newTicket")}
             >
               <Plus size={12} /> Ticket
             </button>
@@ -565,20 +567,20 @@ export function HelpdeskClient({
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ticket-#/Betreff/Person… (drücke /)"
+              placeholder={t("common.search")}
               className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
             />
           </div>
           <div className="flex items-center gap-1">
             <ScopeButton
-              label="Alle"
+              label={t("helpdesk.scope.all")}
               count={scopeCounts.all}
               active={scopeFilter === "all"}
               onClick={() => setScopeFilter("all")}
               accent={accent}
             />
             <ScopeButton
-              label="Meine"
+              label={t("helpdesk.scope.mine")}
               count={scopeCounts.mine}
               active={scopeFilter === "mine"}
               onClick={() => setScopeFilter("mine")}
@@ -586,7 +588,7 @@ export function HelpdeskClient({
               disabled={!me.id}
             />
             <ScopeButton
-              label="Unzugewiesen"
+              label={t("helpdesk.scope.unassigned")}
               count={scopeCounts.unassigned}
               active={scopeFilter === "unassigned"}
               onClick={() => setScopeFilter("unassigned")}
@@ -609,21 +611,21 @@ export function HelpdeskClient({
           ) : null}
           <div className="flex items-center gap-2 border-b border-stroke-1 -mx-3 px-3">
             <StateTab
-              label="Offen"
+              label={t("helpdesk.filter.open")}
               count={counts.open}
               active={stateFilter === "open"}
               onClick={() => setStateFilter("open")}
               accent={accent}
             />
             <StateTab
-              label="Geschlossen"
+              label={t("helpdesk.filter.closed")}
               count={counts.closed}
               active={stateFilter === "closed"}
               onClick={() => setStateFilter("closed")}
               accent={accent}
             />
             <StateTab
-              label="Alle"
+              label={t("helpdesk.filter.all")}
               count={counts.all}
               active={stateFilter === "all"}
               onClick={() => setStateFilter("all")}
@@ -675,14 +677,14 @@ export function HelpdeskClient({
         onToggleBulk={toggleBulk}
         emptyHint={
           search
-            ? "Keine Treffer."
+            ? t("common.noResults")
             : scopeFilter === "mine"
-              ? "Keine Tickets für dich."
+              ? t("helpdesk.empty.mine")
               : scopeFilter === "unassigned"
-                ? "Alles zugewiesen."
+                ? t("helpdesk.empty.allAssigned")
                 : stateFilter === "open"
-                  ? "Keine offenen Tickets."
-                  : "Keine Tickets."
+                  ? t("helpdesk.empty.open")
+                  : t("helpdesk.empty.generic")
         }
       />
     </>

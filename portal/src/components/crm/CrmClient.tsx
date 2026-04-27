@@ -52,6 +52,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { StatusPill, toneForState } from "@/components/ui/Pills";
 import { groupByDate, shortTime } from "@/components/ui/datetime";
 import { clickToCallUrl } from "@/lib/calls/click-to-call";
+import { useT } from "@/components/LocaleProvider";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type {
   CompanyDetail,
@@ -108,6 +109,7 @@ export function CrmClient({
   /** When true, render the inline Lead-Scraper trigger in the sidebar header. */
   scraperAvailable?: boolean;
 }) {
+  const t = useT();
   const [companies, setCompanies] = useState<CompanySummary[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(true);
   const [companiesCursor, setCompaniesCursor] = useState<string | null>(null);
@@ -354,7 +356,7 @@ export function CrmClient({
   const primary = (
     <>
       <PaneHeader
-        title="Firmen"
+        title={t("crm.companies")}
         subtitle={workspaceName}
         accent={accent}
         icon={<Building2 size={14} style={{ color: accent }} />}
@@ -364,7 +366,7 @@ export function CrmClient({
               type="button"
               onClick={() => void loadCompanies(search)}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Neu laden"
+              title={t("common.refresh")}
             >
               <RefreshCw size={13} />
             </button>
@@ -373,7 +375,7 @@ export function CrmClient({
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="CRM-Einstellungen (Twenty)"
+              title={t("crm.settings")}
             >
               <SettingsIcon size={13} />
             </a>
@@ -386,7 +388,7 @@ export function CrmClient({
                     ? "text-text-primary bg-bg-overlay"
                     : "text-text-tertiary hover:text-text-primary"
                 }`}
-                title="Lead-Scraper anstoßen"
+                title={t("crm.scraper")}
               >
                 <Sparkles size={13} />
               </button>
@@ -426,7 +428,7 @@ export function CrmClient({
           <input
             ref={newRef}
             type="text"
-            placeholder="Firmenname · Enter zum Anlegen"
+            placeholder={t("crm.placeholder.companyName")}
             className="flex-1 bg-transparent border border-stroke-1 rounded-md px-2 py-1.5 text-[12px] outline-none focus:border-stroke-2"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -468,7 +470,7 @@ export function CrmClient({
         selectedId={selectedId}
         onSelect={setSelectedId}
         meta={companyMeta}
-        emptyHint={search ? "Keine Treffer." : "Noch keine Firmen. Lege die erste an."}
+        emptyHint={search ? t("common.noResults") : t("crm.empty.companies")}
       />
 
       {companiesCursor && (
@@ -540,7 +542,7 @@ export function CrmClient({
     secondaryBody = (
       <PaneEmptyState
         title="Keine Firma gewählt"
-        hint="Wähle links eine Firma, um Activity-Feed, Personen, Deals und alle Stammdaten zu sehen."
+        hint={t("crm.empty.selection")}
         icon={<Building2 size={32} />}
       />
     );
@@ -1307,6 +1309,7 @@ function ActivityFeed({
   onAddNote: (title: string, body: string) => Promise<void>;
   onOpenComposer: () => void;
 }) {
+  const t = useT();
   const items = useMemo<FeedItem[]>(() => {
     const all: FeedItem[] = [
       ...notes.map<FeedItem>((n) => ({ kind: "note", ts: n.createdAt, data: n })),
@@ -1364,7 +1367,7 @@ function ActivityFeed({
         )}
         {grouped.length === 0 && !showComposer && (
           <div className="text-center py-12 text-[11.5px] text-text-tertiary">
-            Noch keine Aktivität. Lege oben eine Notiz an.
+            {t("crm.empty.activity")}
           </div>
         )}
         {grouped.map((g) => (
@@ -1509,10 +1512,11 @@ function PeopleGrid({
   people: PersonSummary[];
   accent: string;
 }) {
+  const t = useT();
   if (people.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary px-6 text-center">
-        Keine Personen verknüpft.
+        {t("crm.empty.people")}
       </div>
     );
   }

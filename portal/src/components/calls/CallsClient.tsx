@@ -33,6 +33,7 @@ import { ThreePaneLayout } from "@/components/ui/ThreePaneLayout";
 import { groupByDate, shortTime } from "@/components/ui/datetime";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type { CallContext, CallSummary } from "@/lib/calls/types";
+import { useT } from "@/components/LocaleProvider";
 
 /**
  * Native Calls client. Three-pane layout:
@@ -58,6 +59,7 @@ export function CallsClient({
   meEmail: string;
   meName: string;
 }) {
+  const t = useT();
   const [calls, setCalls] = useState<CallSummary[]>(initial.calls);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -300,7 +302,7 @@ export function CallsClient({
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-[12.5px] font-semibold leading-tight truncate">
-              Calls
+              {t("calls.title")}
             </h1>
             <p className="text-[10.5px] text-text-tertiary truncate">
               {workspaceName}
@@ -310,7 +312,7 @@ export function CallsClient({
             type="button"
             onClick={() => void refresh()}
             className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Neu laden"
+            title={t("common.refresh")}
           >
             <RefreshCw size={13} />
           </button>
@@ -326,12 +328,12 @@ export function CallsClient({
           style={{ background: accent }}
         >
           <PhoneCall size={13} />
-          Neuer Call
+          {t("calls.newCall")}
         </button>
       </header>
       <nav className="flex-1 min-h-0 overflow-y-auto py-2">
         <ScopeButton
-          label="Aktiv"
+          label={t("calls.active")}
           count={counts.active}
           icon={<Headphones size={13} />}
           active={scope === "active"}
@@ -339,21 +341,21 @@ export function CallsClient({
           onClick={() => setScope("active")}
         />
         <ScopeButton
-          label="Heute"
+          label={t("common.today")}
           count={counts.today}
           icon={<PhoneIncoming size={13} />}
           active={scope === "today"}
           onClick={() => setScope("today")}
         />
         <ScopeButton
-          label="Diese Woche"
+          label={t("common.thisWeek")}
           count={counts.week}
           icon={<Users size={13} />}
           active={scope === "week"}
           onClick={() => setScope("week")}
         />
         <ScopeButton
-          label="Alle"
+          label={t("common.all")}
           count={counts.all}
           icon={<Folder size={13} />}
           active={scope === "all"}
@@ -366,10 +368,10 @@ export function CallsClient({
   const primaryRail = (
     <nav className="flex-1 min-h-0 overflow-y-auto py-2 flex flex-col items-center gap-1 pt-12">
       {[
-        { id: "active" as const, label: "Aktiv", icon: <Headphones size={14} />, count: counts.active },
-        { id: "today" as const, label: "Heute", icon: <PhoneIncoming size={14} />, count: counts.today },
-        { id: "week" as const, label: "Diese Woche", icon: <Users size={14} />, count: counts.week },
-        { id: "all" as const, label: "Alle", icon: <Folder size={14} />, count: counts.all },
+        { id: "active" as const, label: t("calls.active"), icon: <Headphones size={14} />, count: counts.active },
+        { id: "today" as const, label: t("common.today"), icon: <PhoneIncoming size={14} />, count: counts.today },
+        { id: "week" as const, label: t("common.thisWeek"), icon: <Users size={14} />, count: counts.week },
+        { id: "all" as const, label: t("common.all"), icon: <Folder size={14} />, count: counts.all },
       ].map((it) => (
         <button
           key={it.id}

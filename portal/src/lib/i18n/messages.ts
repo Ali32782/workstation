@@ -28,6 +28,46 @@ export type Messages = {
   "common.refresh": string;
   "common.open": string;
   "common.back": string;
+  "common.new": string;
+  "common.send": string;
+  "common.reply": string;
+  "common.replyAll": string;
+  "common.forward": string;
+  "common.settings": string;
+  "common.filter": string;
+  "common.more": string;
+  "common.all": string;
+  "common.none": string;
+  "common.empty": string;
+  "common.noResults": string;
+  "common.error": string;
+  "common.retry": string;
+  "common.upload": string;
+  "common.download": string;
+  "common.copy": string;
+  "common.copied": string;
+  "common.create": string;
+  "common.add": string;
+  "common.remove": string;
+  "common.confirm": string;
+  "common.yes": string;
+  "common.no": string;
+  "common.from": string;
+  "common.to": string;
+  "common.subject": string;
+  "common.date": string;
+  "common.status": string;
+  "common.priority": string;
+  "common.assignee": string;
+  "common.author": string;
+  "common.title": string;
+  "common.description": string;
+  "common.notes": string;
+  "common.attachments": string;
+  "common.activity": string;
+  "common.details": string;
+  "common.today": string;
+  "common.thisWeek": string;
 
   // ─── Login ───────────────────────────────────────────────────────────
   "login.heading": string;
@@ -98,6 +138,117 @@ export type Messages = {
   "theme.light": string;
   "theme.dark": string;
   "theme.system": string;
+
+  // ─── Mail ───────────────────────────────────────────────────────────
+  "mail.folder.inbox": string;
+  "mail.folder.sent": string;
+  "mail.folder.drafts": string;
+  "mail.folder.spam": string;
+  "mail.folder.trash": string;
+  "mail.folder.archive": string;
+  "mail.compose": string;
+  "mail.compose.to": string;
+  "mail.compose.cc": string;
+  "mail.compose.bcc": string;
+  "mail.compose.subject": string;
+  "mail.compose.body": string;
+  "mail.compose.send": string;
+  "mail.compose.saveDraft": string;
+  "mail.empty.list": string;
+  "mail.empty.noSelection": string;
+  "mail.markRead": string;
+  "mail.markUnread": string;
+  "mail.delete": string;
+  "mail.moveTo": string;
+  "mail.settings": string;
+
+  // ─── CRM ────────────────────────────────────────────────────────────
+  "crm.companies": string;
+  "crm.people": string;
+  "crm.deals": string;
+  "crm.notes": string;
+  "crm.tab.activity": string;
+  "crm.tab.people": string;
+  "crm.tab.deals": string;
+  "crm.tab.details": string;
+  "crm.empty.companies": string;
+  "crm.empty.people": string;
+  "crm.empty.activity": string;
+  "crm.empty.selection": string;
+  "crm.placeholder.companyName": string;
+  "crm.placeholder.search": string;
+  "crm.scraper": string;
+  "crm.settings": string;
+
+  // ─── Helpdesk ───────────────────────────────────────────────────────
+  "helpdesk.tickets": string;
+  "helpdesk.scope.all": string;
+  "helpdesk.scope.mine": string;
+  "helpdesk.scope.unassigned": string;
+  "helpdesk.filter.open": string;
+  "helpdesk.filter.closed": string;
+  "helpdesk.filter.all": string;
+  "helpdesk.status.new": string;
+  "helpdesk.status.open": string;
+  "helpdesk.status.pending": string;
+  "helpdesk.status.closed": string;
+  "helpdesk.status.merged": string;
+  "helpdesk.priority.low": string;
+  "helpdesk.priority.normal": string;
+  "helpdesk.priority.high": string;
+  "helpdesk.priority.urgent": string;
+  "helpdesk.empty.mine": string;
+  "helpdesk.empty.allAssigned": string;
+  "helpdesk.empty.open": string;
+  "helpdesk.empty.generic": string;
+  "helpdesk.newTicket": string;
+  "helpdesk.reply": string;
+  "helpdesk.internalNote": string;
+  "helpdesk.assignee": string;
+  "helpdesk.group": string;
+  "helpdesk.settings": string;
+
+  // ─── Sign ───────────────────────────────────────────────────────────
+  "sign.documents": string;
+  "sign.status.draft": string;
+  "sign.status.pending": string;
+  "sign.status.completed": string;
+  "sign.status.rejected": string;
+  "sign.scope.all": string;
+  "sign.upload": string;
+  "sign.send": string;
+  "sign.empty.list": string;
+  "sign.empty.selection": string;
+
+  // ─── Calls ──────────────────────────────────────────────────────────
+  "calls.title": string;
+  "calls.newCall": string;
+  "calls.active": string;
+  "calls.history": string;
+  "calls.empty.list": string;
+  "calls.empty.selection": string;
+  "calls.composer.subject": string;
+  "calls.composer.start": string;
+
+  // ─── Projects ───────────────────────────────────────────────────────
+  "projects.view.board": string;
+  "projects.view.backlog": string;
+  "projects.view.sprints": string;
+  "projects.view.roadmap": string;
+  "projects.view.list": string;
+  "projects.newIssue": string;
+  "projects.newProject": string;
+  "projects.empty.list": string;
+  "projects.empty.selection": string;
+
+  // ─── Files / Office ────────────────────────────────────────────────
+  "files.upload": string;
+  "files.newFolder": string;
+  "files.newDocument": string;
+  "files.newSpreadsheet": string;
+  "files.newPresentation": string;
+  "files.empty": string;
+  "office.openIn": string;
 };
 
 const de: Messages = {
@@ -111,6 +262,46 @@ const de: Messages = {
   "common.refresh": "Aktualisieren",
   "common.open": "Öffnen",
   "common.back": "Zurück",
+  "common.new": "Neu",
+  "common.send": "Senden",
+  "common.reply": "Antworten",
+  "common.replyAll": "Allen antworten",
+  "common.forward": "Weiterleiten",
+  "common.settings": "Einstellungen",
+  "common.filter": "Filter",
+  "common.more": "Mehr",
+  "common.all": "Alle",
+  "common.none": "Keine",
+  "common.empty": "Leer",
+  "common.noResults": "Keine Treffer.",
+  "common.error": "Fehler",
+  "common.retry": "Erneut versuchen",
+  "common.upload": "Hochladen",
+  "common.download": "Herunterladen",
+  "common.copy": "Kopieren",
+  "common.copied": "Kopiert",
+  "common.create": "Anlegen",
+  "common.add": "Hinzufügen",
+  "common.remove": "Entfernen",
+  "common.confirm": "Bestätigen",
+  "common.yes": "Ja",
+  "common.no": "Nein",
+  "common.from": "Von",
+  "common.to": "An",
+  "common.subject": "Betreff",
+  "common.date": "Datum",
+  "common.status": "Status",
+  "common.priority": "Priorität",
+  "common.assignee": "Zugewiesen an",
+  "common.author": "Autor",
+  "common.title": "Titel",
+  "common.description": "Beschreibung",
+  "common.notes": "Notizen",
+  "common.attachments": "Anlagen",
+  "common.activity": "Aktivität",
+  "common.details": "Details",
+  "common.today": "Heute",
+  "common.thisWeek": "Diese Woche",
 
   "login.heading": "Corehub Workstation",
   "login.subtitle":
@@ -177,6 +368,111 @@ const de: Messages = {
   "theme.light": "Hell",
   "theme.dark": "Dunkel",
   "theme.system": "System",
+
+  "mail.folder.inbox": "Posteingang",
+  "mail.folder.sent": "Gesendet",
+  "mail.folder.drafts": "Entwürfe",
+  "mail.folder.spam": "Spam",
+  "mail.folder.trash": "Papierkorb",
+  "mail.folder.archive": "Archiv",
+  "mail.compose": "Neue Mail",
+  "mail.compose.to": "An",
+  "mail.compose.cc": "Cc",
+  "mail.compose.bcc": "Bcc",
+  "mail.compose.subject": "Betreff",
+  "mail.compose.body": "Nachricht",
+  "mail.compose.send": "Senden",
+  "mail.compose.saveDraft": "Entwurf speichern",
+  "mail.empty.list": "Keine Mails",
+  "mail.empty.noSelection": "Wähle eine Mail aus.",
+  "mail.markRead": "Als gelesen markieren",
+  "mail.markUnread": "Als ungelesen markieren",
+  "mail.delete": "In den Papierkorb",
+  "mail.moveTo": "Verschieben in …",
+  "mail.settings": "Mail-Einstellungen (SnappyMail Admin)",
+
+  "crm.companies": "Firmen",
+  "crm.people": "Personen",
+  "crm.deals": "Deals",
+  "crm.notes": "Notizen",
+  "crm.tab.activity": "Aktivität",
+  "crm.tab.people": "Personen",
+  "crm.tab.deals": "Deals",
+  "crm.tab.details": "Details",
+  "crm.empty.companies": "Noch keine Firmen. Lege die erste an.",
+  "crm.empty.people": "Keine Personen verknüpft.",
+  "crm.empty.activity": "Noch keine Aktivität. Lege oben eine Notiz an.",
+  "crm.empty.selection":
+    "Wähle links eine Firma, um Activity-Feed, Personen, Deals und alle Stammdaten zu sehen.",
+  "crm.placeholder.companyName": "Firmenname · Enter zum Anlegen",
+  "crm.placeholder.search": "Firma suchen …",
+  "crm.scraper": "Lead-Scraper anstoßen",
+  "crm.settings": "CRM-Einstellungen (Twenty)",
+
+  "helpdesk.tickets": "Tickets",
+  "helpdesk.scope.all": "Alle",
+  "helpdesk.scope.mine": "Meine",
+  "helpdesk.scope.unassigned": "Nicht zugewiesen",
+  "helpdesk.filter.open": "Offen",
+  "helpdesk.filter.closed": "Geschlossen",
+  "helpdesk.filter.all": "Alle",
+  "helpdesk.status.new": "Neu",
+  "helpdesk.status.open": "Offen",
+  "helpdesk.status.pending": "Wartend",
+  "helpdesk.status.closed": "Geschlossen",
+  "helpdesk.status.merged": "Zusammengeführt",
+  "helpdesk.priority.low": "Niedrig",
+  "helpdesk.priority.normal": "Normal",
+  "helpdesk.priority.high": "Hoch",
+  "helpdesk.priority.urgent": "Dringend",
+  "helpdesk.empty.mine": "Keine Tickets für dich.",
+  "helpdesk.empty.allAssigned": "Alles zugewiesen.",
+  "helpdesk.empty.open": "Keine offenen Tickets.",
+  "helpdesk.empty.generic": "Keine Tickets.",
+  "helpdesk.newTicket": "Neues Ticket",
+  "helpdesk.reply": "Antworten",
+  "helpdesk.internalNote": "Interne Notiz",
+  "helpdesk.assignee": "Bearbeiter",
+  "helpdesk.group": "Gruppe",
+  "helpdesk.settings": "Einstellungen (Gruppen, Absender, Kanäle)",
+
+  "sign.documents": "Signaturen",
+  "sign.status.draft": "Entwürfe",
+  "sign.status.pending": "Ausstehend",
+  "sign.status.completed": "Abgeschlossen",
+  "sign.status.rejected": "Abgelehnt",
+  "sign.scope.all": "Alle",
+  "sign.upload": "Hochladen",
+  "sign.send": "Senden",
+  "sign.empty.list": "Keine Dokumente.",
+  "sign.empty.selection": "Wähle ein Dokument aus oder lade ein neues hoch.",
+
+  "calls.title": "Calls",
+  "calls.newCall": "Neuer Call",
+  "calls.active": "Aktiv",
+  "calls.history": "Verlauf",
+  "calls.empty.list": "Keine Calls",
+  "calls.empty.selection": "Wähle einen Call aus oder starte einen neuen.",
+  "calls.composer.subject": "Betreff",
+  "calls.composer.start": "Call starten",
+
+  "projects.view.board": "Board",
+  "projects.view.backlog": "Backlog",
+  "projects.view.sprints": "Sprints",
+  "projects.view.roadmap": "Roadmap",
+  "projects.view.list": "Liste",
+  "projects.newIssue": "Neues Issue",
+  "projects.newProject": "Neues Projekt",
+  "projects.empty.list": "Keine Projekte.",
+  "projects.empty.selection": "Wähle ein Projekt aus.",
+
+  "files.upload": "Hochladen",
+  "files.newFolder": "Neuer Ordner",
+  "files.newDocument": "Neues Dokument",
+  "files.newSpreadsheet": "Neue Tabelle",
+  "files.newPresentation": "Neue Präsentation",
+  "files.empty": "Dieser Ordner ist leer.",
+  "office.openIn": "Öffnen in …",
 };
 
 const en: Messages = {
@@ -190,6 +486,46 @@ const en: Messages = {
   "common.refresh": "Refresh",
   "common.open": "Open",
   "common.back": "Back",
+  "common.new": "New",
+  "common.send": "Send",
+  "common.reply": "Reply",
+  "common.replyAll": "Reply all",
+  "common.forward": "Forward",
+  "common.settings": "Settings",
+  "common.filter": "Filter",
+  "common.more": "More",
+  "common.all": "All",
+  "common.none": "None",
+  "common.empty": "Empty",
+  "common.noResults": "No results.",
+  "common.error": "Error",
+  "common.retry": "Retry",
+  "common.upload": "Upload",
+  "common.download": "Download",
+  "common.copy": "Copy",
+  "common.copied": "Copied",
+  "common.create": "Create",
+  "common.add": "Add",
+  "common.remove": "Remove",
+  "common.confirm": "Confirm",
+  "common.yes": "Yes",
+  "common.no": "No",
+  "common.from": "From",
+  "common.to": "To",
+  "common.subject": "Subject",
+  "common.date": "Date",
+  "common.status": "Status",
+  "common.priority": "Priority",
+  "common.assignee": "Assignee",
+  "common.author": "Author",
+  "common.title": "Title",
+  "common.description": "Description",
+  "common.notes": "Notes",
+  "common.attachments": "Attachments",
+  "common.activity": "Activity",
+  "common.details": "Details",
+  "common.today": "Today",
+  "common.thisWeek": "This week",
 
   "login.heading": "Corehub Workstation",
   "login.subtitle":
@@ -256,6 +592,111 @@ const en: Messages = {
   "theme.light": "Light",
   "theme.dark": "Dark",
   "theme.system": "System",
+
+  "mail.folder.inbox": "Inbox",
+  "mail.folder.sent": "Sent",
+  "mail.folder.drafts": "Drafts",
+  "mail.folder.spam": "Spam",
+  "mail.folder.trash": "Trash",
+  "mail.folder.archive": "Archive",
+  "mail.compose": "New email",
+  "mail.compose.to": "To",
+  "mail.compose.cc": "Cc",
+  "mail.compose.bcc": "Bcc",
+  "mail.compose.subject": "Subject",
+  "mail.compose.body": "Message",
+  "mail.compose.send": "Send",
+  "mail.compose.saveDraft": "Save draft",
+  "mail.empty.list": "No mails",
+  "mail.empty.noSelection": "Pick a mail to read.",
+  "mail.markRead": "Mark as read",
+  "mail.markUnread": "Mark as unread",
+  "mail.delete": "Move to trash",
+  "mail.moveTo": "Move to …",
+  "mail.settings": "Mail settings (SnappyMail Admin)",
+
+  "crm.companies": "Companies",
+  "crm.people": "People",
+  "crm.deals": "Deals",
+  "crm.notes": "Notes",
+  "crm.tab.activity": "Activity",
+  "crm.tab.people": "People",
+  "crm.tab.deals": "Deals",
+  "crm.tab.details": "Details",
+  "crm.empty.companies": "No companies yet. Create the first one.",
+  "crm.empty.people": "No people linked.",
+  "crm.empty.activity": "No activity yet. Add a note above.",
+  "crm.empty.selection":
+    "Pick a company on the left to see activity, people, deals and core data.",
+  "crm.placeholder.companyName": "Company name · Enter to create",
+  "crm.placeholder.search": "Search companies …",
+  "crm.scraper": "Run lead scraper",
+  "crm.settings": "CRM settings (Twenty)",
+
+  "helpdesk.tickets": "Tickets",
+  "helpdesk.scope.all": "All",
+  "helpdesk.scope.mine": "Mine",
+  "helpdesk.scope.unassigned": "Unassigned",
+  "helpdesk.filter.open": "Open",
+  "helpdesk.filter.closed": "Closed",
+  "helpdesk.filter.all": "All",
+  "helpdesk.status.new": "New",
+  "helpdesk.status.open": "Open",
+  "helpdesk.status.pending": "Pending",
+  "helpdesk.status.closed": "Closed",
+  "helpdesk.status.merged": "Merged",
+  "helpdesk.priority.low": "Low",
+  "helpdesk.priority.normal": "Normal",
+  "helpdesk.priority.high": "High",
+  "helpdesk.priority.urgent": "Urgent",
+  "helpdesk.empty.mine": "No tickets for you.",
+  "helpdesk.empty.allAssigned": "Everything assigned.",
+  "helpdesk.empty.open": "No open tickets.",
+  "helpdesk.empty.generic": "No tickets.",
+  "helpdesk.newTicket": "New ticket",
+  "helpdesk.reply": "Reply",
+  "helpdesk.internalNote": "Internal note",
+  "helpdesk.assignee": "Assignee",
+  "helpdesk.group": "Group",
+  "helpdesk.settings": "Settings (groups, senders, channels)",
+
+  "sign.documents": "Signatures",
+  "sign.status.draft": "Drafts",
+  "sign.status.pending": "Pending",
+  "sign.status.completed": "Completed",
+  "sign.status.rejected": "Rejected",
+  "sign.scope.all": "All",
+  "sign.upload": "Upload",
+  "sign.send": "Send",
+  "sign.empty.list": "No documents.",
+  "sign.empty.selection": "Pick a document or upload a new one.",
+
+  "calls.title": "Calls",
+  "calls.newCall": "New call",
+  "calls.active": "Active",
+  "calls.history": "History",
+  "calls.empty.list": "No calls",
+  "calls.empty.selection": "Pick a call or start a new one.",
+  "calls.composer.subject": "Subject",
+  "calls.composer.start": "Start call",
+
+  "projects.view.board": "Board",
+  "projects.view.backlog": "Backlog",
+  "projects.view.sprints": "Sprints",
+  "projects.view.roadmap": "Roadmap",
+  "projects.view.list": "List",
+  "projects.newIssue": "New issue",
+  "projects.newProject": "New project",
+  "projects.empty.list": "No projects.",
+  "projects.empty.selection": "Pick a project.",
+
+  "files.upload": "Upload",
+  "files.newFolder": "New folder",
+  "files.newDocument": "New document",
+  "files.newSpreadsheet": "New spreadsheet",
+  "files.newPresentation": "New presentation",
+  "files.empty": "This folder is empty.",
+  "office.openIn": "Open in …",
 };
 
 const DICT: Record<Locale, Messages> = { de, en };

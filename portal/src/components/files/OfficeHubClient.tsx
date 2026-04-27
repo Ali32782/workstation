@@ -18,38 +18,45 @@ import {
 import type { CloudEntry, CloudList } from "@/lib/cloud/types";
 import type { WorkspaceId } from "@/lib/workspaces";
 import { CollaboraPanel } from "./CollaboraPanel";
+import { useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
 
 const QUICK_ACTIONS: {
   kind: "doc" | "sheet" | "slides" | "text";
-  label: string;
+  labelKey: keyof Messages;
+  fallback: string;
   description: string;
   icon: typeof FileText;
   color: string;
 }[] = [
   {
     kind: "doc",
-    label: "Neues Dokument",
+    labelKey: "files.newDocument",
+    fallback: "Neues Dokument",
     description: "Word-kompatibel (.docx)",
     icon: FileText,
     color: "#1d4ed8",
   },
   {
     kind: "sheet",
-    label: "Neue Tabelle",
+    labelKey: "files.newSpreadsheet",
+    fallback: "Neue Tabelle",
     description: "Excel-kompatibel (.xlsx)",
     icon: FileSpreadsheet,
     color: "#16a34a",
   },
   {
     kind: "slides",
-    label: "Neue Präsentation",
+    labelKey: "files.newPresentation",
+    fallback: "Neue Präsentation",
     description: "PowerPoint-kompatibel (.pptx)",
     icon: Presentation,
     color: "#dc2626",
   },
   {
     kind: "text",
-    label: "Neue Notiz",
+    labelKey: "files.newDocument",
+    fallback: "Neue Notiz",
     description: "Markdown-Datei (.md)",
     icon: StickyNote,
     color: "#7c3aed",
@@ -95,6 +102,7 @@ export function OfficeHubClient({
   workspaceName: string;
   accent: string;
 }) {
+  const t = useT();
   const [recents, setRecents] = useState<CloudEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -303,7 +311,7 @@ export function OfficeHubClient({
                     </div>
                     <div className="min-w-0">
                       <p className="text-[12.5px] font-semibold text-text-primary truncate">
-                        {qa.label}
+                        {t(qa.labelKey, qa.fallback)}
                       </p>
                       <p className="text-[10.5px] text-text-tertiary truncate">
                         {qa.description}

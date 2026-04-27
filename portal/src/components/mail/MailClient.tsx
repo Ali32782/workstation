@@ -33,6 +33,18 @@ import type {
   MailFull,
   MailListItem,
 } from "@/lib/mail/types";
+import { useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
+
+const ROLE_LABEL_KEY: Record<MailFolder["role"], keyof Messages | null> = {
+  inbox: "mail.folder.inbox",
+  sent: "mail.folder.sent",
+  drafts: "mail.folder.drafts",
+  trash: "mail.folder.trash",
+  junk: "mail.folder.spam",
+  archive: "mail.folder.archive",
+  custom: null,
+};
 
 type ComposeState = {
   mode: "new" | "reply" | "replyAll" | "forward";
@@ -76,6 +88,7 @@ export function MailClient({
   selfEmail: string;
   selfName?: string;
 }) {
+  const t = useT();
   const [folders, setFolders] = useState<MailFolder[]>(initialFolders);
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string>(
@@ -326,7 +339,7 @@ export function MailClient({
         <div className="p-3 border-b border-stroke-1 flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-text-primary">
-              {labelForFolder(folders, activeFolder)}
+              {labelForFolder(folders, activeFolder, t)}
             </h2>
             <div className="flex items-center gap-0.5">
               <a
@@ -334,14 +347,14 @@ export function MailClient({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-                title="Mail-Einstellungen (SnappyMail Admin)"
+                title={t("mail.settings")}
               >
                 <SettingsIcon size={14} />
               </a>
               <button
                 onClick={() => refreshMessages(activeFolder)}
                 className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-                title="Aktualisieren"
+                title={t("common.refresh")}
               >
                 {messagesLoading ? (
                   <Loader2 size={14} className="spin" />
@@ -358,7 +371,7 @@ export function MailClient({
             />
             <input
               type="text"
-              placeholder="In dieser Ansicht suchen"
+              placeholder={t("common.search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full bg-bg-base border border-stroke-1 rounded-md text-[12px] py-1.5 pl-7 pr-2 outline-none focus:border-stroke-2"
@@ -519,6 +532,7 @@ function Reader({
   onForward: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-5 pt-4 pb-3 border-b border-stroke-1">
@@ -555,11 +569,11 @@ function Reader({
           </div>
         </div>
         <div className="flex items-center gap-1.5 mt-3">
-          <ActionButton icon={Reply} label="Antworten" onClick={onReply} primary />
-          <ActionButton icon={ReplyAll} label="Allen antworten" onClick={onReplyAll} />
-          <ActionButton icon={Forward} label="Weiterleiten" onClick={onForward} />
+          <ActionButton icon={Reply} label={t("common.reply")} onClick={onReply} primary />
+          <ActionButton icon={ReplyAll} label={t("common.replyAll")} onClick={onReplyAll} />
+          <ActionButton icon={Forward} label={t("common.forward")} onClick={onForward} />
           <div className="flex-1" />
-          <ActionButton icon={Trash2} label="Löschen" onClick={onDelete} danger />
+          <ActionButton icon={Trash2} label={t("common.delete")} onClick={onDelete} danger />
         </div>
         {msg.attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-3">
@@ -614,6 +628,7 @@ function Composer({
   selfEmail: string;
   selfName?: string;
 }) {
+  const t = useT();
   const [sending, setSending] = useState(false);
   const update = (patch: Partial<ComposeState>) =>
     setState((c) => (c ? { ...c, ...patch } : null));
@@ -632,10 +647,10 @@ function Composer({
       <div className="px-5 py-3 border-b border-stroke-1 flex items-center gap-2">
         <h1 className="text-sm font-semibold text-text-primary flex-1">
           {state.mode === "new"
-            ? "Neue E-Mail"
+            ? t("mail.compose")
             : state.mode === "forward"
-              ? "Weiterleiten"
-              : "Antworten"}
+              ? t("common.forward")
+              : t("common.reply")}
         </h1>
         <button
           onClick={async () => {
@@ -650,35 +665,35 @@ function Composer({
           className="flex items-center gap-2 rounded bg-[#0078d4] hover:bg-[#106ebe] disabled:opacity-50 text-white px-4 py-1.5 text-sm font-medium transition-colors"
         >
           {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
-          Senden
+          {t("common.send")}
         </button>
         <button
           onClick={onCancel}
           className="p-1.5 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-          title="Verwerfen"
+          title={t("common.cancel")}
         >
           <X size={16} />
         </button>
       </div>
       <div className="px-5 py-2 border-b border-stroke-1 flex flex-col gap-1.5">
         <ComposeField
-          label="Von"
+          label={t("common.from")}
           value={selfName ? `${selfName} <${selfEmail}>` : selfEmail}
           readonly
         />
         <ComposeField
-          label="An"
+          label={t("mail.compose.to")}
           value={state.to}
           onChange={(v) => update({ to: v })}
           placeholder="empfänger@beispiel.de, ..."
         />
         <ComposeField
-          label="Cc"
+          label={t("mail.compose.cc")}
           value={state.cc}
           onChange={(v) => update({ cc: v })}
         />
         <ComposeField
-          label="Betreff"
+          label={t("mail.compose.subject")}
           value={state.subject}
           onChange={(v) => update({ subject: v })}
         />
@@ -807,9 +822,15 @@ function Avatar({ name }: { name: string }) {
 /*                                  helpers                                     */
 /* --------------------------------------------------------------------------- */
 
-function labelForFolder(folders: MailFolder[], path: string): string {
+function labelForFolder(
+  folders: MailFolder[],
+  path: string,
+  translate?: (k: keyof Messages, fallback?: string) => string,
+): string {
   const f = folders.find((x) => x.path === path);
   if (!f) return path;
+  const key = ROLE_LABEL_KEY[f.role];
+  if (key && translate) return translate(key, ROLE_LABEL[f.role] || f.name);
   return ROLE_LABEL[f.role] || f.name;
 }
 

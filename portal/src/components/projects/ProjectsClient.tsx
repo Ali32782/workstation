@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { PaneHeader } from "@/components/ui/ThreePaneLayout";
 import { RecordList } from "@/components/ui/RecordList";
+import { useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type {
   CycleSummary,
@@ -61,12 +63,17 @@ type ProjectMeta = {
 
 type ViewMode = "board" | "backlog" | "sprints" | "roadmap" | "list";
 
-const VIEW_TABS: { id: ViewMode; label: string; icon: React.ElementType }[] = [
-  { id: "board", label: "Board", icon: LayoutGrid },
-  { id: "backlog", label: "Backlog", icon: ListChecks },
-  { id: "sprints", label: "Sprints", icon: Calendar },
-  { id: "roadmap", label: "Roadmap", icon: MapIcon },
-  { id: "list", label: "Liste", icon: List },
+const VIEW_TABS: {
+  id: ViewMode;
+  labelKey: keyof Messages;
+  fallback: string;
+  icon: React.ElementType;
+}[] = [
+  { id: "board", labelKey: "projects.view.board", fallback: "Board", icon: LayoutGrid },
+  { id: "backlog", labelKey: "projects.view.backlog", fallback: "Backlog", icon: ListChecks },
+  { id: "sprints", labelKey: "projects.view.sprints", fallback: "Sprints", icon: Calendar },
+  { id: "roadmap", labelKey: "projects.view.roadmap", fallback: "Roadmap", icon: MapIcon },
+  { id: "list", labelKey: "projects.view.list", fallback: "Liste", icon: List },
 ];
 
 /**
@@ -86,6 +93,7 @@ export function ProjectsClient({
   workspaceName: string;
   accent: string;
 }) {
+  const t = useT();
   const apiUrl = useCallback(
     (path: string): string => {
       const sep = path.includes("?") ? "&" : "?";
@@ -626,7 +634,7 @@ export function ProjectsClient({
   ) : (
     <aside className="shrink-0 w-[240px] border-r border-stroke-1 bg-bg-chrome flex flex-col min-h-0">
       <PaneHeader
-        title="Projekte"
+        title={t("nav.projects")}
         subtitle={workspaceName}
         accent={accent}
         icon={<Kanban size={14} style={{ color: accent }} />}
@@ -636,7 +644,7 @@ export function ProjectsClient({
               type="button"
               onClick={() => void loadProjects()}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Neu laden"
+              title={t("common.refresh")}
             >
               <RefreshCw size={13} />
             </button>
@@ -645,7 +653,7 @@ export function ProjectsClient({
               onClick={onCreateProject}
               disabled={busy}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-50"
-              title="Neues Projekt"
+              title={t("projects.newProject")}
             >
               <Plus size={13} />
             </button>
@@ -654,7 +662,7 @@ export function ProjectsClient({
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Projekt-Einstellungen (Plane)"
+              title={t("common.settings") + " (Plane)"}
             >
               <SettingsIcon size={13} />
             </a>
@@ -662,7 +670,7 @@ export function ProjectsClient({
               type="button"
               onClick={() => setSidebarCollapsed(true)}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Seitenleiste einklappen"
+              title={t("common.close")}
             >
               <PanelLeftClose size={13} />
             </button>
@@ -678,7 +686,7 @@ export function ProjectsClient({
             type="search"
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
-            placeholder="Projekt suchen…"
+            placeholder={t("common.search")}
             className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
           />
         </div>
@@ -709,13 +717,15 @@ export function ProjectsClient({
         }))}
         selectedId={selectedProjectId}
         onSelect={setSelectedProjectId}
-        emptyHint="Noch keine Projekte. Lege das erste an."
+        emptyHint={t("projects.empty.list")}
       />
     </aside>
   );
 
-  const currentViewLabel =
-    VIEW_TABS.find((t) => t.id === view)?.label ?? "Board";
+  const currentViewTab = VIEW_TABS.find((tab) => tab.id === view);
+  const currentViewLabel = currentViewTab
+    ? t(currentViewTab.labelKey, currentViewTab.fallback)
+    : "Board";
 
   const viewToolbar = (
     <header className="shrink-0 flex flex-col gap-2 px-3 py-2 border-b border-stroke-1 bg-bg-chrome">
@@ -803,14 +813,14 @@ export function ProjectsClient({
       {selectedProject && (
         <>
           <div className="flex items-center gap-1 text-[11px]">
-            {VIEW_TABS.map((t) => {
-              const Icon = t.icon;
-              const isActive = view === t.id;
+            {VIEW_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = view === tab.id;
               return (
                 <button
-                  key={t.id}
+                  key={tab.id}
                   type="button"
-                  onClick={() => setView(t.id)}
+                  onClick={() => setView(tab.id)}
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-md ${
                     isActive
                       ? "text-white"
@@ -819,7 +829,7 @@ export function ProjectsClient({
                   style={isActive ? { background: accent } : undefined}
                 >
                   <Icon size={12} />
-                  {t.label}
+                  {t(tab.labelKey, tab.fallback)}
                 </button>
               );
             })}
