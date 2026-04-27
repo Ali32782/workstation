@@ -13,6 +13,36 @@ import {
 } from "@/lib/workspaces";
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "./LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
+
+const SECTION_LABELS: Record<AppSection, keyof Messages> = {
+  "Übersicht": "section.overview",
+  "Kommunikation": "section.communication",
+  "Arbeit": "section.work",
+  "System": "section.system",
+};
+
+const APP_LABELS: Record<string, keyof Messages> = {
+  dashboard: "nav.dashboard",
+  mail: "nav.mail",
+  chat: "nav.chat",
+  calendar: "nav.calendar",
+  calls: "nav.calls",
+  files: "nav.files",
+  office: "nav.office",
+  crm: "nav.crm",
+  helpdesk: "nav.helpdesk",
+  marketing: "nav.marketing",
+  projects: "nav.projects",
+  sign: "nav.sign",
+  code: "nav.code",
+  status: "nav.status",
+  identity: "nav.identity",
+  proxy: "nav.proxy",
+  onboarding: "nav.onboarding",
+  admin: "nav.admin",
+};
 
 export function Sidebar({
   workspaceId,
@@ -25,6 +55,7 @@ export function Sidebar({
 }) {
   const workspace = WORKSPACES[workspaceId];
   const pathname = usePathname();
+  const t = useT();
 
   const grouped = useMemo(() => {
     const map = new Map<AppSection, App[]>();
@@ -88,7 +119,7 @@ export function Sidebar({
             <div key={section} className="mb-3">
               <div className="px-4 pt-2 pb-1.5">
                 <span className="text-text-quaternary text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  {section}
+                  {t(SECTION_LABELS[section] ?? "section.overview", section)}
                 </span>
               </div>
               <ul className="flex flex-col gap-px px-2">
@@ -99,6 +130,11 @@ export function Sidebar({
                     workspaceId={workspaceId}
                     accent={workspace.accent}
                     pathname={pathname}
+                    label={
+                      APP_LABELS[app.id]
+                        ? t(APP_LABELS[app.id], app.name)
+                        : app.name
+                    }
                   />
                 ))}
               </ul>
@@ -179,11 +215,13 @@ function SidebarItem({
   workspaceId,
   accent,
   pathname,
+  label,
 }: {
   app: App;
   workspaceId: WorkspaceId;
   accent: string;
   pathname: string;
+  label: string;
 }) {
   const Icon = app.icon;
 
@@ -203,7 +241,7 @@ function SidebarItem({
         className="shrink-0"
         style={{ color: isActive ? accent : "var(--color-text-tertiary)" }}
       />
-      <span className="flex-1 truncate text-sm">{app.name}</span>
+      <span className="flex-1 truncate text-sm">{label}</span>
       {app.embed === "newtab" && (
         <ExternalLink
           size={11}

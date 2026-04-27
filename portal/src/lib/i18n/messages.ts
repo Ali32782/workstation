@@ -56,6 +56,13 @@ export type Messages = {
   "nav.proxy": string;
   "nav.admin": string;
   "nav.onboarding": string;
+  "nav.marketing": string;
+  "nav.dashboard.short": string;
+
+  "section.overview": string;
+  "section.communication": string;
+  "section.work": string;
+  "section.system": string;
 
   // ─── User menu ───────────────────────────────────────────────────────
   "menu.signedInAs": string;
@@ -131,6 +138,13 @@ const de: Messages = {
   "nav.proxy": "Reverse Proxy",
   "nav.admin": "Admin",
   "nav.onboarding": "Onboarding",
+  "nav.marketing": "Marketing",
+  "nav.dashboard.short": "Übersicht",
+
+  "section.overview": "Übersicht",
+  "section.communication": "Kommunikation",
+  "section.work": "Arbeit",
+  "section.system": "System",
 
   "menu.signedInAs": "Angemeldet als",
   "menu.account": "Konto",
@@ -203,6 +217,13 @@ const en: Messages = {
   "nav.proxy": "Reverse Proxy",
   "nav.admin": "Admin",
   "nav.onboarding": "Onboarding",
+  "nav.marketing": "Marketing",
+  "nav.dashboard.short": "Overview",
+
+  "section.overview": "Overview",
+  "section.communication": "Communication",
+  "section.work": "Work",
+  "section.system": "System",
 
   "menu.signedInAs": "Signed in as",
   "menu.account": "Account",
