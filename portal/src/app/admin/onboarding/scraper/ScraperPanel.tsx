@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Play,
   Loader2,
@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Clock,
   RefreshCw,
+  Activity,
 } from "lucide-react";
 
 const SWISS_CANTONS = [
@@ -47,11 +48,58 @@ type Status = {
   cmd?: string[];
   params?: Record<string, unknown>;
   log_tail?: string;
+  log_updated_at?: string | null;
+  log_size?: number;
+  server_now?: string;
+  proc_alive?: boolean;
   reachable?: boolean;
   error?: string;
 };
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 2000;
+const STALL_WARN_S = 60;
+
+function fmtDurationSeconds(secs: number): string {
+  if (secs < 1) return "< 1 s";
+  if (secs < 60) return `${Math.floor(secs)} s`;
+  if (secs < 3600) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m} min ${s.toString().padStart(2, "0")} s`;
+  }
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return `${h} h ${m.toString().padStart(2, "0")} min`;
+}
+
+/** Best-effort phase detector based on log content. */
+function detectPhase(log: string | undefined): {
+  phase: string;
+  detail?: string;
+} {
+  if (!log) return { phase: "Initialisierung" };
+  const tail = log.slice(-2000);
+  if (/Fertig\.\s*CSV:/i.test(tail)) return { phase: "Abgeschlossen" };
+  // Match a "[3/45]" counter and surface the latest one.
+  const counter = [...tail.matchAll(/\[(\d+)\/(\d+)\]/g)].pop();
+  if (counter) {
+    return {
+      phase: "Verarbeite Praxen",
+      detail: `${counter[1]} / ${counter[2]}`,
+    };
+  }
+  if (/CRM:/.test(tail)) return { phase: "CRM-Push (Twenty)" };
+  if (/extractor|extract/i.test(tail))
+    return { phase: "Inhalts-Extraktion (LLM)" };
+  if (/social_finder|social/i.test(tail)) return { phase: "Social-Lookup" };
+  if (/enrich/i.test(tail)) return { phase: "Anreicherung" };
+  if (/Verarbeite\s+\d+\s+Praxen/i.test(tail))
+    return { phase: "Discovery abgeschlossen" };
+  if (/Cache:.*Praxen.*DB/i.test(tail)) return { phase: "Cache geladen" };
+  if (/^\s*\.+/m.test(tail) || /Searching|Suche|google/i.test(tail))
+    return { phase: "Discovery (Google Maps)" };
+  return { phase: "Initialisierung" };
+}
 
 export function ScraperPanel({ disabled }: { disabled: boolean }) {
   const [country, setCountry] = useState<string>("ch");
@@ -70,6 +118,24 @@ export function ScraperPanel({ disabled }: { disabled: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
+  // Tick once per second so elapsed-time / "since last log" labels stay live
+  // without us re-fetching status on every tick.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (status?.state !== "running") return;
+    const t = window.setInterval(() => setTick((n) => (n + 1) % 1_000_000), 1000);
+    return () => window.clearInterval(t);
+  }, [status?.state]);
+  // Auto-scroll the log pre to bottom whenever the log content changes while
+  // a run is active, so the latest output is always visible.
+  const logRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    const el = logRef.current;
+    if (!el) return;
+    if (status?.state === "running") {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [status?.log_tail, status?.state]);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -151,6 +217,26 @@ export function ScraperPanel({ disabled }: { disabled: boolean }) {
   }
 
   const isRunning = status?.state === "running";
+
+  const liveStats = useMemo(() => {
+    if (!status) return null;
+    const now = Date.now();
+    const startedMs = status.started_at
+      ? new Date(status.started_at).getTime()
+      : null;
+    const logMs = status.log_updated_at
+      ? new Date(status.log_updated_at).getTime()
+      : null;
+    const elapsedSec = startedMs ? Math.max(0, (now - startedMs) / 1000) : null;
+    const sinceLogSec = logMs ? Math.max(0, (now - logMs) / 1000) : null;
+    return { elapsedSec, sinceLogSec };
+  }, [status]);
+
+  const phase = useMemo(() => detectPhase(status?.log_tail), [status?.log_tail]);
+  const stalled =
+    isRunning &&
+    liveStats?.sinceLogSec != null &&
+    liveStats.sinceLogSec > STALL_WARN_S;
 
   return (
     <div className="space-y-6">
@@ -351,7 +437,43 @@ export function ScraperPanel({ disabled }: { disabled: boolean }) {
           </button>
         </div>
         <div className="p-5 space-y-4">
-          <StatusBadge status={status} disabled={disabled} />
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={status} disabled={disabled} />
+            {isRunning && (
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs ${stalled ? "border-warning/40 bg-warning/10 text-warning" : "border-info/30 bg-info/5 text-info"}`}
+                title={
+                  stalled
+                    ? "Über 60 Sekunden ohne neue Log-Ausgabe — der Job könnte hängen, oder die aktuelle Phase ist langsam (z.B. LLM, Google-Maps-Quota)."
+                    : "Letzte Log-Aktivität"
+                }
+              >
+                <Activity size={12} />
+                {liveStats?.sinceLogSec != null
+                  ? `Heartbeat: vor ${fmtDurationSeconds(liveStats.sinceLogSec)}`
+                  : "Heartbeat: —"}
+              </span>
+            )}
+            {isRunning && phase.phase && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-stroke-1 bg-bg-base text-text-secondary text-xs">
+                Phase:&nbsp;
+                <strong className="text-text-primary">{phase.phase}</strong>
+                {phase.detail && (
+                  <span className="text-text-tertiary tabular-nums ml-1">
+                    {phase.detail}
+                  </span>
+                )}
+              </span>
+            )}
+            {isRunning && liveStats?.elapsedSec != null && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-stroke-1 bg-bg-base text-text-tertiary text-xs">
+                Laufzeit:&nbsp;
+                <span className="tabular-nums text-text-secondary">
+                  {fmtDurationSeconds(liveStats.elapsedSec)}
+                </span>
+              </span>
+            )}
+          </div>
           {status?.params && (
             <KV label="Parameter" value={JSON.stringify(status.params)} />
           )}
@@ -365,12 +487,29 @@ export function ScraperPanel({ disabled }: { disabled: boolean }) {
             <KV label="Exit-Code" value={String(status.exit_code)} />
           )}
           <div>
-            <div className="text-text-tertiary text-xs uppercase tracking-wide mb-1.5">
-              Log-Ende
+            <div className="text-text-tertiary text-xs uppercase tracking-wide mb-1.5 flex items-center justify-between">
+              <span>Log (live, autoscroll)</span>
+              {typeof status?.log_size === "number" && (
+                <span className="tabular-nums text-text-quaternary normal-case font-normal">
+                  {(status.log_size / 1024).toFixed(1)} KB
+                </span>
+              )}
             </div>
-            <pre className="bg-bg-base border border-stroke-1 rounded-md p-3 text-xs text-text-secondary max-h-80 overflow-auto whitespace-pre-wrap">
+            <pre
+              ref={logRef}
+              className="bg-bg-base border border-stroke-1 rounded-md p-3 text-xs text-text-secondary max-h-96 overflow-auto whitespace-pre-wrap"
+            >
               {status?.log_tail?.trim() || "(noch keine Ausgabe)"}
             </pre>
+            {stalled && (
+              <p className="mt-1.5 text-[11px] text-warning leading-snug">
+                Hinweis: über {STALL_WARN_S} s keine neue Zeile.
+                Wahrscheinlich entweder Google-Maps-Wartezeit, LLM-Anfrage
+                (Anthropic) oder die Twenty-API antwortet langsam. Falls hier
+                zu lange nichts passiert, lohnt sich `docker logs scraper-runner`
+                auf dem Host.
+              </p>
+            )}
           </div>
         </div>
       </section>

@@ -127,16 +127,36 @@ def _watch(proc: subprocess.Popen[bytes], started_at: str, params: dict[str, Any
         _proc = None
 
 
-def _tail_log(lines: int = 80) -> str:
+def _tail_log(lines: int = 200) -> str:
     if not LOG_FILE.exists():
         return ""
     try:
         with LOG_FILE.open("rb") as fh:
-            data = fh.read()[-32 * 1024:]
+            # 64 KiB is comfortable for ~200 lines and still cheap.
+            data = fh.read()[-64 * 1024:]
         text = data.decode("utf-8", errors="replace")
         return "\n".join(text.splitlines()[-lines:])
     except Exception:
         return ""
+
+
+def _log_mtime() -> str | None:
+    """ISO timestamp of when the log file was last modified, or None."""
+    try:
+        if not LOG_FILE.exists():
+            return None
+        return datetime.fromtimestamp(
+            LOG_FILE.stat().st_mtime, tz=timezone.utc
+        ).isoformat(timespec="seconds")
+    except Exception:
+        return None
+
+
+def _log_size() -> int:
+    try:
+        return LOG_FILE.stat().st_size if LOG_FILE.exists() else 0
+    except Exception:
+        return 0
 
 
 @app.get("/healthz")
@@ -151,6 +171,13 @@ def status() -> Any:
         return jsonify({"error": err}), 401
     s = _read_state()
     s["log_tail"] = _tail_log()
+    s["log_updated_at"] = _log_mtime()
+    s["log_size"] = _log_size()
+    s["server_now"] = _now()
+    # `running` flag from the OS perspective — handy if the state file got
+    # out of sync because of an OOM kill or other ungraceful shutdown.
+    proc_alive = _proc is not None and _proc.poll() is None
+    s["proc_alive"] = bool(proc_alive)
     return jsonify(s)
 
 
