@@ -240,6 +240,38 @@ export type Messages = {
   "projects.newProject": string;
   "projects.empty.list": string;
   "projects.empty.selection": string;
+  "projects.import": string;
+  "projects.import.title": string;
+  "projects.import.description": string;
+  "projects.import.upload": string;
+  "projects.import.paste": string;
+  "projects.import.delimiter": string;
+  "projects.import.delimiter.auto": string;
+  "projects.import.preview": string;
+  "projects.import.mapping": string;
+  "projects.import.mapping.column": string;
+  "projects.import.mapping.field": string;
+  "projects.import.field.ignore": string;
+  "projects.import.field.name": string;
+  "projects.import.field.description": string;
+  "projects.import.field.state": string;
+  "projects.import.field.priority": string;
+  "projects.import.field.assignee": string;
+  "projects.import.field.labels": string;
+  "projects.import.field.startDate": string;
+  "projects.import.field.targetDate": string;
+  "projects.import.field.estimatePoint": string;
+  "projects.import.totals.rows": string;
+  "projects.import.totals.valid": string;
+  "projects.import.totals.skipped": string;
+  "projects.import.totals.unmapped": string;
+  "projects.import.autoLabels": string;
+  "projects.import.run": string;
+  "projects.import.running": string;
+  "projects.import.done": string;
+  "projects.import.failed": string;
+  "projects.import.empty": string;
+  "projects.import.help.jira": string;
 
   // ─── Files / Office ────────────────────────────────────────────────
   "files.upload": string;
@@ -465,6 +497,40 @@ const de: Messages = {
   "projects.newProject": "Neues Projekt",
   "projects.empty.list": "Keine Projekte.",
   "projects.empty.selection": "Wähle ein Projekt aus.",
+  "projects.import": "Import",
+  "projects.import.title": "Issues aus CSV importieren",
+  "projects.import.description":
+    "Lädt Issues aus einer CSV-Datei in das aktuelle Projekt. Erkennt Jira-, Linear- und Plane-Spalten automatisch — fehlende Mappings kannst du unten anpassen.",
+  "projects.import.upload": "CSV hochladen",
+  "projects.import.paste": "oder hier einfügen …",
+  "projects.import.delimiter": "Trenner",
+  "projects.import.delimiter.auto": "automatisch",
+  "projects.import.preview": "Vorschau",
+  "projects.import.mapping": "Spalten-Mapping",
+  "projects.import.mapping.column": "Spalte",
+  "projects.import.mapping.field": "Feld",
+  "projects.import.field.ignore": "Ignorieren",
+  "projects.import.field.name": "Titel",
+  "projects.import.field.description": "Beschreibung",
+  "projects.import.field.state": "Status",
+  "projects.import.field.priority": "Priorität",
+  "projects.import.field.assignee": "Bearbeiter",
+  "projects.import.field.labels": "Labels",
+  "projects.import.field.startDate": "Startdatum",
+  "projects.import.field.targetDate": "Zieldatum",
+  "projects.import.field.estimatePoint": "Schätzung",
+  "projects.import.totals.rows": "Zeilen",
+  "projects.import.totals.valid": "gültig",
+  "projects.import.totals.skipped": "übersprungen",
+  "projects.import.totals.unmapped": "unbekannte Labels",
+  "projects.import.autoLabels": "Fehlende Labels automatisch anlegen",
+  "projects.import.run": "Importieren",
+  "projects.import.running": "Importiere …",
+  "projects.import.done": "{count} Issues importiert.",
+  "projects.import.failed": "{count} Zeilen fehlgeschlagen.",
+  "projects.import.empty": "Noch keine CSV geladen.",
+  "projects.import.help.jira":
+    "Tipp: In Jira → Filter → „Export → CSV (alle Felder)“ liefert ein direkt kompatibles Format.",
 
   "files.upload": "Hochladen",
   "files.newFolder": "Neuer Ordner",
@@ -689,6 +755,40 @@ const en: Messages = {
   "projects.newProject": "New project",
   "projects.empty.list": "No projects.",
   "projects.empty.selection": "Pick a project.",
+  "projects.import": "Import",
+  "projects.import.title": "Import issues from CSV",
+  "projects.import.description":
+    "Bulk-creates issues in the current project from a CSV file. Jira, Linear and Plane columns are detected automatically — adjust any unmapped column below.",
+  "projects.import.upload": "Upload CSV",
+  "projects.import.paste": "or paste it here…",
+  "projects.import.delimiter": "Delimiter",
+  "projects.import.delimiter.auto": "auto-detect",
+  "projects.import.preview": "Preview",
+  "projects.import.mapping": "Column mapping",
+  "projects.import.mapping.column": "Column",
+  "projects.import.mapping.field": "Field",
+  "projects.import.field.ignore": "Ignore",
+  "projects.import.field.name": "Title",
+  "projects.import.field.description": "Description",
+  "projects.import.field.state": "Status",
+  "projects.import.field.priority": "Priority",
+  "projects.import.field.assignee": "Assignee",
+  "projects.import.field.labels": "Labels",
+  "projects.import.field.startDate": "Start date",
+  "projects.import.field.targetDate": "Due date",
+  "projects.import.field.estimatePoint": "Estimate",
+  "projects.import.totals.rows": "rows",
+  "projects.import.totals.valid": "valid",
+  "projects.import.totals.skipped": "skipped",
+  "projects.import.totals.unmapped": "unknown labels",
+  "projects.import.autoLabels": "Auto-create missing labels",
+  "projects.import.run": "Import",
+  "projects.import.running": "Importing…",
+  "projects.import.done": "{count} issues imported.",
+  "projects.import.failed": "{count} rows failed.",
+  "projects.import.empty": "No CSV loaded yet.",
+  "projects.import.help.jira":
+    "Tip: In Jira → Filter → ‘Export → CSV (all fields)’ produces a directly compatible file.",
 
   "files.upload": "Upload",
   "files.newFolder": "New folder",

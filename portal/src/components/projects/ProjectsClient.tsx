@@ -16,6 +16,7 @@ import {
   List,
   ListChecks,
   Loader2,
+  FileUp,
   Plus,
   RefreshCw,
   Calendar,
@@ -41,6 +42,7 @@ import type {
   ProjectSummary,
   WorkspaceMember,
 } from "@/lib/projects/types";
+import { ImportIssuesModal } from "./ImportIssuesModal";
 import { JiraBoard } from "./jira/Board";
 import { JiraBacklog } from "./jira/Backlog";
 import { JiraSprints } from "./jira/Sprints";
@@ -127,6 +129,8 @@ export function ProjectsClient({
 
   const [showNewIssue, setShowNewIssue] = useState(false);
   const newIssueRef = useRef<HTMLInputElement>(null);
+
+  const [showImport, setShowImport] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -788,6 +792,18 @@ export function ProjectsClient({
               <Plus size={12} /> Issue
             </button>
           )}
+          {selectedProject && (
+            <button
+              type="button"
+              onClick={() => setShowImport(true)}
+              disabled={busy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] disabled:opacity-50"
+              title={t("projects.import.title", "Issues aus CSV importieren")}
+            >
+              <FileUp size={11} />
+              {t("projects.import", "Import")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() =>
@@ -1053,6 +1069,17 @@ export function ProjectsClient({
             onSelectIssue={setSelectedIssueId}
           />
         </div>
+      )}
+      {showImport && selectedProjectId && (
+        <ImportIssuesModal
+          workspaceId={workspaceId}
+          projectId={selectedProjectId}
+          accent={accent}
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            void loadProjectData(selectedProjectId);
+          }}
+        />
       )}
     </div>
   );
