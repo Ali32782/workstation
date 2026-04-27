@@ -53,6 +53,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
+# Persistent runtime data dir (browser-provisioned tenant tokens etc).
+# Created here so a fresh `portal_data` named volume inherits the correct
+# owner on first mount — Docker copies an empty target dir's permissions
+# into a freshly-initialised named volume.
+RUN mkdir -p /data && chown nextjs:nodejs /data
+
 USER nextjs
 EXPOSE 3000
 
