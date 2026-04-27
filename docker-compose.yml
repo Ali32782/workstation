@@ -51,6 +51,7 @@ volumes:
   documenso_pg_data:
   documenso_data:
   scraper_state:
+  portal_data:
   mautic_config:
   mautic_logs:
   mautic_media:
@@ -844,8 +845,15 @@ services:
       MAUTIC_API_TOKEN: ${MAUTIC_API_TOKEN:-}
       MARKETING_ALLOWED_GROUPS: ${MARKETING_ALLOWED_GROUPS:-/kineo,/medtheris}
       MARKETING_WORKSPACES: ${MARKETING_WORKSPACES:-medtheris}
+      # --- Persistent runtime config dir ---
+      # Used for browser-provisioned tenant tokens (Sign / Documenso, future
+      # tools). File lives in the `portal_data` named volume so it survives
+      # container rebuilds. Container runs as nextjs:1001, see Dockerfile.
+      PORTAL_DATA_DIR: /data
       NODE_ENV: production
       TZ: ${TZ}
+    volumes:
+      - portal_data:/data
     networks:
       - proxy
       - corehub-internal

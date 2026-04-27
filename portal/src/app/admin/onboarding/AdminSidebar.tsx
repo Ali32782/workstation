@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, ShieldCheck, ArrowLeft, Radar } from "lucide-react";
+import { Users, ShieldCheck, ArrowLeft, Radar, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // 'Clients'-Tab is intentionally hidden — internes Tool, keine externen Tenants.
@@ -19,6 +19,12 @@ const ITEMS = [
     label: "Lead-Scraper",
     description: "MedTheris-Pipeline",
     icon: Radar,
+  },
+  {
+    href: "/admin/onboarding/sign",
+    label: "Sign / Documenso",
+    description: "Team-Tokens pro Workspace",
+    icon: PenLine,
   },
 ];
 

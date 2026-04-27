@@ -5,7 +5,7 @@ import {
   parseUsernameList,
   userHasWorkspaceAccess,
 } from "@/lib/access-helpers";
-import { getSignTenant, type SignTenantConfig } from "./config";
+import { resolveSignTenant, type SignTenantConfig } from "./config";
 
 /**
  * Multi-tenant Sign session resolver.
@@ -72,12 +72,12 @@ export async function resolveSignSession(
     };
   }
 
-  const tenant = getSignTenant(workspace);
+  const tenant = await resolveSignTenant(workspace);
   if (!tenant) {
     return {
       kind: "not_configured",
       workspace,
-      message: `F\u00fcr den Workspace "${workspace}" ist noch kein Documenso\u2011Team eingerichtet (DOCUMENSO_TEAM_${workspace.toUpperCase()}_TOKEN fehlt).`,
+      message: `F\u00fcr den Workspace "${workspace}" ist noch kein Documenso\u2011Team eingerichtet. Admins k\u00f6nnen den Team-API-Token unter /admin/onboarding/sign hinterlegen (oder serverseitig DOCUMENSO_TEAM_${workspace.toUpperCase()}_TOKEN setzen).`,
     };
   }
 

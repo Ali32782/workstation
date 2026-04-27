@@ -142,11 +142,13 @@ export function SignClient({
   workspaceName,
   accent,
   documensoUrl,
+  isAdmin = false,
 }: {
   workspaceId: WorkspaceId;
   workspaceName: string;
   accent: string;
   documensoUrl: string;
+  isAdmin?: boolean;
 }) {
   const [docs, setDocs] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -532,9 +534,18 @@ export function SignClient({
           <div className="rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[12px] p-3 leading-relaxed">
             <div className="flex items-start gap-2">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
-              <div>
+              <div className="min-w-0">
                 <strong>Sign noch nicht eingerichtet</strong>
                 <p className="mt-1 text-[11.5px] opacity-90">{notConfigured}</p>
+                {isAdmin && (
+                  <a
+                    href={`/admin/onboarding/sign?ws=${encodeURIComponent(workspaceId)}`}
+                    className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[11px] font-medium transition-colors"
+                  >
+                    Jetzt provisionieren
+                    <ExternalLink size={11} />
+                  </a>
+                )}
               </div>
             </div>
           </div>
