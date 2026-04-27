@@ -1,5 +1,6 @@
 import { FeedItem } from "@/components/ui/FeedItem";
 import { LivePulse } from "@/components/dashboards/LivePulse";
+import { ScraperRunCard } from "@/components/dashboards/ScraperRunCard";
 
 const TODAY_DE = new Intl.DateTimeFormat("de-DE", {
   weekday: "short",
@@ -66,6 +67,8 @@ export function MedtherisDashboard({
       </div>
 
       <LivePulse workspace="medtheris" />
+
+      <ScraperRunCard accent={accent} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
         <div className="flex flex-col gap-2.5">
