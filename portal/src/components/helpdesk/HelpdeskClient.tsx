@@ -44,7 +44,9 @@ import {
   ArrowRight,
   Trash2,
   Settings as SettingsIcon,
+  FileUp,
 } from "lucide-react";
+import { ImportTicketsModal } from "./ImportTicketsModal";
 import Link from "next/link";
 import {
   ThreePaneLayout,
@@ -185,6 +187,7 @@ export function HelpdeskClient({
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [showNew, setShowNew] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const newTitleRef = useRef<HTMLInputElement>(null);
 
   // Bulk selection: per-id checkbox state. Cleared whenever filters change.
@@ -541,6 +544,14 @@ export function HelpdeskClient({
             >
               <SettingsIcon size={13} />
             </Link>
+            <button
+              type="button"
+              onClick={() => setShowImport(true)}
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="Tickets aus CSV importieren"
+            >
+              <FileUp size={13} />
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -1131,6 +1142,14 @@ export function HelpdeskClient({
       )}
       {showShortcuts && (
         <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />
+      )}
+      {showImport && (
+        <ImportTicketsModal
+          workspaceId={workspaceId}
+          accent={accent}
+          onClose={() => setShowImport(false)}
+          onImported={() => void loadList(search, stateFilter, scopeFilter)}
+        />
       )}
     </>
   );
