@@ -1186,6 +1186,175 @@ export async function getHelpdeskSettings(
   };
 }
 
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                       Settings mutations (admin-only)                   */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Patch a Zammad group via `PUT /api/v1/groups/:id`. Only fields exposed in
+ * the portal settings UI are accepted (name, active, default sender email
+ * address, default signature, note). Caller must verify the group belongs
+ * to the calling tenant before invoking this — ensureGroupInTenant() helps.
+ */
+export async function updateGroup(
+  tenant: HelpdeskTenantConfig,
+  groupId: number,
+  patch: Partial<{
+    name: string;
+    active: boolean;
+    email_address_id: number | null;
+    signature_id: number | null;
+    note: string | null;
+  }>,
+): Promise<HelpdeskGroupSetting> {
+  await ensureGroupInTenant(tenant, groupId);
+  await fetchJson(zammadFetch, "zammad", `/api/v1/groups/${groupId}`, {
+    method: "PUT",
+    json: patch,
+  });
+  invalidateMetaCache(tenant.workspace);
+  // Re-read so the UI gets canonical state.
+  const all = await fetchJson<
+    {
+      id: number;
+      name: string;
+      active: boolean;
+      email_address_id: number | null;
+      signature_id: number | null;
+      note?: string | null;
+    }[]
+  >(zammadFetch, "zammad", `/api/v1/groups`);
+  const g = all.find((x) => x.id === groupId);
+  if (!g) throw new Error("Gruppe nach Update nicht gefunden.");
+  return {
+    id: g.id,
+    name: g.name,
+    active: g.active,
+    emailAddressId: g.email_address_id,
+    signatureId: g.signature_id,
+    memberCount: null,
+    note: g.note ?? null,
+  };
+}
+
+/**
+ * Patch a Zammad email-address record (sender). Only display name + active
+ * flag are editable from the portal — IMAP/SMTP credentials live on the
+ * channel and stay out of UI scope. Caller must check that the address is
+ * actually in use by the tenant (or admin override) before calling.
+ */
+export async function updateEmailAddress(
+  emailAddressId: number,
+  patch: Partial<{ name: string; active: boolean }>,
+): Promise<HelpdeskEmailAddressSetting> {
+  await fetchJson(
+    zammadFetch,
+    "zammad",
+    `/api/v1/email_addresses/${emailAddressId}`,
+    { method: "PUT", json: patch },
+  );
+  const all = await fetchJson<
+    {
+      id: number;
+      name: string;
+      email: string;
+      channel_id: number | null;
+      active: boolean;
+    }[]
+  >(zammadFetch, "zammad", `/api/v1/email_addresses`);
+  const ea = all.find((x) => x.id === emailAddressId);
+  if (!ea) throw new Error("Absender-Adresse nach Update nicht gefunden.");
+  return {
+    id: ea.id,
+    name: ea.name,
+    email: ea.email,
+    channelId: ea.channel_id,
+    active: ea.active,
+    inUseByTenant: false, // recomputed by the caller against the tenant
+  };
+}
+
+/**
+ * Members of a single Zammad group. Zammad models membership as a
+ * per-user `group_ids` map: `{ "<group_id>": ["full","read","change", ...] }`.
+ * We list all active users and pick the ones whose map contains the group.
+ */
+export async function listGroupMembers(
+  tenant: HelpdeskTenantConfig,
+  groupId: number,
+): Promise<Array<TicketUser & { accessLevel: string[] }>> {
+  await ensureGroupInTenant(tenant, groupId);
+  const users = await fetchJson<
+    Array<RawUser & { active?: boolean; group_ids?: Record<string, string[]> }>
+  >(zammadFetch, "zammad", `/api/v1/users?expand=true&limit=200`);
+  const out: Array<TicketUser & { accessLevel: string[] }> = [];
+  for (const u of users) {
+    if (u.active === false) continue;
+    const access = u.group_ids?.[String(groupId)];
+    if (!access || access.length === 0) continue;
+    out.push({
+      id: u.id,
+      login: u.login,
+      email: u.email,
+      firstName: u.firstname ?? "",
+      lastName: u.lastname ?? "",
+      fullName:
+        `${u.firstname ?? ""} ${u.lastname ?? ""}`.trim() || u.email || u.login,
+      image: u.image ?? null,
+      accessLevel: access,
+    });
+  }
+  return out;
+}
+
+/**
+ * Toggle a user's membership in a group. `accessLevel` is the set of
+ * Zammad permissions we want (default: full). Pass `null` to remove the
+ * user from the group entirely.
+ */
+export async function setGroupMembership(
+  tenant: HelpdeskTenantConfig,
+  groupId: number,
+  userId: number,
+  accessLevel: string[] | null,
+): Promise<void> {
+  await ensureGroupInTenant(tenant, groupId);
+  // Read the user's current group_ids so we don't clobber other groups.
+  const user = await fetchJson<{
+    id: number;
+    group_ids?: Record<string, string[]>;
+  }>(zammadFetch, "zammad", `/api/v1/users/${userId}`);
+  const current = { ...(user.group_ids ?? {}) };
+  const key = String(groupId);
+  if (accessLevel && accessLevel.length > 0) {
+    current[key] = accessLevel;
+  } else {
+    delete current[key];
+  }
+  await fetchJson(zammadFetch, "zammad", `/api/v1/users/${userId}`, {
+    method: "PUT",
+    json: { group_ids: current },
+  });
+}
+
+async function ensureGroupInTenant(
+  tenant: HelpdeskTenantConfig,
+  groupId: number,
+): Promise<void> {
+  const all = await fetchJson<{ id: number; name: string }[]>(
+    zammadFetch,
+    "zammad",
+    `/api/v1/groups`,
+  );
+  const g = all.find((x) => x.id === groupId);
+  if (!g) throw new Error(`Gruppe ${groupId} nicht gefunden.`);
+  if (!tenantAllowsGroup(tenant, g.name)) {
+    throw new Error(
+      `Gruppe "${g.name}" geh\u00f6rt nicht zum Workspace ${tenant.workspace}.`,
+    );
+  }
+}
+
 export async function listOverviews(): Promise<OverviewSummary[]> {
   const data = await fetchJson<RawOverview[]>(zammadFetch, "zammad", `/api/v1/overviews`);
   return data
