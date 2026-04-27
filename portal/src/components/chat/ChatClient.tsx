@@ -88,6 +88,8 @@ export function ChatClient({
   const [showNewChannel, setShowNewChannel] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"members" | "files" | "settings">("members");
+  const [dragActive, setDragActive] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const createMenuRef = useRef<HTMLDivElement>(null);
@@ -544,9 +546,24 @@ export function ChatClient({
                 <Video size={14} />
                 Anruf starten
               </button>
+              <button
+                onClick={() => {
+                  setDrawerTab("files");
+                  setShowSettings(true);
+                }}
+                className="flex items-center gap-1.5 rounded-md hover:bg-bg-overlay text-text-secondary hover:text-text-primary border border-stroke-1 px-2.5 py-1.5 text-[12px] font-medium"
+                title="Dateien in diesem Kanal"
+                aria-label="Dateien in diesem Kanal"
+              >
+                <FileText size={14} />
+                Dateien
+              </button>
               {activeRoom.type !== "d" && (
                 <button
-                  onClick={() => setShowSettings(true)}
+                  onClick={() => {
+                    setDrawerTab("members");
+                    setShowSettings(true);
+                  }}
                   className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary border border-transparent hover:border-stroke-1"
                   title="Kanal-Einstellungen"
                   aria-label="Kanal-Einstellungen"
@@ -557,7 +574,35 @@ export function ChatClient({
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div
+              className={`flex-1 overflow-y-auto px-6 py-4 relative ${
+                dragActive ? "bg-[#5b5fc7]/5" : ""
+              }`}
+              onDragEnter={(e) => {
+                if (e.dataTransfer.types.includes("Files")) {
+                  e.preventDefault();
+                  setDragActive(true);
+                }
+              }}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("Files")) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                }
+              }}
+              onDragLeave={(e) => {
+                const rt = e.relatedTarget as Node | null;
+                if (!rt || !(e.currentTarget as Node).contains(rt)) {
+                  setDragActive(false);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) setPendingFile(f);
+              }}
+            >
               {messagesLoading && messages.length === 0 && (
                 <div className="text-text-tertiary text-xs flex items-center justify-center py-12">
                   <Loader2 size={20} className="spin mr-2" /> Lade Nachrichten …
@@ -578,6 +623,14 @@ export function ChatClient({
                 />
               ))}
               <div ref={messagesEndRef} />
+              {dragActive && (
+                <div className="pointer-events-none absolute inset-2 rounded-lg border-2 border-dashed border-[#5b5fc7] bg-[#5b5fc7]/10 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-[#5b5fc7] text-sm font-medium bg-bg-base px-4 py-2 rounded-md shadow">
+                    <Paperclip size={16} />
+                    Datei hier ablegen, um sie zu senden
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Composer */}
@@ -684,11 +737,21 @@ export function ChatClient({
       )}
 
       {/* ─── Channel Settings Drawer ────────────────────────────── */}
-      {showSettings && activeRoom && activeRoom.type !== "d" && (
+      {showSettings && activeRoom && (
         <ChannelSettingsDrawer
           room={activeRoom}
           selfUsername={initialMe.username}
           rocketChatWebBase={rocketChatWebBase}
+          initialTab={
+            activeRoom.type === "d"
+              ? "files"
+              : drawerTab
+          }
+          allowedTabs={
+            activeRoom.type === "d"
+              ? ["files"]
+              : ["members", "files", "settings"]
+          }
           onClose={() => setShowSettings(false)}
           onUpdated={async () => {
             await refreshRooms();
@@ -1587,10 +1650,14 @@ function NewChannelModal({
   );
 }
 
+type DrawerTab = "members" | "files" | "settings";
+
 function ChannelSettingsDrawer({
   room,
   selfUsername,
   rocketChatWebBase,
+  initialTab,
+  allowedTabs,
   onClose,
   onUpdated,
   onArchived,
@@ -1598,12 +1665,17 @@ function ChannelSettingsDrawer({
   room: ChatRoom;
   selfUsername: string;
   rocketChatWebBase: string;
+  initialTab?: DrawerTab;
+  allowedTabs?: DrawerTab[];
   onClose: () => void;
   onUpdated: () => void | Promise<void>;
   onArchived: () => void | Promise<void>;
 }) {
-  type Tab = "members" | "files" | "settings";
-  const [tab, setTab] = useState<Tab>("members");
+  type Tab = DrawerTab;
+  const tabsToShow: Tab[] = allowedTabs ?? ["members", "files", "settings"];
+  const [tab, setTab] = useState<Tab>(
+    initialTab && tabsToShow.includes(initialTab) ? initialTab : tabsToShow[0],
+  );
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [files, setFiles] = useState<RoomFile[]>([]);
@@ -1655,7 +1727,9 @@ function ChannelSettingsDrawer({
     <aside className="w-[min(100%,420px)] sm:w-[400px] shrink-0 border-l border-stroke-1 bg-bg-chrome flex flex-col shadow-2xl">
       <div className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2 bg-bg-elevated">
         <div className="w-8 h-8 rounded bg-[#5b5fc7]/20 flex items-center justify-center shrink-0">
-          {type === "p" ? (
+          {type === "d" ? (
+            <UserIcon size={14} className="text-[#5b5fc7]" />
+          ) : type === "p" ? (
             <Lock size={14} className="text-[#5b5fc7]" />
           ) : (
             <Hash size={14} className="text-[#5b5fc7]" />
@@ -1686,7 +1760,9 @@ function ChannelSettingsDrawer({
             ["files", "Dateien", FileText],
             ["settings", "Einstellungen", Settings],
           ] as const
-        ).map(([key, label, Icon]) => (
+        )
+          .filter(([key]) => tabsToShow.includes(key))
+          .map(([key, label, Icon]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -2066,8 +2142,13 @@ function FilesTab({
         </div>
       )}
       {!loading && files.length === 0 && (
-        <div className="text-text-tertiary text-xs text-center py-8">
-          Noch keine Dateien geteilt
+        <div className="text-text-tertiary text-xs text-center py-8 px-4 leading-relaxed">
+          Noch keine Dateien geteilt.
+          <br />
+          <span className="text-[11px]">
+            Anhänge per <Paperclip size={11} className="inline align-text-bottom" /> im
+            Eingabefeld – oder Datei in den Chat ziehen.
+          </span>
         </div>
       )}
       <ul className="space-y-1">
