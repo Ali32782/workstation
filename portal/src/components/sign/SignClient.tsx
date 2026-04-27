@@ -27,6 +27,7 @@ import {
   AlertCircle,
   FileType2,
   LayoutGrid,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { FieldEditor } from "./FieldEditor";
 import {
@@ -354,14 +355,25 @@ export function SignClient({
         accent={accent}
         icon={<PenLine size={14} style={{ color: accent }} />}
         right={
-          <button
-            type="button"
-            onClick={() => void loadDocs()}
-            className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Neu laden"
-          >
-            <RefreshCw size={13} />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => void loadDocs()}
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="Neu laden"
+            >
+              <RefreshCw size={13} />
+            </button>
+            <a
+              href="https://sign.kineo360.work/settings/profile"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="Sign-Einstellungen (Documenso)"
+            >
+              <SettingsIcon size={13} />
+            </a>
+          </>
         }
       />
 

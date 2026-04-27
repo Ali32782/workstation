@@ -25,6 +25,7 @@ import {
   Search,
   Star,
   X,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { PaneHeader } from "@/components/ui/ThreePaneLayout";
 import { RecordList } from "@/components/ui/RecordList";
@@ -648,6 +649,15 @@ export function ProjectsClient({
             >
               <Plus size={13} />
             </button>
+            <a
+              href="https://projects.kineo360.work/profile"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="Projekt-Einstellungen (Plane)"
+            >
+              <SettingsIcon size={13} />
+            </a>
             <button
               type="button"
               onClick={() => setSidebarCollapsed(true)}

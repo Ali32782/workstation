@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Loader2,
   Star,
+  Settings as SettingsIcon,
   MapPin,
   Phone,
   Mail,
@@ -367,6 +368,15 @@ export function CrmClient({
             >
               <RefreshCw size={13} />
             </button>
+            <a
+              href="https://crm.kineo360.work/settings/profile"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="CRM-Einstellungen (Twenty)"
+            >
+              <SettingsIcon size={13} />
+            </a>
             {scraperAvailable && (
               <button
                 type="button"

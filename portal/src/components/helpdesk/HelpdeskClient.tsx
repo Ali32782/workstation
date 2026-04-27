@@ -43,7 +43,9 @@ import {
   Keyboard,
   ArrowRight,
   Trash2,
+  Settings as SettingsIcon,
 } from "lucide-react";
+import Link from "next/link";
 import {
   ThreePaneLayout,
   PaneHeader,
@@ -530,6 +532,13 @@ export function HelpdeskClient({
             >
               <RefreshCw size={13} />
             </button>
+            <Link
+              href={`/${workspaceId}/helpdesk/settings`}
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="Einstellungen (Gruppen, Absender, Kanäle)"
+            >
+              <SettingsIcon size={13} />
+            </Link>
             <button
               type="button"
               onClick={() => {

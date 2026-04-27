@@ -1025,6 +1025,167 @@ type RawOverview = {
  * scope filters. We preserve the original Zammad ordering (`prio`) so
  * admins can curate the order in Zammad and have it reflected here.
  */
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                              Settings panel                             */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+export type HelpdeskGroupSetting = {
+  id: number;
+  name: string;
+  active: boolean;
+  emailAddressId: number | null;
+  signatureId: number | null;
+  memberCount: number | null;
+  note: string | null;
+};
+
+export type HelpdeskEmailAddressSetting = {
+  id: number;
+  name: string;
+  email: string;
+  channelId: number | null;
+  active: boolean;
+  inUseByTenant: boolean;
+};
+
+export type HelpdeskChannelSetting = {
+  id: number;
+  area: string;
+  active: boolean;
+  /** Sender / recipient settings for the channel as Zammad reports them. */
+  options: Record<string, unknown>;
+};
+
+export type HelpdeskSettings = {
+  workspace: string;
+  tenant: { groupNames: string[] };
+  groups: HelpdeskGroupSetting[];
+  emailAddresses: HelpdeskEmailAddressSetting[];
+  channels: HelpdeskChannelSetting[];
+  adminLinks: Record<string, string>;
+};
+
+/**
+ * Read-only settings overview for a tenant: the Zammad groups, mail
+ * addresses, channels and member counts. Used by the portal Helpdesk
+ * gear / settings page so admins can see (and deep-link into Zammad to
+ * edit) sender addresses, group membership and inbound mail routing.
+ */
+export async function getHelpdeskSettings(
+  tenant: HelpdeskTenantConfig,
+): Promise<HelpdeskSettings> {
+  type RawGroup = {
+    id: number;
+    name: string;
+    active: boolean;
+    email_address_id: number | null;
+    signature_id: number | null;
+    note?: string | null;
+  };
+  type RawEmailAddress = {
+    id: number;
+    name: string;
+    email: string;
+    channel_id: number | null;
+    active: boolean;
+  };
+  type RawChannel = {
+    id: number;
+    area: string;
+    active: boolean;
+    options?: Record<string, unknown>;
+  };
+  type RawUser = {
+    id: number;
+    active: boolean;
+    group_ids?: Record<string, string[]>;
+  };
+
+  const [allGroups, emailAddresses, channels] = await Promise.all([
+    fetchJson<RawGroup[]>(zammadFetch, "zammad", "/api/v1/groups").catch(
+      () => [] as RawGroup[],
+    ),
+    fetchJson<RawEmailAddress[]>(
+      zammadFetch,
+      "zammad",
+      "/api/v1/email_addresses",
+    ).catch(() => [] as RawEmailAddress[]),
+    fetchJson<RawChannel[]>(zammadFetch, "zammad", "/api/v1/channels").catch(
+      () => [] as RawChannel[],
+    ),
+  ]);
+
+  const tenantGroupNames = new Set(
+    tenant.groupNames.map((n) => n.toLowerCase()),
+  );
+  const tenantGroups = allGroups.filter((g) =>
+    tenantGroupNames.has(g.name.toLowerCase()),
+  );
+  const tenantEmailIds = new Set(
+    tenantGroups
+      .map((g) => g.email_address_id)
+      .filter((x): x is number => typeof x === "number"),
+  );
+
+  const memberCounts = new Map<number, number>();
+  try {
+    const users = await fetchJson<RawUser[]>(
+      zammadFetch,
+      "zammad",
+      "/api/v1/users?expand=true&limit=200",
+    );
+    for (const u of users) {
+      if (!u.active) continue;
+      const ass = u.group_ids;
+      if (!ass || typeof ass !== "object") continue;
+      for (const [gid] of Object.entries(ass)) {
+        const id = Number(gid);
+        if (!Number.isFinite(id)) continue;
+        memberCounts.set(id, (memberCounts.get(id) ?? 0) + 1);
+      }
+    }
+  } catch {
+    // Non-fatal — counts just stay null.
+  }
+
+  return {
+    workspace: tenant.workspace,
+    tenant: { groupNames: tenant.groupNames },
+    groups: tenantGroups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      active: g.active,
+      emailAddressId: g.email_address_id,
+      signatureId: g.signature_id,
+      memberCount: memberCounts.get(g.id) ?? null,
+      note: g.note ?? null,
+    })),
+    emailAddresses: emailAddresses.map((e) => ({
+      id: e.id,
+      name: e.name,
+      email: e.email,
+      channelId: e.channel_id,
+      active: e.active,
+      inUseByTenant: tenantEmailIds.has(e.id),
+    })),
+    channels: channels
+      .filter((c) => c.area?.toLowerCase().startsWith("email"))
+      .map((c) => ({
+        id: c.id,
+        area: c.area,
+        active: c.active,
+        options: c.options ?? {},
+      })),
+    adminLinks: {
+      groups: "/#manage/groups",
+      emailAddresses: "/#manage/email_addresses",
+      channels: "/#channels/email",
+      signatures: "/#manage/signatures",
+      agents: "/#manage/users",
+    },
+  };
+}
+
 export async function listOverviews(): Promise<OverviewSummary[]> {
   const data = await fetchJson<RawOverview[]>(zammadFetch, "zammad", `/api/v1/overviews`);
   return data

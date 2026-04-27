@@ -25,6 +25,7 @@ import {
   X,
   Loader2,
   Star,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import type {
   MailAddress,
@@ -327,17 +328,28 @@ export function MailClient({
             <h2 className="font-semibold text-text-primary">
               {labelForFolder(folders, activeFolder)}
             </h2>
-            <button
-              onClick={() => refreshMessages(activeFolder)}
-              className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Aktualisieren"
-            >
-              {messagesLoading ? (
-                <Loader2 size={14} className="spin" />
-              ) : (
-                <RefreshCw size={14} />
-              )}
-            </button>
+            <div className="flex items-center gap-0.5">
+              <a
+                href="https://webmail.kineo360.work/?admin"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+                title="Mail-Einstellungen (SnappyMail Admin)"
+              >
+                <SettingsIcon size={14} />
+              </a>
+              <button
+                onClick={() => refreshMessages(activeFolder)}
+                className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+                title="Aktualisieren"
+              >
+                {messagesLoading ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+              </button>
+            </div>
           </div>
           <div className="relative">
             <Search
