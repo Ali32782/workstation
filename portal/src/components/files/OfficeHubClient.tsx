@@ -286,12 +286,25 @@ export function OfficeHubClient({
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {/* ── Quick Actions ───────────────────────────────────── */}
+        {/* ── Quick Actions (prominent CTA) ───────────────────── */}
         <section className="px-5 pt-5">
-          <h2 className="text-[10.5px] uppercase tracking-wide text-text-tertiary font-semibold mb-2">
-            Neu erstellen
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span
+                className="w-6 h-6 rounded flex items-center justify-center"
+                style={{ background: `${accent}22` }}
+              >
+                <Plus size={13} style={{ color: accent }} />
+              </span>
+              <h2 className="text-[13px] font-semibold text-text-primary">
+                {t("files.newDocument", "Neues Dokument")}
+              </h2>
+            </div>
+            <span className="text-[10.5px] text-text-tertiary">
+              {t("office.openIn", "Im Editor öffnen")}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {QUICK_ACTIONS.map((qa) => {
               const Icon = qa.icon;
               return (
@@ -300,17 +313,22 @@ export function OfficeHubClient({
                   type="button"
                   disabled={busy}
                   onClick={() => onCreate(qa.kind)}
-                  className="group text-left rounded-lg border border-stroke-1 bg-bg-elevated hover:border-stroke-2 hover:bg-bg-overlay px-3 py-3 transition-colors disabled:opacity-50"
+                  className="group text-left rounded-xl border-2 px-4 py-4 transition-all disabled:opacity-50 hover:shadow-md hover:-translate-y-0.5"
+                  style={{
+                    borderColor: `${qa.color}33`,
+                    background: `linear-gradient(135deg, ${qa.color}0d 0%, transparent 60%)`,
+                  }}
+                  title={`${t(qa.labelKey, qa.fallback)} im aktuellen Workspace anlegen`}
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-3">
                     <div
-                      className="w-9 h-9 rounded flex items-center justify-center shrink-0"
-                      style={{ background: `${qa.color}1f` }}
+                      className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0 shadow-sm"
+                      style={{ background: `${qa.color}26` }}
                     >
-                      <Icon size={17} style={{ color: qa.color }} />
+                      <Icon size={20} style={{ color: qa.color }} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[12.5px] font-semibold text-text-primary truncate">
+                      <p className="text-[13px] font-semibold text-text-primary truncate">
                         {t(qa.labelKey, qa.fallback)}
                       </p>
                       <p className="text-[10.5px] text-text-tertiary truncate">

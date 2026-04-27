@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronRight,
   Folder,
@@ -11,6 +11,8 @@ import {
   FileAudio,
   FileArchive,
   File as FileIcon,
+  Presentation,
+  StickyNote,
   Upload,
   FolderPlus,
   Trash2,
@@ -20,6 +22,7 @@ import {
   Search,
   Home,
   X,
+  ChevronDown,
   ExternalLink,
   Plus,
   PanelRight,
@@ -93,6 +96,16 @@ export function FileStationClient({
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showNewMenu, setShowNewMenu] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showNewMenu) return;
+    const close = (e: MouseEvent) => {
+      if (!newMenuRef.current?.contains(e.target as Node)) setShowNewMenu(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [showNewMenu]);
   const [detailOpen, setDetailOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try {
@@ -175,6 +188,44 @@ export function FileStationClient({
           alert("Fehler beim Upload:\n" + j.errors.map((e) => `${e.name}: ${e.error}`).join("\n"));
         }
         await load(cwd);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cwd, load, workspaceId],
+  );
+
+  const onCreateDoc = useCallback(
+    async (kind: "doc" | "sheet" | "slides" | "text") => {
+      const def = {
+        doc: "Neues Dokument",
+        sheet: "Neue Tabelle",
+        slides: "Neue Präsentation",
+        text: "Neue Notiz",
+      }[kind];
+      const name = prompt("Name der neuen Datei:", def)?.trim();
+      if (!name) return;
+      setBusy(true);
+      try {
+        const r = await fetch("/api/cloud/create-doc", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ws: workspaceId, dir: cwd, name, kind }),
+        });
+        const j = (await r.json()) as { error?: string; path?: string };
+        if (!r.ok) {
+          alert("Anlegen fehlgeschlagen: " + (j.error ?? r.statusText));
+          return;
+        }
+        await load(cwd);
+        // Open in Office editor if it's an office-editable file.
+        if (j.path && /\.(docx|xlsx|pptx)$/i.test(j.path)) {
+          window.open(
+            `/${workspaceId}/office?path=${encodeURIComponent(j.path)}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
+        }
       } finally {
         setBusy(false);
       }
@@ -287,15 +338,78 @@ export function FileStationClient({
             />
           </div>
 
-          <button
-            type="button"
-            onClick={onMkdir}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-stroke-1 bg-bg-elevated hover:border-stroke-2 text-[12px] disabled:opacity-50"
-            title="Neuer Ordner"
-          >
-            <FolderPlus size={13} /> Ordner
-          </button>
+          <div ref={newMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setShowNewMenu((v) => !v)}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-white text-[12px] disabled:opacity-50"
+              style={{ background: accent }}
+              title="Neue Datei oder Ordner anlegen"
+            >
+              <Plus size={13} /> Neu
+              <ChevronDown size={11} className="opacity-80" />
+            </button>
+            {showNewMenu && (
+              <div className="absolute right-0 top-full mt-1 z-30 w-60 rounded-md border border-stroke-1 bg-bg-elevated shadow-xl py-1 text-[12.5px]">
+                <NewMenuItem
+                  icon={<FileText size={14} style={{ color: "#1d4ed8" }} />}
+                  label="Dokument (.docx)"
+                  hint="Word-kompatibel"
+                  onClick={() => {
+                    setShowNewMenu(false);
+                    void onCreateDoc("doc");
+                  }}
+                />
+                <NewMenuItem
+                  icon={<FileSpreadsheet size={14} style={{ color: "#16a34a" }} />}
+                  label="Tabelle (.xlsx)"
+                  hint="Excel-kompatibel"
+                  onClick={() => {
+                    setShowNewMenu(false);
+                    void onCreateDoc("sheet");
+                  }}
+                />
+                <NewMenuItem
+                  icon={<Presentation size={14} style={{ color: "#dc2626" }} />}
+                  label="Präsentation (.pptx)"
+                  hint="PowerPoint-kompatibel"
+                  onClick={() => {
+                    setShowNewMenu(false);
+                    void onCreateDoc("slides");
+                  }}
+                />
+                <NewMenuItem
+                  icon={<StickyNote size={14} style={{ color: "#7c3aed" }} />}
+                  label="Notiz (.md)"
+                  hint="Markdown"
+                  onClick={() => {
+                    setShowNewMenu(false);
+                    void onCreateDoc("text");
+                  }}
+                />
+                <div className="my-1 border-t border-stroke-1" />
+                <NewMenuItem
+                  icon={<FolderPlus size={14} className="text-text-tertiary" />}
+                  label="Ordner"
+                  hint="im aktuellen Verzeichnis"
+                  onClick={() => {
+                    setShowNewMenu(false);
+                    void onMkdir();
+                  }}
+                />
+                <NewMenuItem
+                  icon={<Upload size={14} className="text-text-tertiary" />}
+                  label="Datei hochladen"
+                  hint="von diesem Gerät"
+                  onClick={() => {
+                    setShowNewMenu(false);
+                    fileInputRef.current?.click();
+                  }}
+                />
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -568,5 +682,33 @@ function DetailRail({
         </button>
       </div>
     </div>
+  );
+}
+
+function NewMenuItem({
+  icon,
+  label,
+  hint,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left px-3 py-2 hover:bg-bg-overlay flex items-center gap-2.5"
+    >
+      <span className="w-6 h-6 rounded flex items-center justify-center bg-bg-base">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium text-text-primary truncate">{label}</span>
+        {hint && (
+          <span className="block text-[10.5px] text-text-tertiary truncate">{hint}</span>
+        )}
+      </span>
+    </button>
   );
 }
