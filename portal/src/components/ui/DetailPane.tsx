@@ -93,7 +93,7 @@ export function SidebarSection({
   right,
   children,
 }: {
-  title: string;
+  title: ReactNode;
   right?: ReactNode;
   children: ReactNode;
 }) {

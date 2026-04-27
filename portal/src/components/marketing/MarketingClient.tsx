@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Megaphone,
   Users as UsersIcon,
@@ -15,6 +16,8 @@ import {
   Building2,
   MapPin,
   CheckCircle2,
+  Settings as SettingsIcon,
+  ArrowRight,
 } from "lucide-react";
 import {
   ThreePaneLayout,
@@ -236,15 +239,24 @@ export function MarketingClient({
         icon={<Megaphone size={14} style={{ color: accent }} />}
         accent={accent}
         right={
-          <a
-            href={mauticUrl}
-            target="_blank"
-            rel="noreferrer"
-            title="In Mautic öffnen"
-            className="p-1 rounded hover:bg-bg-elevated text-text-tertiary"
-          >
-            <ExternalLink size={13} />
-          </a>
+          <div className="flex items-center gap-0.5">
+            <Link
+              href={`/${workspaceId}/marketing/settings`}
+              title="Einstellungen"
+              className="p-1 rounded hover:bg-bg-elevated text-text-tertiary"
+            >
+              <SettingsIcon size={13} />
+            </Link>
+            <a
+              href={mauticUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="In Mautic öffnen"
+              className="p-1 rounded hover:bg-bg-elevated text-text-tertiary"
+            >
+              <ExternalLink size={13} />
+            </a>
+          </div>
         }
       />
       <nav className="flex-1 min-h-0 overflow-auto py-1">
@@ -423,7 +435,14 @@ export function MarketingClient({
   } else if (section === "overview") {
     detail = <OverviewDetail overview={overview} mauticUrl={mauticUrl} accent={accent} />;
   } else if (section === "contacts" && selectedContact) {
-    detail = <ContactDetail contact={selectedContact} accent={accent} mauticUrl={mauticUrl} />;
+    detail = (
+      <ContactDetail
+        contact={selectedContact}
+        accent={accent}
+        mauticUrl={mauticUrl}
+        workspaceId={workspaceId}
+      />
+    );
   } else if (section === "segments" && selectedSegment) {
     detail = <SegmentDetail segment={selectedSegment} mauticUrl={mauticUrl} />;
   } else if (section === "campaigns" && selectedCampaign) {
@@ -626,14 +645,110 @@ function BigKpi({
   );
 }
 
+type CrmCrossLink = {
+  person: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    companyId: string | null;
+    companyName: string | null;
+  } | null;
+  workspace?: string;
+  deepLink?: string;
+  reason?: string;
+};
+
+function CrmCrossLinkSection({
+  contact,
+  workspaceId,
+  accent,
+}: {
+  contact: MauticContact;
+  workspaceId: WorkspaceId;
+  accent: string;
+}) {
+  const [data, setData] = useState<CrmCrossLink | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!contact.email) {
+      setData({ person: null });
+      return;
+    }
+    setLoading(true);
+    setData(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `/api/marketing/contacts/${contact.id}/crm?ws=${workspaceId}&email=${encodeURIComponent(contact.email!)}`,
+          { cache: "no-store" },
+        );
+        const j = (await r.json()) as CrmCrossLink;
+        if (!cancelled) setData(j);
+      } catch {
+        if (!cancelled) setData({ person: null });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contact.id, contact.email, workspaceId]);
+
+  return (
+    <SidebarSection title="CRM">
+      {loading && (
+        <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
+          <Loader2 size={11} className="animate-spin" /> Suche im CRM…
+        </div>
+      )}
+      {!loading && data?.person && data.deepLink && (
+        <div className="space-y-1.5">
+          <Link
+            href={data.deepLink}
+            className="block rounded-md border border-stroke-1 px-2.5 py-2 hover:bg-bg-elevated"
+            style={{ borderColor: `${accent}40` }}
+          >
+            <p className="text-[12px] font-medium text-text-primary truncate">
+              {`${data.person.firstName ?? ""} ${data.person.lastName ?? ""}`.trim() ||
+                data.person.email ||
+                "(ohne Name)"}
+            </p>
+            {data.person.companyName && (
+              <p className="text-[10.5px] text-text-tertiary truncate">
+                @{data.person.companyName}
+              </p>
+            )}
+            <p className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] text-text-tertiary">
+              <ArrowRight size={10} />
+              In Twenty öffnen ({data.workspace})
+            </p>
+          </Link>
+        </div>
+      )}
+      {!loading && (!data?.person) && (
+        <p className="text-[11px] text-text-tertiary leading-relaxed">
+          Keine passende CRM-Person für{" "}
+          <span className="font-mono">{contact.email ?? "—"}</span> gefunden.
+        </p>
+      )}
+    </SidebarSection>
+  );
+}
+
 function ContactDetail({
   contact,
   accent,
   mauticUrl,
+  workspaceId,
 }: {
   contact: MauticContact;
   accent: string;
   mauticUrl: string;
+  workspaceId: WorkspaceId;
 }) {
   return (
     <DetailPane
@@ -719,6 +834,11 @@ function ContactDetail({
               ]}
             />
           </SidebarSection>
+          <CrmCrossLinkSection
+            contact={contact}
+            workspaceId={workspaceId}
+            accent={accent}
+          />
         </>
       }
     />

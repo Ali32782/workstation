@@ -109,6 +109,74 @@ function normaliseContact(c: RawContact, segments: Map<number, string>): MauticC
   };
 }
 
+/**
+ * Look up a single Mautic contact by exact email match. Returns null if no
+ * contact exists yet (callers can decide whether to upsert).
+ *
+ * Mautic's `/api/contacts?search=...` accepts a free-text search that matches
+ * email + name, so we constrain it with `email:foo@bar` filter syntax to
+ * avoid matching co-workers with the same first name.
+ */
+export async function findContactByEmail(
+  email: string,
+): Promise<MauticContact | null> {
+  if (!email.trim()) return null;
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("search", `email:${email.trim()}`);
+  const [raw, segs] = await Promise.all([
+    getJson<{ total: string | number; contacts?: Record<string, RawContact> }>(
+      `/api/contacts?${params}`,
+    ),
+    listSegments({ limit: 200 }).catch(() => ({ segments: [] as MauticSegment[] })),
+  ]);
+  const segMap = new Map(segs.segments.map((s) => [s.id, s.name]));
+  const arr = valuesOf(raw.contacts);
+  if (arr.length === 0) return null;
+  // Defensive double-check on email since Mautic's search is fuzzy on older
+  // versions — only return if it really matches.
+  const match = arr.find(
+    (c) => (pickField(c, "email") ?? "").toLowerCase() === email.trim().toLowerCase(),
+  );
+  return match ? normaliseContact(match, segMap) : null;
+}
+
+/**
+ * Returns every Mautic contact whose email lives at the given domain
+ * (e.g. all `*@medtheris.com` contacts for the MedTheris company in
+ * Twenty). Used to power the "Marketing" sidebar in the CRM company
+ * detail view.
+ */
+export async function listContactsByDomain(
+  domain: string,
+  limit = 50,
+): Promise<MauticContact[]> {
+  const cleaned = domain
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .trim()
+    .toLowerCase();
+  if (!cleaned) return [];
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  // Mautic search can match a substring on the email field. Anchoring with
+  // `@` makes it behave like a domain filter for the typical case.
+  params.set("search", `email:@${cleaned}`);
+  const [raw, segs] = await Promise.all([
+    getJson<{ total: string | number; contacts?: Record<string, RawContact> }>(
+      `/api/contacts?${params}`,
+    ),
+    listSegments({ limit: 200 }).catch(() => ({ segments: [] as MauticSegment[] })),
+  ]);
+  const segMap = new Map(segs.segments.map((s) => [s.id, s.name]));
+  return valuesOf(raw.contacts)
+    .filter((c) =>
+      (pickField(c, "email") ?? "").toLowerCase().endsWith(`@${cleaned}`),
+    )
+    .map((c) => normaliseContact(c, segMap));
+}
+
 export async function listContacts(opts: {
   search?: string;
   limit?: number;
@@ -347,4 +415,119 @@ export async function addContactToSegment(
       t,
     );
   }
+}
+
+// ─── Settings panel ────────────────────────────────────────────────────────
+
+export type MauticSettings = {
+  /** True iff `/api/contacts` returns 2xx with the configured Basic-Auth. */
+  apiReachable: boolean;
+  apiUser: string;
+  /** Public Mautic URL (https://marketing.…) for deep links. */
+  publicUrl: string;
+  /** Internal compose URL — mostly informational. */
+  internalUrl: string;
+  totals: {
+    contacts: number;
+    segments: number;
+    campaigns: number;
+    emails: number;
+  };
+  /** Top-N segments with their contact count, used as a quick overview. */
+  topSegments: Array<{
+    id: number;
+    name: string;
+    contactCount: number;
+    isPublished: boolean;
+  }>;
+  /** First couple of system mail-channel configs — surfaces sender details. */
+  channels: Array<{
+    type: string;
+    fromName?: string;
+    fromAddress?: string;
+    transport?: string;
+  }>;
+  /** Deep-links the settings UI exposes as buttons. */
+  adminLinks: {
+    apiCredentials: string;
+    users: string;
+    emailConfig: string;
+    segments: string;
+    campaigns: string;
+    forms: string;
+  };
+  /** Plain-language reasons collected during the probe (warnings + tips). */
+  warnings: string[];
+};
+
+export async function getMauticSettings(): Promise<MauticSettings> {
+  const warnings: string[] = [];
+  let apiReachable = false;
+  let totals = { contacts: 0, segments: 0, campaigns: 0, emails: 0 };
+  let topSegments: MauticSettings["topSegments"] = [];
+
+  if (!isMauticConfigured()) {
+    warnings.push(
+      "MAUTIC_API_USERNAME / MAUTIC_API_TOKEN sind nicht gesetzt – API-Zugriff aus dem Portal ist deaktiviert.",
+    );
+  } else {
+    try {
+      const [contacts, segments, campaigns, emails] = await Promise.all([
+        listContacts({ limit: 1 }),
+        listSegments({ limit: 100 }),
+        listCampaigns({ limit: 1 }),
+        listEmails({ limit: 1 }),
+      ]);
+      totals = {
+        contacts: contacts.total,
+        segments: segments.total,
+        campaigns: campaigns.total,
+        emails: emails.total,
+      };
+      topSegments = segments.segments
+        .slice()
+        .sort((a, b) => b.contactCount - a.contactCount)
+        .slice(0, 8)
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          contactCount: s.contactCount,
+          isPublished: s.isPublished,
+        }));
+      apiReachable = true;
+    } catch (e) {
+      warnings.push(
+        "API-Probe fehlgeschlagen: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
+
+  // We can't reliably introspect Mautic's email transport without admin-only
+  // calls, so leave channels empty for now and surface a hint.
+  const channels: MauticSettings["channels"] = [];
+  if (apiReachable) {
+    warnings.push(
+      "Versand-Transport (SMTP/Mailgun/…) wird in Mautic unter Settings → Configuration → Email Settings gepflegt.",
+    );
+  }
+
+  return {
+    apiReachable,
+    apiUser: API_USER || "—",
+    publicUrl: PUBLIC,
+    internalUrl: INTERNAL,
+    totals,
+    topSegments,
+    channels,
+    adminLinks: {
+      apiCredentials: "/s/config/edit#leadconfig",
+      users: "/s/users",
+      emailConfig: "/s/config/edit#emailconfig",
+      segments: "/s/segments",
+      campaigns: "/s/campaigns",
+      forms: "/s/forms",
+    },
+    warnings,
+  };
 }

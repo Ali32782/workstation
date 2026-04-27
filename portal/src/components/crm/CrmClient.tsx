@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -37,6 +38,8 @@ import {
   AlertCircle,
   CheckCircle2,
   X,
+  Megaphone,
+  RefreshCcw,
 } from "lucide-react";
 import {
   ThreePaneLayout,
@@ -370,15 +373,13 @@ export function CrmClient({
             >
               <RefreshCw size={13} />
             </button>
-            <a
-              href="https://crm.kineo360.work/settings/profile"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href={`/${workspaceId}/crm/settings`}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
               title={t("crm.settings")}
             >
               <SettingsIcon size={13} />
-            </a>
+            </Link>
             {scraperAvailable && (
               <button
                 type="button"
@@ -1192,6 +1193,12 @@ function CompanyDetailHero({
               ]}
             />
           </SidebarSection>
+          <MarketingSidebarSection
+            workspaceId={workspaceId}
+            companyId={company.id}
+            companyName={company.name}
+            accent={accent}
+          />
           <SidebarSection title="Zeitleiste">
             <p className="text-[11px] text-text-tertiary leading-relaxed">
               Erstellt {new Date(company.createdAt).toLocaleString("de-DE")}
@@ -1202,6 +1209,231 @@ function CompanyDetailHero({
         </>
       }
     />
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/*                Marketing (Mautic) sidebar section                  */
+/* ----------------------------------------------------------------- */
+
+type MauticContactLite = {
+  id: number;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  points: number;
+  segments: string[];
+  lastActive: string | null;
+};
+
+type CompanyMarketing = {
+  configured: boolean;
+  domain: string | null;
+  contacts: MauticContactLite[];
+  stats: {
+    total: number;
+    totalPoints: number;
+    lastActivity: string | null;
+    segments: { name: string; count: number }[];
+  };
+  deepLink?: string;
+  message?: string;
+  error?: string;
+};
+
+function MarketingSidebarSection({
+  workspaceId,
+  companyId,
+  companyName,
+  accent,
+}: {
+  workspaceId: WorkspaceId;
+  companyId: string;
+  companyName: string;
+  accent: string;
+}) {
+  const [data, setData] = useState<CompanyMarketing | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(
+        `/api/crm/companies/${encodeURIComponent(companyId)}/marketing?ws=${workspaceId}`,
+        { cache: "no-store" },
+      );
+      const j = (await r.json()) as CompanyMarketing & { error?: string };
+      setData(j);
+    } catch (e) {
+      setData({
+        configured: false,
+        domain: null,
+        contacts: [],
+        stats: { total: 0, totalPoints: 0, lastActivity: null, segments: [] },
+        error: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, workspaceId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const syncPeople = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const r = await fetch(
+        `/api/crm/companies/${encodeURIComponent(companyId)}/marketing?ws=${workspaceId}`,
+        { method: "POST" },
+      );
+      const j = (await r.json()) as {
+        synced?: number;
+        skipped?: number;
+        message?: string;
+        error?: string;
+        errors?: { email: string; message: string }[];
+      };
+      if (!r.ok) {
+        setSyncMsg(j.error ?? `HTTP ${r.status}`);
+      } else {
+        const errCount = j.errors?.length ?? 0;
+        setSyncMsg(
+          j.message ??
+            `${j.synced ?? 0} synchronisiert, ${j.skipped ?? 0} übersprungen` +
+              (errCount > 0 ? `, ${errCount} Fehler` : ""),
+        );
+        await load();
+      }
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }, [companyId, workspaceId, load]);
+
+  return (
+    <SidebarSection
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          <Megaphone size={11} style={{ color: accent }} />
+          Marketing
+        </span>
+      }
+    >
+      {loading && !data && (
+        <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
+          <Loader2 size={11} className="animate-spin" /> Lade Mautic-Daten…
+        </div>
+      )}
+      {data && !data.configured && (
+        <p className="text-[11px] text-text-tertiary leading-relaxed">
+          Mautic ist nicht konfiguriert.{" "}
+          <span className="text-text-quaternary">
+            (MAUTIC_API_USERNAME/_TOKEN fehlen)
+          </span>
+        </p>
+      )}
+      {data?.configured && data.error && (
+        <p className="text-[11px] text-red-400">{data.error}</p>
+      )}
+      {data?.configured && !data.error && (
+        <div className="space-y-2.5">
+          <div className="flex items-baseline gap-2">
+            <p className="text-[20px] font-semibold leading-none tabular-nums">
+              {data.stats.total}
+            </p>
+            <p className="text-[10.5px] text-text-tertiary">
+              Mautic-Kontakte{data.domain ? ` @${data.domain}` : ""}
+            </p>
+          </div>
+          {data.stats.totalPoints > 0 && (
+            <p className="text-[10.5px] text-text-tertiary">
+              Σ {data.stats.totalPoints} Punkte ·{" "}
+              {data.stats.lastActivity
+                ? `letzte Aktivität ${relativeTime(data.stats.lastActivity)}`
+                : "keine Aktivität"}
+            </p>
+          )}
+          {data.stats.segments.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {data.stats.segments.slice(0, 6).map((s) => (
+                <span
+                  key={s.name}
+                  className="px-1.5 py-0.5 rounded text-[10.5px] border border-stroke-1 text-text-secondary"
+                  title={`${s.count} Kontakt(e) in „${s.name}"`}
+                >
+                  {s.name}
+                  <span className="ml-1 text-text-quaternary">{s.count}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {data.contacts.length > 0 && (
+            <ul className="space-y-1">
+              {data.contacts.slice(0, 4).map((c) => (
+                <li
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 text-[11px]"
+                >
+                  <span className="truncate text-text-secondary">
+                    {(c.firstName || c.lastName)
+                      ? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()
+                      : c.email ?? `#${c.id}`}
+                  </span>
+                  <span className="text-text-quaternary tabular-nums shrink-0">
+                    {c.points} pts
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-1.5 pt-1">
+            <button
+              type="button"
+              onClick={() => void syncPeople()}
+              disabled={syncing}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:bg-bg-overlay text-text-secondary hover:text-text-primary disabled:opacity-50"
+              title={`Personen von „${companyName}" in Mautic anlegen / aktualisieren`}
+            >
+              {syncing ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <RefreshCcw size={11} />
+              )}
+              Sync
+            </button>
+            {data.deepLink && (
+              <a
+                href={data.deepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:bg-bg-overlay text-text-secondary hover:text-text-primary"
+                title="In Mautic öffnen"
+              >
+                <ExternalLink size={11} /> Mautic
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              className="ml-auto p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-40"
+              title="Aktualisieren"
+            >
+              <RefreshCw size={11} />
+            </button>
+          </div>
+          {syncMsg && (
+            <p className="text-[10.5px] text-text-tertiary">{syncMsg}</p>
+          )}
+        </div>
+      )}
+    </SidebarSection>
   );
 }
 

@@ -338,6 +338,41 @@ function personSummary(p: RawPerson): PersonSummary {
   };
 }
 
+/**
+ * Look up a single Person by *exact* primary email match within the given
+ * tenant. Returns null when no Person exists yet — used by the Marketing
+ * → CRM cross-link to decide whether to surface a "Open in CRM" link.
+ *
+ * Twenty's GraphQL filter on emails is a nested `eq` on `primaryEmail`
+ * (case-sensitive in older versions); we lower-case both sides defensively.
+ */
+export async function findPersonByEmail(
+  tenant: TwentyTenantConfig,
+  email: string,
+): Promise<PersonSummary | null> {
+  const cleaned = email.trim().toLowerCase();
+  if (!cleaned) return null;
+  const data = await gql<{
+    people: { edges: { node: RawPerson }[] };
+  }>(
+    tenant,
+    `query PersonByEmail($filter: PersonFilterInput!) {
+      people(filter: $filter, first: 5) {
+        edges { node { ${PERSON_LIST_FIELDS} } }
+      }
+    }`,
+    {
+      filter: {
+        emails: { primaryEmail: { ilike: cleaned } },
+      },
+    },
+  );
+  const match = data.people.edges
+    .map((e) => e.node)
+    .find((p) => (p.emails?.primaryEmail ?? "").toLowerCase() === cleaned);
+  return match ? personSummary(match) : null;
+}
+
 export async function listPeople(
   tenant: TwentyTenantConfig,
   opts: {
@@ -682,4 +717,152 @@ export async function listWorkspaceMembers(
   });
   memberCache.set(tenant.workspaceId, { ts: Date.now(), data: items });
   return items;
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                              Settings                                   */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+export type CrmSettings = {
+  apiReachable: boolean;
+  publicUrl: string;
+  internalUrl: string;
+  /** The active Twenty workspace id for this portal tenant. */
+  workspaceId: string;
+  /** Total counts. Used as KPIs in the settings overview. */
+  totals: {
+    companies: number;
+    people: number;
+  };
+  members: WorkspaceMember[];
+  /** Top open-deal stages with counts — quick pipeline view. */
+  pipeline: Array<{ stage: string; count: number }>;
+  /** Distinct lead sources observed across companies — useful when tagging. */
+  leadSources: string[];
+  /** Deep links into the Twenty admin UI. */
+  adminLinks: {
+    profile: string;
+    workspace: string;
+    members: string;
+    apiKeys: string;
+    dataModel: string;
+    integrations: string;
+  };
+  warnings: string[];
+};
+
+/**
+ * Aggregates the read-only configuration we surface in the portal-native
+ * CRM settings panel. Mirrors the shape of `getHelpdeskSettings()` so the
+ * client-side renderer can stay close to `HelpdeskSettingsClient`.
+ */
+export async function getCrmSettings(
+  tenant: TwentyTenantConfig,
+): Promise<CrmSettings> {
+  const warnings: string[] = [];
+  let apiReachable = false;
+  let totals = { companies: 0, people: 0 };
+  let members: WorkspaceMember[] = [];
+  let pipeline: CrmSettings["pipeline"] = [];
+  let leadSources: string[] = [];
+
+  try {
+    const probe = await gql<{
+      companies: { totalCount?: number };
+      people: { totalCount?: number };
+    }>(
+      tenant,
+      `query Probe {
+        companies(first: 1) { totalCount }
+        people(first: 1) { totalCount }
+      }`,
+    );
+    totals = {
+      companies: probe.companies.totalCount ?? 0,
+      people: probe.people.totalCount ?? 0,
+    };
+    apiReachable = true;
+  } catch (e) {
+    warnings.push(
+      "GraphQL-Probe fehlgeschlagen: " +
+        (e instanceof Error ? e.message : String(e)),
+    );
+  }
+
+  if (apiReachable) {
+    try {
+      members = await listWorkspaceMembers(tenant);
+    } catch (e) {
+      warnings.push(
+        "workspaceMembers konnte nicht gelesen werden: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
+
+  if (apiReachable) {
+    try {
+      const data = await gql<{
+        opportunities: {
+          edges: { node: { stage?: string | null } }[];
+        };
+      }>(
+        tenant,
+        `query Pipeline {
+          opportunities(first: 200) { edges { node { stage } } }
+        }`,
+      );
+      const counts = new Map<string, number>();
+      for (const e of data.opportunities.edges) {
+        const s = (e.node.stage ?? "(unbekannt)").trim() || "(unbekannt)";
+        counts.set(s, (counts.get(s) ?? 0) + 1);
+      }
+      pipeline = [...counts.entries()]
+        .map(([stage, count]) => ({ stage, count }))
+        .sort((a, b) => b.count - a.count);
+    } catch {
+      // Stages are optional info — silent fallback.
+    }
+
+    try {
+      const data = await gql<{
+        companies: {
+          edges: { node: { leadSource?: string | null } }[];
+        };
+      }>(
+        tenant,
+        `query LeadSources {
+          companies(first: 200) { edges { node { leadSource } } }
+        }`,
+      );
+      const set = new Set<string>();
+      for (const e of data.companies.edges) {
+        const s = (e.node.leadSource ?? "").trim();
+        if (s) set.add(s);
+      }
+      leadSources = [...set].sort();
+    } catch {
+      // also non-critical
+    }
+  }
+
+  return {
+    apiReachable,
+    publicUrl: PUBLIC,
+    internalUrl: INTERNAL,
+    workspaceId: tenant.workspaceId,
+    totals,
+    members,
+    pipeline,
+    leadSources,
+    adminLinks: {
+      profile: "/settings/profile",
+      workspace: "/settings/workspace",
+      members: "/settings/workspace-members",
+      apiKeys: "/settings/developers",
+      dataModel: "/settings/data-model",
+      integrations: "/settings/integrations",
+    },
+    warnings,
+  };
 }
