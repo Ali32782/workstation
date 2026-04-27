@@ -9,6 +9,7 @@ import {
 } from "@/lib/workspaces";
 import { initials } from "@/lib/utils";
 import { UserMenu } from "./UserMenu";
+import { ScraperStatusPill } from "./admin/ScraperStatusPill";
 
 export function TopBar({
   workspace,
@@ -98,6 +99,8 @@ export function TopBar({
           );
         })}
       </div>
+
+      {isAdmin && <ScraperStatusPill />}
 
       {isAdmin && (
         <Link
