@@ -623,47 +623,74 @@ export async function deleteField(
 /* ─────────────────────────────────────────────────────────────────────── */
 
 /**
- * Stream the document's PDF file. Documenso exposes the underlying signed
- * S3 download URL via `/api/v2/document/{id}/download`, but we don't trust
- * that the URL is reachable from the user's browser (CORS/IP allow-list)
- * so we proxy the bytes through our own API and surface them as
- * `application/pdf`.
+ * Stream the document's PDF file via `/api/v2/document/{id}/download`.
+ *
+ * Documenso behaviour observed in the wild:
+ *   - newer self-hosted builds return the PDF bytes directly (Content-Type
+ *     `application/pdf`, body starts with `%PDF-`)
+ *   - some older / cloud builds return a JSON envelope `{ downloadUrl: "..." }`
+ *     pointing at a signed S3 URL
+ *
+ * We handle both: peek at the response, and either pass the bytes through
+ * or follow the signed URL once. We always proxy through the portal API
+ * because the signed URL has tight expiration / IP allow-lists that would
+ * break in the browser.
  */
 export async function downloadDocumentPdf(
   tenant: SignTenantConfig,
   documentId: number,
 ): Promise<Buffer> {
   const fetcher = tenantFetch(tenant);
+  const path = `/api/v2/document/${documentId}/download`;
 
-  // Step 1: ask for the signed download URL.
-  const meta = await fetchJson<{ downloadUrl?: string }>(
-    fetcher,
-    "documenso",
-    `/api/v2/document/${documentId}/download`,
-  );
-  const url = meta?.downloadUrl;
-  if (!url) {
-    throw new AppApiError(
-      "documenso",
-      502,
-      `/api/v2/document/${documentId}/download`,
-      "no downloadUrl in response",
-    );
-  }
-
-  // Step 2: stream the PDF.
-  const res = await fetch(url, {
+  const res = await fetcher(path, {
+    method: "GET",
     signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     throw new AppApiError(
       "documenso",
       res.status,
-      url,
+      path,
       await res.text().catch(() => ""),
     );
   }
-  return Buffer.from(await res.arrayBuffer());
+
+  const buf = Buffer.from(await res.arrayBuffer());
+
+  // Direct PDF (newer self-hosted Documenso): magic header `%PDF`.
+  if (buf.length >= 4 && buf.slice(0, 4).toString("ascii") === "%PDF") {
+    return buf;
+  }
+
+  // JSON envelope variant — body is `{ downloadUrl: "..." }`.
+  let envelope: { downloadUrl?: string } | null = null;
+  try {
+    envelope = JSON.parse(buf.toString("utf-8"));
+  } catch {
+    /* fall through to error below */
+  }
+  const url = envelope?.downloadUrl;
+  if (!url) {
+    throw new AppApiError(
+      "documenso",
+      502,
+      path,
+      "expected PDF bytes or { downloadUrl }, got: " +
+        buf.slice(0, 200).toString("utf-8"),
+    );
+  }
+
+  const signed = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+  if (!signed.ok) {
+    throw new AppApiError(
+      "documenso",
+      signed.status,
+      url,
+      await signed.text().catch(() => ""),
+    );
+  }
+  return Buffer.from(await signed.arrayBuffer());
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */

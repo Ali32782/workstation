@@ -57,6 +57,36 @@ type EditorField = {
   label?: string;
 };
 
+type DragMode =
+  | "move"
+  | "n"
+  | "s"
+  | "e"
+  | "w"
+  | "ne"
+  | "nw"
+  | "se"
+  | "sw";
+
+type DragState = {
+  idx: number;
+  mode: DragMode;
+  startClientX: number;
+  startClientY: number;
+  startField: EditorField;
+};
+
+const FIELD_MIN_WIDTH = 4; // % of page
+const FIELD_MIN_HEIGHT = 2; // % of page
+
+function clampField(f: EditorField): EditorField {
+  const w = Math.max(FIELD_MIN_WIDTH, Math.min(100, f.pageWidth));
+  const h = Math.max(FIELD_MIN_HEIGHT, Math.min(100, f.pageHeight));
+  const x = Math.max(0, Math.min(100 - w, f.pageX));
+  const y = Math.max(0, Math.min(100 - h, f.pageY));
+  return { ...f, pageX: x, pageY: y, pageWidth: w, pageHeight: h };
+}
+
 type DraftRecipient = {
   /** Documenso ID once it exists; null while unsaved. */
   id: number | null;
@@ -155,6 +185,16 @@ export function FieldEditor({
     null,
   );
   const [draggingType, setDraggingType] = useState<FieldType | null>(null);
+  // Selection + interactive drag/resize for placed fields.
+  const [selectedFieldIdx, setSelectedFieldIdx] = useState<number | null>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  // Mirror of `fields` so async commit handlers see latest values.
+  const fieldsRef = useRef<EditorField[]>([]);
+  useEffect(() => {
+    fieldsRef.current = fields;
+  }, [fields]);
+  // Debounce timer for arrow-key nudge persistence.
+  const nudgeTimerRef = useRef<number | null>(null);
 
   /* ── PDF loading via pdf.js ──────────────────────────────────────── */
 
@@ -339,19 +379,26 @@ export function FieldEditor({
       activeRecipient?.id ??
       // Negative placeholder; rewritten on saveRecipients().
       -(activeRecipIdx + 1);
-    setFields((prev) => [
-      ...prev,
-      {
-        id: null,
-        recipientId,
-        type,
-        page: pageIdx + 1,
-        pageX: px,
-        pageY: py,
-        pageWidth: palette.defaultWidth,
-        pageHeight: palette.defaultHeight,
-      },
-    ]);
+    let newIdx = -1;
+    setFields((prev) => {
+      newIdx = prev.length;
+      return [
+        ...prev,
+        {
+          id: null,
+          recipientId,
+          type,
+          page: pageIdx + 1,
+          pageX: px,
+          pageY: py,
+          pageWidth: palette.defaultWidth,
+          pageHeight: palette.defaultHeight,
+        },
+      ];
+    });
+    // Auto-select the newly placed field so the user can immediately drag,
+    // resize or arrow-nudge it without an extra click.
+    if (newIdx >= 0) setSelectedFieldIdx(newIdx);
   }
 
   function onPageDrop(e: DragEvent<HTMLDivElement>) {
@@ -363,14 +410,19 @@ export function FieldEditor({
   }
 
   function onPageClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!draggingType) return;
-    placeFieldAt(e.clientX, e.clientY, draggingType);
-    setDraggingType(null);
+    if (draggingType) {
+      placeFieldAt(e.clientX, e.clientY, draggingType);
+      setDraggingType(null);
+      return;
+    }
+    // Clicking empty PDF area deselects any active field.
+    setSelectedFieldIdx(null);
   }
 
   function removeField(idx: number) {
     const f = fields[idx];
     setFields((prev) => prev.filter((_, i) => i !== idx));
+    if (selectedFieldIdx === idx) setSelectedFieldIdx(null);
     if (f?.id != null) {
       void fetch(
         apiUrl(`/api/sign/document/${doc.id}/fields`) +
@@ -379,6 +431,231 @@ export function FieldEditor({
       );
     }
   }
+
+  /* ── Interactive drag / resize ───────────────────────────────────── */
+
+  function beginInteraction(
+    idx: number,
+    mode: DragMode,
+    e: React.MouseEvent,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    const f = fields[idx];
+    if (!f) return;
+    setSelectedFieldIdx(idx);
+    setDragState({
+      idx,
+      mode,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startField: f,
+    });
+  }
+
+  // Persist a field that already exists on Documenso (id != null) after the
+  // user has dragged or resized it. Documenso v2 has no field-update endpoint
+  // we can rely on cross-version, so we delete + recreate atomically and
+  // re-key the local id to whatever Documenso gives us back.
+  const commitFieldEdit = useCallback(
+    async (idx: number) => {
+      const f = fieldsRef.current[idx];
+      if (!f || f.id == null || f.recipientId <= 0) return;
+      const oldId = f.id;
+      try {
+        // Delete the old persisted field, then re-create at the new geometry.
+        await fetch(
+          apiUrl(`/api/sign/document/${doc.id}/fields`) +
+            `&fieldId=${encodeURIComponent(oldId)}`,
+          { method: "DELETE" },
+        );
+        const r = await fetch(apiUrl(`/api/sign/document/${doc.id}/fields`), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fields: [
+              {
+                type: f.type,
+                recipientId: f.recipientId,
+                page: f.page,
+                pageX: f.pageX,
+                pageY: f.pageY,
+                pageWidth: f.pageWidth,
+                pageHeight: f.pageHeight,
+                label: f.label,
+              },
+            ],
+          }),
+        });
+        if (!r.ok) return;
+        const j = (await r.json()) as { fields?: EditorField[] };
+        const fresh = j.fields ?? [];
+        // Documenso returns the full field set; pick the newly minted one
+        // for this field's slot by matching geometry and dropping any id we
+        // already track locally.
+        const knownIds = new Set(
+          fieldsRef.current
+            .map((x) => x.id)
+            .filter((x): x is number => x != null && x !== oldId),
+        );
+        const candidate = fresh
+          .filter(
+            (x) =>
+              x.id != null &&
+              !knownIds.has(x.id) &&
+              x.type === f.type &&
+              x.recipientId === f.recipientId &&
+              x.page === f.page,
+          )
+          .sort(
+            (a, b) =>
+              Math.abs(a.pageX - f.pageX) +
+              Math.abs(a.pageY - f.pageY) -
+              (Math.abs(b.pageX - f.pageX) + Math.abs(b.pageY - f.pageY)),
+          )[0];
+        if (candidate?.id != null) {
+          const newId = candidate.id;
+          setFields((prev) =>
+            prev.map((p, i) => (i === idx ? { ...p, id: newId } : p)),
+          );
+        }
+      } catch {
+        // Network hiccup; user can hit Senden later to re-sync everything.
+      }
+    },
+    [apiUrl, doc.id],
+  );
+
+  // Global pointer handling while a drag is in progress.
+  useEffect(() => {
+    if (!dragState) return;
+    function move(e: MouseEvent) {
+      const rect = pageRef.current?.getBoundingClientRect();
+      if (!rect || !dragState) return;
+      const dxPct = ((e.clientX - dragState.startClientX) / rect.width) * 100;
+      const dyPct = ((e.clientY - dragState.startClientY) / rect.height) * 100;
+      const f = dragState.startField;
+      let next: EditorField = { ...f };
+      switch (dragState.mode) {
+        case "move":
+          next.pageX = f.pageX + dxPct;
+          next.pageY = f.pageY + dyPct;
+          break;
+        case "e":
+          next.pageWidth = f.pageWidth + dxPct;
+          break;
+        case "w":
+          next.pageX = f.pageX + dxPct;
+          next.pageWidth = f.pageWidth - dxPct;
+          break;
+        case "s":
+          next.pageHeight = f.pageHeight + dyPct;
+          break;
+        case "n":
+          next.pageY = f.pageY + dyPct;
+          next.pageHeight = f.pageHeight - dyPct;
+          break;
+        case "se":
+          next.pageWidth = f.pageWidth + dxPct;
+          next.pageHeight = f.pageHeight + dyPct;
+          break;
+        case "sw":
+          next.pageX = f.pageX + dxPct;
+          next.pageWidth = f.pageWidth - dxPct;
+          next.pageHeight = f.pageHeight + dyPct;
+          break;
+        case "ne":
+          next.pageY = f.pageY + dyPct;
+          next.pageWidth = f.pageWidth + dxPct;
+          next.pageHeight = f.pageHeight - dyPct;
+          break;
+        case "nw":
+          next.pageX = f.pageX + dxPct;
+          next.pageY = f.pageY + dyPct;
+          next.pageWidth = f.pageWidth - dxPct;
+          next.pageHeight = f.pageHeight - dyPct;
+          break;
+      }
+      next = clampField(next);
+      setFields((prev) =>
+        prev.map((p, i) => (i === dragState.idx ? next : p)),
+      );
+    }
+    function up() {
+      const idx = dragState!.idx;
+      const before = dragState!.startField;
+      setDragState(null);
+      const after = fieldsRef.current[idx];
+      if (!after) return;
+      const moved =
+        Math.abs(before.pageX - after.pageX) > 0.05 ||
+        Math.abs(before.pageY - after.pageY) > 0.05 ||
+        Math.abs(before.pageWidth - after.pageWidth) > 0.05 ||
+        Math.abs(before.pageHeight - after.pageHeight) > 0.05;
+      if (moved && after.id != null) {
+        void commitFieldEdit(idx);
+      }
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [dragState, commitFieldEdit]);
+
+  // Arrow-key nudge for fine-tuning the selected field.
+  useEffect(() => {
+    if (selectedFieldIdx == null) return;
+    function onKey(e: KeyboardEvent) {
+      if (selectedFieldIdx == null) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      )
+        return;
+      const step = e.shiftKey ? 1 : 0.2; // % of page
+      let dx = 0;
+      let dy = 0;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dy = -step;
+      else if (e.key === "ArrowDown") dy = step;
+      else if (e.key === "Escape") {
+        setSelectedFieldIdx(null);
+        return;
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        removeField(selectedFieldIdx);
+        return;
+      } else return;
+      e.preventDefault();
+      const before = fieldsRef.current[selectedFieldIdx];
+      if (!before) return;
+      const next = clampField({
+        ...before,
+        pageX: before.pageX + dx,
+        pageY: before.pageY + dy,
+      });
+      setFields((prev) =>
+        prev.map((p, i) => (i === selectedFieldIdx ? next : p)),
+      );
+      // Persist after a short idle if it's a saved field.
+      if (before.id != null) {
+        window.clearTimeout(nudgeTimerRef.current ?? 0);
+        nudgeTimerRef.current = window.setTimeout(() => {
+          void commitFieldEdit(selectedFieldIdx);
+        }, 350);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFieldIdx, commitFieldEdit]);
 
   /* ── Save fields + send ─────────────────────────────────────────── */
 
@@ -665,7 +942,8 @@ export function FieldEditor({
               <ChevronRight size={14} />
             </button>
             <span className="ml-auto text-[10.5px] text-text-tertiary">
-              Klick &amp; Drag oder Drag-and-Drop aus der rechten Leiste
+              Drag-Drop platzieren · Feld anklicken zum Verschieben/Resize ·
+              Pfeiltasten = nudge · Entf = löschen
             </span>
           </div>
 
@@ -702,7 +980,7 @@ export function FieldEditor({
                 >
                   {fields
                     .filter((f) => f.page === pageIdx + 1)
-                    .map((f, idx) => {
+                    .map((f) => {
                       const recIdx = recipients.findIndex((r) =>
                         r.id != null
                           ? r.id === f.recipientId
@@ -715,10 +993,38 @@ export function FieldEditor({
                         FIELD_PALETTE[0];
                       const Icon = palette.icon;
                       const globalIdx = fields.indexOf(f);
+                      const selected = selectedFieldIdx === globalIdx;
+                      const isInteracting =
+                        dragState?.idx === globalIdx;
+                      // Resize handles only show when selected. Each is a
+                      // small square with the matching cursor.
+                      const handles: Array<{
+                        mode: DragMode;
+                        cursor: string;
+                        style: React.CSSProperties;
+                      }> = [
+                        { mode: "nw", cursor: "nwse-resize", style: { left: -4, top: -4 } },
+                        { mode: "n",  cursor: "ns-resize",   style: { left: "50%", top: -4, transform: "translateX(-50%)" } },
+                        { mode: "ne", cursor: "nesw-resize", style: { right: -4, top: -4 } },
+                        { mode: "e",  cursor: "ew-resize",   style: { right: -4, top: "50%", transform: "translateY(-50%)" } },
+                        { mode: "se", cursor: "nwse-resize", style: { right: -4, bottom: -4 } },
+                        { mode: "s",  cursor: "ns-resize",   style: { left: "50%", bottom: -4, transform: "translateX(-50%)" } },
+                        { mode: "sw", cursor: "nesw-resize", style: { left: -4, bottom: -4 } },
+                        { mode: "w",  cursor: "ew-resize",   style: { left: -4, top: "50%", transform: "translateY(-50%)" } },
+                      ];
                       return (
                         <div
-                          key={idx}
-                          className="absolute group rounded-sm border-2 border-dashed flex items-center justify-center text-[10px] font-medium select-none"
+                          key={`f${globalIdx}`}
+                          role="button"
+                          tabIndex={0}
+                          onMouseDown={(e) =>
+                            beginInteraction(globalIdx, "move", e)
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedFieldIdx(globalIdx);
+                          }}
+                          className={`absolute group rounded-sm border-2 ${selected ? "border-solid" : "border-dashed"} flex items-center justify-center text-[10px] font-medium select-none`}
                           style={{
                             left: `${f.pageX}%`,
                             top: `${f.pageY}%`,
@@ -727,22 +1033,47 @@ export function FieldEditor({
                             background: `${c}33`,
                             borderColor: c,
                             color: c,
+                            cursor: isInteracting ? "grabbing" : "grab",
+                            boxShadow: selected
+                              ? `0 0 0 2px ${c}55, 0 4px 12px ${c}40`
+                              : undefined,
+                            zIndex: selected ? 5 : 1,
                           }}
-                          title={`${palette.label} · ${recipients[recIdx]?.name || "—"}`}
+                          title={`${palette.label} · ${recipients[recIdx]?.name || "—"} (Drag zum Verschieben, Pfeiltasten zum Feinen)`}
                         >
-                          <Icon size={11} className="mr-1 opacity-80" />
-                          <span className="truncate">{palette.label}</span>
+                          <Icon size={11} className="mr-1 opacity-80 pointer-events-none" />
+                          <span className="truncate pointer-events-none">{palette.label}</span>
                           <button
                             type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                               e.stopPropagation();
                               removeField(globalIdx);
                             }}
-                            className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-bg-base border border-stroke-1 text-text-tertiary hover:text-red-400 opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
+                            className={`absolute -top-2 -right-2 w-4 h-4 rounded-full bg-bg-base border border-stroke-1 text-text-tertiary hover:text-red-400 transition flex items-center justify-center ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                             aria-label="Feld entfernen"
                           >
                             <X size={9} />
                           </button>
+                          {selected &&
+                            handles.map((h) => (
+                              <span
+                                key={h.mode}
+                                onMouseDown={(e) =>
+                                  beginInteraction(globalIdx, h.mode, e)
+                                }
+                                style={{
+                                  position: "absolute",
+                                  width: 8,
+                                  height: 8,
+                                  background: c,
+                                  border: "1.5px solid white",
+                                  borderRadius: 2,
+                                  cursor: h.cursor,
+                                  ...h.style,
+                                }}
+                              />
+                            ))}
                         </div>
                       );
                     })}
