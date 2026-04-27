@@ -1,0 +1,107 @@
+# =============================================================================
+# Mautic Marketing Automation Stack
+# Public:    https://mautic.kineo360.work
+# Scope:     primary tenant = medtheris
+# DB host:   mariadb (shared MariaDB instance from main stack)
+# Networks:  joins corehub_shared-internal (DB) + corehub_medtheris-internal (tenant) + proxy (NPM)
+#
+# Start:  docker compose -f docker-compose.mautic.yml --env-file .env up -d
+# Logs:   docker compose -f docker-compose.mautic.yml logs -f mautic_web
+# Stop:   docker compose -f docker-compose.mautic.yml down
+# =============================================================================
+
+name: mautic
+
+networks:
+  proxy:
+    name: proxy
+    external: true
+  shared-internal:
+    name: corehub_shared-internal
+    external: true
+  medtheris-internal:
+    name: corehub_medtheris-internal
+    external: true
+
+volumes:
+  mautic_config:
+  mautic_logs:
+  mautic_media:
+
+x-mautic-db: &mautic-db
+  MAUTIC_DB_HOST: mariadb
+  MAUTIC_DB_PORT: 3306
+  MAUTIC_DB_DATABASE: ${MAUTIC_DB_NAME:-mautic}
+  MAUTIC_DB_USER: ${MAUTIC_DB_USER:-mautic}
+  MAUTIC_DB_PASSWORD: ${MAUTIC_DB_PASSWORD}
+  MAUTIC_MESSENGER_DSN_EMAIL: doctrine://default
+  MAUTIC_MESSENGER_DSN_HIT: doctrine://default
+  PHP_INI_VALUE_DATE_TIMEZONE: ${TZ:-Europe/Zurich}
+  PHP_INI_VALUE_MEMORY_LIMIT: 512M
+  TZ: ${TZ:-Europe/Zurich}
+
+services:
+
+  mautic_web:
+    image: mautic/mautic:6-apache
+    container_name: mautic_web
+    restart: unless-stopped
+    environment:
+      <<: *mautic-db
+      MAUTIC_TRUSTED_PROXIES: '["172.16.0.0/12","10.0.0.0/8"]'
+      MAUTIC_RUN_CRON_JOBS: 'false'
+      MAUTIC_URL: ${MAUTIC_URL:-https://mautic.kineo360.work}
+      DOCKER_MAUTIC_LOAD_TEST_DATA: 'false'
+      DOCKER_MAUTIC_RUN_MIGRATIONS: 'true'
+      PHP_INI_VALUE_UPLOAD_MAX_FILESIZE: 64M
+      PHP_INI_VALUE_POST_MAX_SIZE: 64M
+    volumes:
+      - mautic_config:/var/www/html/config
+      - mautic_logs:/var/www/html/var/logs
+      - mautic_media:/var/www/html/docroot/media
+    networks:
+      - proxy
+      - shared-internal
+      - medtheris-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/index.php >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  mautic_cron:
+    image: mautic/mautic:6-apache
+    container_name: mautic_cron
+    restart: unless-stopped
+    depends_on:
+      mautic_web:
+        condition: service_healthy
+    environment:
+      <<: *mautic-db
+      DOCKER_MAUTIC_ROLE: mautic_cron
+    volumes:
+      - mautic_config:/var/www/html/config
+      - mautic_logs:/var/www/html/var/logs
+      - mautic_media:/var/www/html/docroot/media
+    networks:
+      - shared-internal
+      - medtheris-internal
+
+  mautic_worker:
+    image: mautic/mautic:6-apache
+    container_name: mautic_worker
+    restart: unless-stopped
+    depends_on:
+      mautic_web:
+        condition: service_healthy
+    environment:
+      <<: *mautic-db
+      DOCKER_MAUTIC_ROLE: mautic_worker
+    volumes:
+      - mautic_config:/var/www/html/config
+      - mautic_logs:/var/www/html/var/logs
+      - mautic_media:/var/www/html/docroot/media
+    networks:
+      - shared-internal
+      - medtheris-internal
