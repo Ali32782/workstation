@@ -5,6 +5,7 @@ import type {
   IssueState,
   WorkspaceMember,
 } from "./types";
+import { parseCsv, detectDelimiter } from "@/lib/csv/parse";
 
 /**
  * CSV import helpers for the Projects ("Plane") app.
@@ -23,72 +24,9 @@ import type {
  *     avoids ballooning the client bundle and lets us stream progress.
  */
 
-/* ─── CSV parser ───────────────────────────────────────────────────── */
-
-/**
- * RFC4180-flavoured CSV parser. Handles quoted fields, embedded commas,
- * doubled quotes (`""`) and CRLF line endings. Custom delimiter (defaults
- * to `,` but Jira's German exports sometimes use `;`).
- */
-export function parseCsv(text: string, delimiter = ","): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        cur += ch;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-      continue;
-    }
-    if (ch === delimiter) {
-      row.push(cur);
-      cur = "";
-      continue;
-    }
-    if (ch === "\r") continue;
-    if (ch === "\n") {
-      row.push(cur);
-      // skip blank rows
-      if (!(row.length === 1 && row[0] === "")) rows.push(row);
-      row = [];
-      cur = "";
-      continue;
-    }
-    cur += ch;
-  }
-  if (cur.length > 0 || row.length > 0) {
-    row.push(cur);
-    if (!(row.length === 1 && row[0] === "")) rows.push(row);
-  }
-  return rows;
-}
-
-/** Auto-detect comma vs. semicolon delimiter on the first non-empty line. */
-export function detectDelimiter(text: string): "," | ";" | "\t" {
-  const head = text.split(/\r?\n/, 1)[0] ?? "";
-  const counts = {
-    ",": (head.match(/,/g) ?? []).length,
-    ";": (head.match(/;/g) ?? []).length,
-    "\t": (head.match(/\t/g) ?? []).length,
-  };
-  if (counts["\t"] > counts[","] && counts["\t"] > counts[";"]) return "\t";
-  if (counts[";"] > counts[","]) return ";";
-  return ",";
-}
+// CSV parser + delimiter detection live in `@/lib/csv/parse` so that
+// CRM, Helpdesk, etc. can share them without duplicating ~50 lines.
+export { parseCsv, detectDelimiter };
 
 /* ─── Column mapping (Jira/Linear/Plane → Plane) ──────────────────── */
 

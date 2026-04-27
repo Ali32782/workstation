@@ -40,7 +40,9 @@ import {
   X,
   Megaphone,
   RefreshCcw,
+  FileUp,
 } from "lucide-react";
+import { ImportCrmModal } from "./ImportCrmModal";
 import {
   ThreePaneLayout,
   PaneHeader,
@@ -122,6 +124,7 @@ export function CrmClient({
   const newRef = useRef<HTMLInputElement>(null);
 
   const [showScraper, setShowScraper] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CompanyDetail | null>(null);
@@ -380,6 +383,14 @@ export function CrmClient({
             >
               <SettingsIcon size={13} />
             </Link>
+            <button
+              type="button"
+              onClick={() => setShowImport(true)}
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="CSV-Import (Firmen / Personen)"
+            >
+              <FileUp size={13} />
+            </button>
             {scraperAvailable && (
               <button
                 type="button"
@@ -679,14 +690,24 @@ export function CrmClient({
   );
 
   return (
-    <ThreePaneLayout
-      primary={primary}
-      secondary={secondary}
-      detail={detailWithHeader}
-      storageKey={`crm:${workspaceId}`}
-      hasSelection={!!selectedId}
-      onMobileBack={() => setSelectedId(null)}
-    />
+    <>
+      <ThreePaneLayout
+        primary={primary}
+        secondary={secondary}
+        detail={detailWithHeader}
+        storageKey={`crm:${workspaceId}`}
+        hasSelection={!!selectedId}
+        onMobileBack={() => setSelectedId(null)}
+      />
+      {showImport && (
+        <ImportCrmModal
+          workspaceId={workspaceId}
+          accent={accent}
+          onClose={() => setShowImport(false)}
+          onImported={() => void loadCompanies(search)}
+        />
+      )}
+    </>
   );
 }
 
