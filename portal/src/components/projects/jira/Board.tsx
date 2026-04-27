@@ -395,10 +395,12 @@ export function JiraBoard({
                   isCollapsed ? "h-fit" : ""
                 }`}
                 style={{
-                  background: isDragOver ? `${accent}1a` : "rgba(244,245,247,0.7)",
+                  background: isDragOver
+                    ? `${accent}1a`
+                    : "var(--color-bg-elevated, rgba(244,245,247,0.7))",
                   boxShadow: isDragOver
                     ? `inset 0 0 0 2px ${accent}`
-                    : "inset 0 0 0 1px rgba(0,0,0,0.06)",
+                    : "inset 0 0 0 1px var(--color-stroke-1, rgba(0,0,0,0.06))",
                 }}
                 onDragOver={(e) => {
                   if (!acceptsDrop) return;

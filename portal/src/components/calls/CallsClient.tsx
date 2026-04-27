@@ -110,13 +110,19 @@ export function CallsClient({
     [apiUrl],
   );
 
-  // Re-fetch every 30s while there's at least one active call so participants
-  // stay roughly in sync without a full websocket layer.
+  // Re-fetch every 60s while there's at least one active call so participants
+  // stay roughly in sync without a full websocket layer. We only watch the
+  // count of active calls (not the array reference) to avoid tearing down
+  // the interval on every refresh and to keep the Jitsi embed stable.
+  const activeCallCount = useMemo(
+    () => calls.filter((c) => !c.endedAt).length,
+    [calls],
+  );
   useEffect(() => {
-    if (!calls.some((c) => !c.endedAt)) return;
-    const t = window.setInterval(() => void refresh(true), 30_000);
+    if (activeCallCount === 0) return;
+    const t = window.setInterval(() => void refresh(true), 60_000);
     return () => clearInterval(t);
-  }, [calls, refresh]);
+  }, [activeCallCount, refresh]);
 
   // Honour ?start=1 deep-link from click-to-call
   useEffect(() => {
@@ -1031,6 +1037,10 @@ function loadJitsiExternalApi(origin: string): Promise<void> {
 
 type JitsiApi = { dispose: () => void };
 
+type JitsiApiWithCommands = JitsiApi & {
+  executeCommand?: (cmd: string, ...args: unknown[]) => void;
+};
+
 function JitsiEmbed({
   joinUrl,
   roomName,
@@ -1045,10 +1055,28 @@ function JitsiEmbed({
   subject: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const apiRef = useRef<JitsiApi | null>(null);
+  const apiRef = useRef<JitsiApiWithCommands | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "iframe" | "error">("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
+  // Stash the latest "soft" props (display name, email, subject) in a ref so
+  // we can re-apply them via Jitsi commands when they change without tearing
+  // down the embed and re-prompting the user for camera/mic permissions.
+  const softRef = useRef({ displayName, email, subject });
+  useEffect(() => {
+    softRef.current = { displayName, email, subject };
+    const api = apiRef.current;
+    if (!api?.executeCommand) return;
+    try {
+      if (subject) api.executeCommand("subject", subject);
+      if (displayName) api.executeCommand("displayName", displayName);
+      if (email) api.executeCommand("email", email);
+    } catch {
+      // ignore — non-critical update
+    }
+  }, [displayName, email, subject]);
+
+  // Hard re-init only when we actually need to change rooms.
   useEffect(() => {
     const el = hostRef.current;
     if (!el) return;
@@ -1058,7 +1086,7 @@ function JitsiEmbed({
     let url: URL;
     try {
       url = new URL(joinUrl);
-    } catch (e) {
+    } catch {
       setStatus("error");
       setErrMsg("Ungültige Call-URL");
       return;
@@ -1075,22 +1103,26 @@ function JitsiEmbed({
             JitsiMeetExternalAPI?: new (
               d: string,
               o: Record<string, unknown>,
-            ) => JitsiApi;
+            ) => JitsiApiWithCommands;
           }
         ).JitsiMeetExternalAPI;
         if (!ctor) throw new Error("JitsiMeetExternalAPI nicht verfügbar");
         apiRef.current?.dispose();
         el.innerHTML = "";
         if (cancelled || !hostRef.current) return;
+        const soft = softRef.current;
         const api = new ctor(domain, {
           roomName,
           parentNode: hostRef.current,
           width: "100%",
           height: "100%",
           lang: "de",
-          userInfo: { displayName, email },
+          userInfo: {
+            displayName: soft.displayName,
+            email: soft.email,
+          },
           configOverwrite: {
-            subject,
+            subject: soft.subject,
             disableDeepLinking: true,
             prejoinConfig: { enabled: false },
           },
@@ -1137,7 +1169,11 @@ function JitsiEmbed({
       apiRef.current = null;
       if (el) el.innerHTML = "";
     };
-  }, [joinUrl, roomName, displayName, email, subject]);
+    // joinUrl + roomName are the *only* identity-changing inputs. Display
+    // name, email and subject are applied via the live API in the effect
+    // above, so we deliberately exclude them from the deps here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinUrl, roomName]);
 
   return (
     <div className="flex-1 min-h-0 relative">
