@@ -25,8 +25,11 @@ import {
   FileSignature,
   Calendar,
   AlertCircle,
+  AlertTriangle,
   FileType2,
   LayoutGrid,
+  MessageSquare,
+  X,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { FieldEditor } from "./FieldEditor";
@@ -253,21 +256,52 @@ export function SignClient({
     return () => clearTimeout(t);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ── Compose modal (subject + message) ──────────────────────── */
+  const [composeOpen, setComposeOpen] = useState<
+    | null
+    | {
+        kind: "send";
+      }
+    | {
+        kind: "remind";
+        recipients?: number[];
+      }
+  >(null);
+
   /* ── Mutations ──────────────────────────────────────────────── */
 
   const performAction = useCallback(
-    async (action: "send" | "remind") => {
+    async (
+      action: "send" | "remind" | "repeat",
+      recipients?: number[],
+      meta?: { subject?: string; message?: string },
+    ) => {
       if (!detail) return;
-      setActing(action);
+      const actingKey =
+        action === "remind" && recipients?.length === 1
+          ? `remind:${recipients[0]}`
+          : action;
+      setActing(actingKey);
       try {
+        const payload: Record<string, unknown> = { action };
+        if (recipients?.length) payload.recipients = recipients;
+        if (meta?.subject?.trim()) payload.subject = meta.subject.trim();
+        if (meta?.message?.trim()) payload.message = meta.message.trim();
         const r = await fetch(apiUrl(`/api/sign/document/${detail.id}`), {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action }),
+          body: JSON.stringify(payload),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-        await Promise.all([loadDocs(), loadDetail(detail.id)]);
+
+        if (action === "repeat" && j.documentId) {
+          await loadDocs();
+          setSelectedId(j.documentId as number);
+          setEditorOpen(true);
+        } else {
+          await Promise.all([loadDocs(), loadDetail(detail.id)]);
+        }
       } catch (e) {
         alert(`Aktion fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
       } finally {
@@ -621,7 +655,16 @@ export function SignClient({
         documensoOpenUrl={documensoOpenUrl}
         acting={acting}
         onSend={() => void performAction("send")}
+        onSendWithMessage={() => setComposeOpen({ kind: "send" })}
         onRemind={() => void performAction("remind")}
+        onRemindWithMessage={() => setComposeOpen({ kind: "remind" })}
+        onRemindOne={(recipientId) =>
+          void performAction("remind", [recipientId])
+        }
+        onRemindOneWithMessage={(recipientId) =>
+          setComposeOpen({ kind: "remind", recipients: [recipientId] })
+        }
+        onRepeat={() => void performAction("repeat")}
         onDelete={() => void onDelete()}
         onOpenEditor={() => setEditorOpen(true)}
       />
@@ -717,6 +760,39 @@ export function SignClient({
           }}
         />
       )}
+      {composeOpen && detail && (
+        <ComposeModal
+          kind={composeOpen.kind}
+          accent={accent}
+          docTitle={detail.title}
+          recipientLabel={
+            composeOpen.kind === "remind"
+              ? composeOpen.recipients?.length === 1
+                ? detail.recipients.find(
+                    (r) => r.id === composeOpen.recipients?.[0],
+                  )?.email ?? null
+                : null
+              : null
+          }
+          submitting={
+            composeOpen.kind === "send"
+              ? acting === "send"
+              : composeOpen.recipients?.length === 1
+                ? acting === `remind:${composeOpen.recipients[0]}`
+                : acting === "remind"
+          }
+          onClose={() => setComposeOpen(null)}
+          onSubmit={async ({ subject, message }) => {
+            const op = composeOpen;
+            setComposeOpen(null);
+            if (op.kind === "send") {
+              await performAction("send", undefined, { subject, message });
+            } else {
+              await performAction("remind", op.recipients, { subject, message });
+            }
+          }}
+        />
+      )}
     </>
   );
 }
@@ -724,6 +800,22 @@ export function SignClient({
 /* ─────────────────────────────────────────────────────────────────────── */
 /*                          Document list row                              */
 /* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A document is "stalled" when it's been waiting for signatures for a
+ * while without any movement. We use 3 days since `updatedAt` as the
+ * threshold — Documenso bumps `updatedAt` every time a recipient opens
+ * the email or signs, so "no update in 3d" is a reliable proxy for
+ * "nobody touched it lately, send a reminder".
+ */
+const STALL_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
+
+function isStalledPending(doc: DocumentSummary | DocumentDetail): boolean {
+  if (doc.status !== "PENDING") return false;
+  const ts = new Date(doc.updatedAt).getTime();
+  if (!Number.isFinite(ts)) return false;
+  return Date.now() - ts >= STALL_THRESHOLD_MS;
+}
 
 function DocumentRow({
   doc,
@@ -741,6 +833,7 @@ function DocumentRow({
   const signed = signers.filter((r) => r.signingStatus === "SIGNED").length;
   const total = signers.length;
   const pct = total === 0 ? 0 : Math.round((signed / total) * 100);
+  const stalled = isStalledPending(doc);
 
   return (
     <button
@@ -763,6 +856,13 @@ function DocumentRow({
             <span className="text-[12.5px] font-semibold truncate flex-1">
               {doc.title}
             </span>
+            {stalled && (
+              <AlertTriangle
+                size={11}
+                className="text-amber-400 shrink-0"
+                aria-label="Liegt seit Tagen unangetastet — eine Erinnerung könnte helfen."
+              />
+            )}
             <StatusPill label={statusLabel(doc.status, t)} tone={statusTone(doc.status)} />
           </div>
           <div className="flex items-center gap-1.5 text-[10.5px] text-text-tertiary mt-1">
@@ -773,6 +873,14 @@ function DocumentRow({
                 <span>·</span>
                 <span>
                   {signed}/{total} unterzeichnet
+                </span>
+              </>
+            )}
+            {stalled && (
+              <>
+                <span>·</span>
+                <span className="text-amber-400">
+                  Letzte Aktivität {formatRelative(doc.updatedAt)}
                 </span>
               </>
             )}
@@ -829,7 +937,12 @@ function DocumentDetailView({
   documensoOpenUrl,
   acting,
   onSend,
+  onSendWithMessage,
   onRemind,
+  onRemindWithMessage,
+  onRemindOne,
+  onRemindOneWithMessage,
+  onRepeat,
   onDelete,
   onOpenEditor,
 }: {
@@ -838,7 +951,12 @@ function DocumentDetailView({
   documensoOpenUrl: string;
   acting: string | null;
   onSend: () => void;
+  onSendWithMessage: () => void;
   onRemind: () => void;
+  onRemindWithMessage: () => void;
+  onRemindOne: (recipientId: number) => void;
+  onRemindOneWithMessage: (recipientId: number) => void;
+  onRepeat: () => void;
   onDelete: () => void;
   onOpenEditor: () => void;
 }) {
@@ -896,6 +1014,16 @@ function DocumentDetailView({
             />
           </div>
         )}
+        {isStalledPending(doc) && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11.5px] p-2.5 leading-relaxed">
+            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+            <span>
+              Dieses Dokument liegt seit {formatRelative(doc.updatedAt)} ohne
+              Bewegung. Eine Erinnerung — gerne mit kurzem persönlichem Hinweis —
+              hilft erfahrungsgemäß deutlich.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Quick actions */}
@@ -912,35 +1040,78 @@ function DocumentDetailView({
           </button>
         )}
         {doc.status === "DRAFT" && (
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={acting === "send"}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-medium disabled:opacity-60"
-            style={{ borderColor: accent, color: accent }}
-          >
-            {acting === "send" ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <Send size={12} />
-            )}
-            Direkt senden
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={acting === "send"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-medium disabled:opacity-60"
+              style={{ borderColor: accent, color: accent }}
+              title="Sendet die Signatur-Mail mit der Standard-Vorlage des Teams."
+            >
+              {acting === "send" ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Send size={12} />
+              )}
+              Direkt senden
+            </button>
+            <button
+              type="button"
+              onClick={onSendWithMessage}
+              disabled={acting === "send"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary disabled:opacity-60"
+              title="Vor dem Senden Betreff und persönliche Nachricht eingeben."
+            >
+              <MessageSquare size={12} />
+              Mit Nachricht…
+            </button>
+          </>
         )}
         {doc.status === "PENDING" && (
+          <>
+            <button
+              type="button"
+              onClick={onRemind}
+              disabled={acting === "remind"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[12px] font-medium disabled:opacity-60"
+              style={{ background: accent }}
+              title="Sendet die Signatur-Mail noch einmal an alle, die noch nicht unterschrieben haben."
+            >
+              {acting === "remind" ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Mail size={12} />
+              )}
+              Alle erinnern
+            </button>
+            <button
+              type="button"
+              onClick={onRemindWithMessage}
+              disabled={acting === "remind"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary disabled:opacity-60"
+              title="Erinnerung mit personalisierter Nachricht senden."
+            >
+              <MessageSquare size={12} />
+              Mit Nachricht…
+            </button>
+          </>
+        )}
+        {(doc.status === "COMPLETED" || doc.status === "REJECTED") && (
           <button
             type="button"
-            onClick={onRemind}
-            disabled={acting === "remind"}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[12px] font-medium disabled:opacity-60"
-            style={{ background: accent }}
+            onClick={onRepeat}
+            disabled={acting === "repeat"}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-medium disabled:opacity-60"
+            style={{ borderColor: accent, color: accent }}
+            title="Legt eine neue Entwurfs-Kopie mit denselben Empfängern an. Die signierten Felder müssen im Editor neu gesetzt werden."
           >
-            {acting === "remind" ? (
+            {acting === "repeat" ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
-              <Mail size={12} />
+              <CornerUpRight size={12} />
             )}
-            Erinnerung senden
+            Erneut versenden
           </button>
         )}
         <a
@@ -984,7 +1155,19 @@ function DocumentDetailView({
                 a.id - b.id,
             )
             .map((r) => (
-              <RecipientRow key={r.id} recipient={r} accent={accent} />
+              <RecipientRow
+                key={r.id}
+                recipient={r}
+                accent={accent}
+                canRemind={
+                  doc.status === "PENDING" &&
+                  r.role === "SIGNER" &&
+                  r.signingStatus === "NOT_SIGNED"
+                }
+                reminding={acting === `remind:${r.id}`}
+                onRemind={() => onRemindOne(r.id)}
+                onRemindWithMessage={() => onRemindOneWithMessage(r.id)}
+              />
             ))}
         </div>
       )}
@@ -1081,9 +1264,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function RecipientRow({
   recipient,
   accent,
+  canRemind = false,
+  reminding = false,
+  onRemind,
+  onRemindWithMessage,
 }: {
   recipient: RecipientSummary;
   accent: string;
+  canRemind?: boolean;
+  reminding?: boolean;
+  onRemind?: () => void;
+  onRemindWithMessage?: () => void;
 }) {
   const signed = recipient.signingStatus === "SIGNED";
   const rejected = recipient.signingStatus === "REJECTED";
@@ -1126,10 +1317,168 @@ function RecipientRow({
           </p>
         )}
       </div>
+      {canRemind && onRemind && (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onRemind}
+            disabled={reminding}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary disabled:opacity-60"
+            title={`Neue Signatur-Mail an ${recipient.email} verschicken.`}
+          >
+            {reminding ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <Mail size={11} />
+            )}
+            Erinnern
+          </button>
+          {onRemindWithMessage && (
+            <button
+              type="button"
+              onClick={onRemindWithMessage}
+              disabled={reminding}
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary disabled:opacity-60"
+              title={`Persönliche Nachricht an ${recipient.email} mitsenden.`}
+            >
+              <MessageSquare size={11} />
+            </button>
+          )}
+        </div>
+      )}
       <StatusPill
         label={signingStatusLabel(recipient.signingStatus)}
         tone={signingStatusTone(recipient.signingStatus)}
       />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                          Compose modal                                  */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Lightweight modal that captures an optional subject + message before
+ * dispatching the send/remind action. Empty fields fall back to
+ * Documenso's per-team default email template, so admins only fill in
+ * what they actually want to override.
+ */
+function ComposeModal({
+  kind,
+  accent,
+  docTitle,
+  recipientLabel,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  kind: "send" | "remind";
+  accent: string;
+  docTitle: string;
+  recipientLabel: string | null;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (input: { subject: string; message: string }) => void | Promise<void>;
+}) {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const isSend = kind === "send";
+
+  const ctaLabel = isSend ? "Jetzt senden" : "Erinnerung senden";
+  const headline = isSend
+    ? "Dokument versenden"
+    : recipientLabel
+      ? `Erinnerung an ${recipientLabel}`
+      : "Erinnerung an alle Offenen";
+  const intro = isSend
+    ? "Optionaler Betreff und persönliche Nachricht — bleibt das Feld leer, schickt Documenso die Standard-Vorlage des Teams."
+    : "Wird zusätzlich zur Standard-Erinnerung mitgeschickt.";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-lg rounded-lg border border-stroke-1 bg-bg-base shadow-xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header
+          className="flex items-center gap-2 px-4 py-3 border-b border-stroke-1"
+          style={{ boxShadow: `inset 0 -1px 0 0 ${accent}30` }}
+        >
+          <MessageSquare size={14} style={{ color: accent }} />
+          <h2 className="text-[13px] font-semibold flex-1">{headline}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-bg-overlay text-text-tertiary"
+            aria-label="Schließen"
+          >
+            <X size={14} />
+          </button>
+        </header>
+        <div className="px-4 py-4 space-y-3">
+          <p className="text-[11.5px] text-text-tertiary leading-relaxed">
+            {intro}
+          </p>
+          <div>
+            <label className="block text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
+              Betreff (optional)
+            </label>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder={`z. B. „${docTitle}" – bitte unterzeichnen`}
+              className="w-full bg-bg-elevated border border-stroke-1 rounded-md px-2.5 py-1.5 text-[12px] outline-none focus:border-stroke-2"
+              maxLength={500}
+            />
+          </div>
+          <div>
+            <label className="block text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
+              Nachricht (optional)
+            </label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={5}
+              placeholder="Hi Vorname, magst du noch kurz drüberschauen? Danke!"
+              className="w-full bg-bg-elevated border border-stroke-1 rounded-md px-2.5 py-1.5 text-[12px] outline-none focus:border-stroke-2 resize-none leading-relaxed"
+              maxLength={4000}
+            />
+          </div>
+        </div>
+        <footer className="flex items-center justify-end gap-2 px-4 py-3 border-t border-stroke-1 bg-bg-elevated/50">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary text-[12px] disabled:opacity-60"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={() => void onSubmit({ subject, message })}
+            disabled={submitting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[12px] font-medium disabled:opacity-60"
+            style={{ background: accent }}
+          >
+            {submitting ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : isSend ? (
+              <Send size={12} />
+            ) : (
+              <Mail size={12} />
+            )}
+            {ctaLabel}
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }

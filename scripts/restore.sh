@@ -54,4 +54,9 @@ fi
 
 echo "==> start full stack"
 docker compose up -d
-echo "Done. Verify services and DNS."
+
+echo "==> start auxiliary stacks (Zammad / Jitsi — if compose files exist)"
+docker compose -f docker-compose.zammad.yml --env-file .env up -d 2>/dev/null || true
+docker compose -f docker-compose.jitsi.yml up -d 2>/dev/null || true
+
+echo "Done. Verify services and DNS. See docs/backup-staging.md for Zammad SQL restore notes."

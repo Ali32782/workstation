@@ -330,6 +330,124 @@ export async function listCampaigns(opts: { limit?: number } = {}): Promise<{
   };
 }
 
+export async function getCampaignRaw(id: number): Promise<Record<string, unknown>> {
+  const raw = await getJson<{ campaign: Record<string, unknown> }>(
+    `/api/campaigns/${id}`,
+  );
+  return raw.campaign ?? {};
+}
+
+/**
+ * Toggles `isPublished` on a Mautic campaign. Mautic enforces this by
+ * actually pausing event-execution, so it's the closest thing the public
+ * API gives us to a "Start / Pause" button. The UI-level action is the
+ * same toggle.
+ */
+export async function setCampaignPublished(
+  id: number,
+  published: boolean,
+): Promise<MauticCampaign> {
+  const r = await fetcher(`/api/campaigns/${id}/edit`, {
+    method: "PATCH",
+    json: { isPublished: published },
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new AppApiError("mautic", r.status, `/api/campaigns/${id}/edit`, t);
+  }
+  const j = (await r.json()) as { campaign: RawCampaign };
+  return normaliseCampaign(j.campaign);
+}
+
+/**
+ * Clones a Mautic campaign into a new draft. Mautic doesn't expose a
+ * native /clone endpoint in its public API, so we GET the source, strip
+ * the read-only fields, and POST it back to /api/campaigns/new with a
+ * fresh name and `isPublished: false` (always start the copy as a draft —
+ * accidentally re-broadcasting to the audience would be very bad).
+ *
+ * Events / decisions / actions: the GET endpoint returns these as part of
+ * the campaign payload on Mautic 4+, and `POST /api/campaigns/new`
+ * accepts the same shape, so the clone preserves the full flow tree. On
+ * older Mautic versions (where events live behind separate endpoints)
+ * the clone falls back to a metadata-only copy and the user is asked to
+ * recreate the flow manually — surfaced via the `eventsCopied` flag.
+ */
+export async function cloneCampaign(
+  id: number,
+  opts: { newName?: string } = {},
+): Promise<{ campaign: MauticCampaign; eventsCopied: boolean }> {
+  const src = await getCampaignRaw(id);
+
+  const stripReadOnly = (obj: Record<string, unknown>) => {
+    const out: Record<string, unknown> = { ...obj };
+    delete out.id;
+    delete out.dateAdded;
+    delete out.dateModified;
+    delete out.createdBy;
+    delete out.createdByUser;
+    delete out.modifiedBy;
+    delete out.modifiedByUser;
+    delete out.contactCount;
+    delete out.checkedOut;
+    delete out.checkedOutBy;
+    delete out.checkedOutByUser;
+    return out;
+  };
+
+  const sourceName =
+    typeof src.name === "string" && src.name ? src.name : `Campaign ${id}`;
+  const newName = opts.newName?.trim() || `${sourceName} (Kopie)`;
+
+  const events = Array.isArray(src.events)
+    ? (src.events as Array<Record<string, unknown>>).map((e) => stripReadOnly(e))
+    : [];
+  const lists = Array.isArray(src.lists)
+    ? (src.lists as Array<Record<string, unknown>>).map((l) => ({
+        id: typeof l.id === "number" ? l.id : undefined,
+      }))
+    : [];
+  const forms = Array.isArray(src.forms)
+    ? (src.forms as Array<Record<string, unknown>>).map((f) => ({
+        id: typeof f.id === "number" ? f.id : undefined,
+      }))
+    : [];
+
+  const payload: Record<string, unknown> = {
+    name: newName,
+    description: typeof src.description === "string" ? src.description : null,
+    isPublished: false,
+    allowRestart: src.allowRestart ?? false,
+    category:
+      src.category && typeof src.category === "object" && "id" in src.category
+        ? (src.category as { id: number }).id
+        : null,
+  };
+  if (events.length > 0) payload.events = events;
+  if (lists.length > 0) payload.lists = lists;
+  if (forms.length > 0) payload.forms = forms;
+
+  const r = await fetcher("/api/campaigns/new", { method: "POST", json: payload });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    // If the events payload was rejected (older Mautic), retry without it
+    // so admins at least get a metadata copy to start from.
+    if (events.length > 0) {
+      const retry = await fetcher("/api/campaigns/new", {
+        method: "POST",
+        json: { ...payload, events: undefined, lists: undefined, forms: undefined },
+      });
+      if (retry.ok) {
+        const j = (await retry.json()) as { campaign: RawCampaign };
+        return { campaign: normaliseCampaign(j.campaign), eventsCopied: false };
+      }
+    }
+    throw new AppApiError("mautic", r.status, "/api/campaigns/new", t);
+  }
+  const j = (await r.json()) as { campaign: RawCampaign };
+  return { campaign: normaliseCampaign(j.campaign), eventsCopied: events.length > 0 };
+}
+
 // ─── Aggregated overview for dashboard tiles ───────────────────────────────
 
 export async function getOverview(): Promise<MarketingOverview> {

@@ -45,6 +45,8 @@ import {
   Trash2,
   Settings as SettingsIcon,
   FileUp,
+  Link2,
+  MessageSquare,
 } from "lucide-react";
 import { ImportTicketsModal } from "./ImportTicketsModal";
 import Link from "next/link";
@@ -67,7 +69,8 @@ import {
 } from "@/components/ui/Pills";
 import { groupByDate, shortTime } from "@/components/ui/datetime";
 import { clickToCallUrl } from "@/lib/calls/click-to-call";
-import { useT } from "@/components/LocaleProvider";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type {
   MacroSummary,
@@ -112,15 +115,18 @@ function saveCanned(workspaceId: string, list: CannedResponse[]): void {
   }
 }
 
-function relativeTime(iso: string | null): string {
+function relativeTime(
+  iso: string | null,
+  tr: (key: keyof Messages) => string,
+): string {
   if (!iso) return "";
-  const t = new Date(iso).getTime();
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return "gerade";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} d`;
-  return new Date(iso).toLocaleDateString("de-DE");
+  const t0 = new Date(iso).getTime();
+  const diff = (Date.now() - t0) / 1000;
+  if (diff < 60) return tr("helpdesk.time.justNow");
+  if (diff < 3600) return `${Math.floor(diff / 60)} ${tr("helpdesk.time.mins")}`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ${tr("helpdesk.time.hours")}`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} ${tr("helpdesk.time.days")}`;
+  return new Date(iso).toLocaleDateString();
 }
 
 function channelIcon(type: string | null | undefined, size = 11) {
@@ -133,9 +139,49 @@ function channelIcon(type: string | null | undefined, size = 11) {
       return <Globe size={size} className="text-text-quaternary" />;
     case "note":
       return <StickyNote size={size} className="text-text-quaternary" />;
+    case "sms":
+    case "text":
+      return <MessageSquare size={size} className="text-text-quaternary" />;
     default:
       return <Inbox size={size} className="text-text-quaternary" />;
   }
+}
+
+const CHANNEL_LABEL_KEYS: Partial<Record<string, keyof Messages>> = {
+  email: "helpdesk.channel.email",
+  phone: "helpdesk.channel.phone",
+  web: "helpdesk.channel.web",
+  note: "helpdesk.channel.note",
+  sms: "helpdesk.channel.sms",
+  text: "helpdesk.channel.sms",
+  chat: "helpdesk.channel.chat",
+  twitter: "helpdesk.channel.twitter",
+  facebook: "helpdesk.channel.facebook",
+};
+
+/** Localised channel label for Zammad article types. */
+function channelLabel(
+  type: string | null | undefined,
+  tr: (key: keyof Messages) => string,
+): string | null {
+  const raw = (type ?? "").toLowerCase();
+  if (!raw) return null;
+  const key = CHANNEL_LABEL_KEYS[raw];
+  if (key) return tr(key);
+  return `${tr("helpdesk.channel.other")} (${raw})`;
+}
+
+/** True when any SLA deadline is under 60 minutes or already overdue. */
+function ticketHasSlaRisk(t: TicketSummary, now = Date.now()): boolean {
+  const check = (iso: string | null) => {
+    if (!iso) return false;
+    return (new Date(iso).getTime() - now) / 60_000 < 60;
+  };
+  return (
+    check(t.firstResponseEscalationAt) ||
+    check(t.closeEscalationAt) ||
+    check(t.escalationAt)
+  );
 }
 
 function attachmentIcon(filename: string, size = 11) {
@@ -181,6 +227,19 @@ export function HelpdeskClient({
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<StateFilter>("open");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+  const [slaRiskOnly, setSlaRiskOnly] = useState(false);
+  const [queueStats, setQueueStats] = useState<{
+    openCount: number;
+    openCapped: boolean;
+    slaAtRiskCount: number;
+    slaAtRiskCapped?: boolean;
+    closedToday: number;
+    closedCapped?: boolean;
+  } | null>(null);
+  const [crmPersonLink, setCrmPersonLink] = useState<{
+    url: string;
+    label: string;
+  } | null>(null);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TicketDetail | null>(null);
@@ -240,6 +299,13 @@ export function HelpdeskClient({
         setTickets(j.tickets ?? []);
         setMeta(j.meta ?? null);
         if (j.me) setMe(j.me);
+        try {
+          const rs = await fetch(apiUrl("/api/helpdesk/stats"), { cache: "no-store" });
+          const js = await rs.json();
+          if (rs.ok) setQueueStats(js);
+        } catch {
+          /* stats optional */
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -258,7 +324,7 @@ export function HelpdeskClient({
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
         setDetail(j.ticket);
       } catch (e) {
-        alert(`Ticket laden fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.loadTicket")}: ${e instanceof Error ? e.message : e}`);
       } finally {
         setDetailLoading(false);
       }
@@ -281,18 +347,54 @@ export function HelpdeskClient({
     else setDetail(null);
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const email = detail?.customerEmail?.trim();
+    if (!email || email.endsWith("@import.kineo360.work")) {
+      setCrmPersonLink(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(apiUrl("/api/helpdesk/crm-person", { email }), {
+          cache: "no-store",
+        });
+        const j = await r.json();
+        if (cancelled) return;
+        if (!r.ok || !j.personUrl) {
+          setCrmPersonLink(null);
+          return;
+        }
+        const person = j.person as { firstName?: string; lastName?: string } | null;
+        const label = person
+          ? `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim() ||
+            t("helpdesk.crm.twentyLabel")
+          : t("helpdesk.crm.twentyLabel");
+        setCrmPersonLink({ url: j.personUrl as string, label });
+      } catch {
+        if (!cancelled) setCrmPersonLink(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.customerEmail, apiUrl, t]);
+
   /* ── Derived ────────────────────────────────────────────────── */
 
   const scopedTickets = useMemo(() => {
+    let list = tickets;
     if (scopeFilter === "mine" && me.id) {
-      return tickets.filter((t) => t.ownerId === me.id);
-    }
-    if (scopeFilter === "unassigned") {
+      list = list.filter((t) => t.ownerId === me.id);
+    } else if (scopeFilter === "unassigned") {
       // Zammad's "system" owner has id 1 — treat as unassigned.
-      return tickets.filter((t) => !t.ownerId || t.ownerId === 1);
+      list = list.filter((t) => !t.ownerId || t.ownerId === 1);
     }
-    return tickets;
-  }, [tickets, scopeFilter, me.id]);
+    if (slaRiskOnly) {
+      list = list.filter((t) => ticketHasSlaRisk(t));
+    }
+    return list;
+  }, [tickets, scopeFilter, me.id, slaRiskOnly]);
 
   const counts = useMemo(() => {
     const open = tickets.filter((t) =>
@@ -330,7 +432,7 @@ export function HelpdeskClient({
       await loadList(search, stateFilter, scopeFilter);
       setSelectedId(j.ticket.id);
     } catch (e) {
-      alert(`Anlegen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      alert(`${t("helpdesk.error.createTicket")}: ${e instanceof Error ? e.message : e}`);
     }
   };
 
@@ -365,7 +467,7 @@ export function HelpdeskClient({
           ),
         );
       } catch (e) {
-        alert(`Speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.save")}: ${e instanceof Error ? e.message : e}`);
       }
     },
     [detail, apiUrl],
@@ -377,6 +479,8 @@ export function HelpdeskClient({
       internal: boolean;
       type: "note" | "email" | "phone";
       nextStateId?: number;
+      /** Optional internal note recorded when closing (customer reply tab). */
+      internalSolution?: string;
     }) => {
       if (!detail || !opts.body.trim()) return;
       try {
@@ -391,13 +495,30 @@ export function HelpdeskClient({
         });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        if (opts.internalSolution?.trim()) {
+          const esc = opts.internalSolution
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          const r2 = await fetch(apiUrl(`/api/helpdesk/ticket/${detail.id}`), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              body: `<p><strong>Lösung / Abschluss (intern)</strong></p><p>${esc.replace(/\n/g, "<br/>")}</p>`,
+              type: "note",
+              internal: true,
+            }),
+          });
+          const j2 = await r2.json();
+          if (!r2.ok) throw new Error(j2.error ?? `HTTP ${r2.status}`);
+        }
         if (opts.nextStateId && opts.nextStateId !== detail.stateId) {
           await onPatchTicket({ state_id: opts.nextStateId });
         } else {
           void loadDetail(detail.id);
         }
       } catch (e) {
-        alert(`Senden fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.send")}: ${e instanceof Error ? e.message : e}`);
       }
     },
     [detail, apiUrl, loadDetail, onPatchTicket],
@@ -418,7 +539,7 @@ export function HelpdeskClient({
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
         setDetail((d) => (d ? { ...d, tags: j.tags ?? [] } : d));
       } catch (e) {
-        alert(`Tag hinzufügen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.tagAdd")}: ${e instanceof Error ? e.message : e}`);
       }
     },
     [detail, apiUrl],
@@ -436,11 +557,54 @@ export function HelpdeskClient({
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
         setDetail((d) => (d ? { ...d, tags: j.tags ?? [] } : d));
       } catch (e) {
-        alert(`Tag entfernen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.tagRemove")}: ${e instanceof Error ? e.message : e}`);
       }
     },
     [detail, apiUrl],
   );
+
+  /* ── Customer portal magic link ───────────────────────────────── */
+
+  /**
+   * Mint a signed magic-link the customer can use to view & reply to
+   * the ticket without a portal account. We then copy the URL to the
+   * clipboard and pop a small confirmation toast in the UI.
+   */
+  const [portalLinkBusy, setPortalLinkBusy] = useState(false);
+  const [portalLinkInfo, setPortalLinkInfo] = useState<string | null>(null);
+
+  const onMintPortalLink = useCallback(async () => {
+    if (!detail) return;
+    setPortalLinkBusy(true);
+    setPortalLinkInfo(null);
+    try {
+      const r = await fetch(
+        apiUrl(`/api/helpdesk/ticket/${detail.id}/portal-link`),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ttlDays: 30 }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      const url = j.url as string;
+      try {
+        await navigator.clipboard.writeText(url);
+        setPortalLinkInfo(t("helpdesk.portalLink.copiedToast"));
+      } catch {
+        // Some browsers refuse clipboard writes outside user gestures
+        // — fall back to a plain prompt so the agent can still copy.
+        window.prompt(t("helpdesk.portalLink.prompt"), url);
+        setPortalLinkInfo(t("helpdesk.portalLink.manualCopied"));
+      }
+      setTimeout(() => setPortalLinkInfo(null), 4000);
+    } catch (e) {
+      alert(`${t("helpdesk.error.portalLink")}: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setPortalLinkBusy(false);
+    }
+  }, [detail, apiUrl]);
 
   /* ── Macros ───────────────────────────────────────────────────── */
 
@@ -462,7 +626,7 @@ export function HelpdeskClient({
         // Refresh list so summary fields stay in sync
         void loadList(search, stateFilter, scopeFilter);
       } catch (e) {
-        alert(`Macro fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.macro")}: ${e instanceof Error ? e.message : e}`);
       }
     },
     [detail, apiUrl, loadList, search, stateFilter, scopeFilter],
@@ -487,7 +651,7 @@ export function HelpdeskClient({
         );
         if (failed.length) {
           alert(
-            `${failed.length} von ${bulkIds.size} Tickets konnten nicht aktualisiert werden:\n` +
+            `${failed.length} / ${bulkIds.size} — ${t("helpdesk.bulk.partialFail")}\n` +
               failed.map((f) => `#${f.id}: ${f.error ?? "?"}`).join("\n"),
           );
         }
@@ -497,12 +661,12 @@ export function HelpdeskClient({
           void loadDetail(selectedId);
         }
       } catch (e) {
-        alert(`Bulk-Update fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("helpdesk.error.bulk")}: ${e instanceof Error ? e.message : e}`);
       } finally {
         setBulkBusy(false);
       }
     },
-    [bulkIds, apiUrl, loadList, loadDetail, search, stateFilter, scopeFilter, selectedId],
+    [bulkIds, apiUrl, loadList, loadDetail, search, stateFilter, scopeFilter, selectedId, t],
   );
 
   const toggleBulk = useCallback((id: number) => {
@@ -548,7 +712,7 @@ export function HelpdeskClient({
               type="button"
               onClick={() => setShowImport(true)}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Tickets aus CSV importieren"
+              title={t("helpdesk.import.csvTitle")}
             >
               <FileUp size={13} />
             </button>
@@ -605,6 +769,24 @@ export function HelpdeskClient({
               onClick={() => setScopeFilter("unassigned")}
               accent={accent}
             />
+            <button
+              type="button"
+              title={t("helpdesk.slaRisk.title")}
+              onClick={() => setSlaRiskOnly((v) => !v)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-medium transition-colors ${
+                slaRiskOnly
+                  ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
+                  : "border-stroke-1 text-text-tertiary hover:border-stroke-2 hover:text-text-secondary"
+              }`}
+            >
+              <Timer size={11} />
+              {t("helpdesk.slaRisk")}
+              {queueStats != null && queueStats.slaAtRiskCount > 0 ? (
+                <span className="font-mono text-[9.5px] opacity-90">
+                  {queueStats.slaAtRiskCount}
+                </span>
+              ) : null}
+            </button>
           </div>
           {meta?.overviews?.length ? (
             <OverviewsBar
@@ -643,6 +825,39 @@ export function HelpdeskClient({
               accent={accent}
             />
           </div>
+          {queueStats ? (
+            <div className="mt-2 pt-2 border-t border-stroke-1 space-y-1">
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-text-quaternary">
+                <span>
+                  {t("helpdesk.stats.open")}:{" "}
+                  <strong className="text-text-secondary font-mono">
+                    {queueStats.openCount}
+                    {queueStats.openCapped ? "+" : ""}
+                  </strong>
+                </span>
+                <span>
+                  {t("helpdesk.stats.slaAtRisk")}:{" "}
+                  <strong className="text-text-secondary font-mono">
+                    {queueStats.slaAtRiskCount}
+                  </strong>
+                </span>
+                <span>
+                  {t("helpdesk.stats.closedToday")}:{" "}
+                  <strong className="text-text-secondary font-mono">
+                    {queueStats.closedToday}
+                    {queueStats.closedCapped ? "+" : ""}
+                  </strong>
+                </span>
+              </div>
+              {(queueStats.openCapped ||
+                queueStats.closedCapped ||
+                queueStats.slaAtRiskCapped) && (
+                <p className="text-[9px] text-text-quaternary/90">
+                  {t("helpdesk.stats.capped")}
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>
       </PaneHeader>
 
@@ -712,17 +927,33 @@ export function HelpdeskClient({
   const secondary = (
     <>
       <PaneHeader
-        title={detail ? detail.title : "Konversation"}
+        title={detail ? detail.title : t("helpdesk.conversation.title")}
         subtitle={
           detail
             ? `#${detail.number} · ${detail.articles.length} Beiträge`
-            : "Wähle ein Ticket"
+            : t("helpdesk.conversation.pickTicket")
         }
         accent={accent}
         right={
           detail && meta ? (
             <div className="flex items-center gap-1">
               <SlaIndicator ticket={detail} />
+              <button
+                type="button"
+                onClick={() => void onMintPortalLink()}
+                disabled={portalLinkBusy}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] disabled:opacity-60"
+                title={t("helpdesk.portalLink.mintTitle")}
+              >
+                {portalLinkBusy ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : portalLinkInfo ? (
+                  <CheckCircle2 size={11} className="text-emerald-400" />
+                ) : (
+                  <Link2 size={11} />
+                )}
+                {portalLinkInfo ? t("helpdesk.portalLink.copied") : t("helpdesk.portalLink.button")}
+              </button>
               <MacrosMenu
                 macros={meta.macros}
                 onApply={onApplyMacro}
@@ -745,8 +976,8 @@ export function HelpdeskClient({
       </PaneHeader>
       {!detail && !detailLoading ? (
         <PaneEmptyState
-          title="Kein Ticket gewählt"
-          hint="Wähle links ein Ticket, um Verlauf und Antwort-Composer zu sehen."
+          title={t("helpdesk.empty.noTicket")}
+          hint={t("helpdesk.empty.noTicketHint")}
           icon={<Inbox size={32} />}
         />
       ) : detailLoading && !detail ? (
@@ -772,7 +1003,7 @@ export function HelpdeskClient({
             ))}
             {grouped.length === 0 && (
               <p className="text-[11.5px] text-text-tertiary text-center py-4">
-                Keine Nachrichten.
+                {t("helpdesk.empty.noMessages")}
               </p>
             )}
           </div>
@@ -796,8 +1027,8 @@ export function HelpdeskClient({
   if (!detail) {
     detailPane = (
       <PaneEmptyState
-        title="Native Zammad-Integration"
-        hint="Tickets bearbeiten, antworten, intern notieren — direkt im Portal."
+        title={t("helpdesk.empty.zammadTitle")}
+        hint={t("helpdesk.empty.zammadHint")}
         icon={<Headphones size={32} />}
       />
     );
@@ -839,6 +1070,8 @@ export function HelpdeskClient({
               ticketTitle={detail.title}
               ticketNumber={detail.number}
               onOpenProfile={() => setCustomerDrawerId(detail.customerId)}
+              crmPersonUrl={crmPersonLink?.url}
+              crmPersonLabel={crmPersonLink?.label}
             />
             {detail.note && (
               <section>
@@ -1303,6 +1536,7 @@ function TicketCard({
   onToggleBulk: (id: number) => void;
   bulkActive: boolean;
 }) {
+  const tr = useT();
   // Heuristic "unread": last contact is from a customer (the article count
   // grew since you last touched it). Zammad doesn't expose per-user read state
   // via REST, so we approximate with `articleCount > 1` AND state === "new".
@@ -1323,7 +1557,7 @@ function TicketCard({
           className={`flex items-center justify-center w-7 shrink-0 cursor-pointer ${
             bulkActive || bulkChecked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           } transition-opacity`}
-          title="Auswählen für Bulk-Aktionen (x)"
+          title={tr("helpdesk.card.selectBulk")}
         >
           <input
             type="checkbox"
@@ -1338,15 +1572,15 @@ function TicketCard({
             <div className="flex items-center gap-1.5 min-w-0">
               {unread && (
                 <span
-                  aria-label="Ungelesen"
+                  aria-label={tr("helpdesk.card.unread")}
                   className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0"
                 />
               )}
               <p className="text-[12.5px] font-semibold text-text-primary truncate flex-1">
-                {t.title || "(ohne Titel)"}
+                {t.title || tr("helpdesk.card.noTitle")}
               </p>
               <span className="text-[10px] text-text-quaternary shrink-0">
-                {relativeTime(t.lastContactAt ?? t.updatedAt)}
+                {relativeTime(t.lastContactAt ?? t.updatedAt, tr)}
               </span>
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
@@ -1359,9 +1593,9 @@ function TicketCard({
               {mine && (
                 <span
                   className="text-[9.5px] uppercase font-semibold text-text-tertiary shrink-0"
-                  title="Dir zugewiesen"
+                  title={tr("helpdesk.card.mine")}
                 >
-                  Mir
+                  {tr("helpdesk.card.mine")}
                 </span>
               )}
             </div>
@@ -1403,8 +1637,10 @@ function ArticleBubble({
   article: TicketArticle;
   accent: string;
 }) {
+  const tr = useT();
   const isCustomer = /customer/i.test(article.senderName);
   const isInternal = article.internal;
+  const chLabel = channelLabel(article.type, tr);
 
   // Internal notes always full width, marked with amber stripe.
   if (isInternal) {
@@ -1414,10 +1650,10 @@ function ArticleBubble({
           <div className="flex items-center gap-1.5 min-w-0">
             <Avatar name={article.fromName || article.senderName} size={20} />
             <span className="text-[11px] font-semibold text-text-primary truncate">
-              {article.fromName || article.senderName || "Agent"}
+              {article.fromName || article.senderName || tr("helpdesk.article.agent")}
             </span>
             <span className="inline-flex items-center gap-1 text-[9.5px] uppercase font-semibold text-amber-500">
-              <StickyNote size={10} /> Interne Notiz
+              <StickyNote size={10} /> {tr("helpdesk.internalNote")}
             </span>
           </div>
           <time
@@ -1450,14 +1686,38 @@ function ArticleBubble({
             isCustomer ? "" : "justify-end"
           }`}
         >
-          {!isCustomer && channelIcon(article.type, 10)}
+          {!isCustomer && (
+            <span
+              className="inline-flex items-center gap-0.5"
+              title={chLabel ?? undefined}
+            >
+              {channelIcon(article.type, 10)}
+              {chLabel ? (
+                <span className="uppercase tracking-wide text-[9px]">
+                  {chLabel}
+                </span>
+              ) : null}
+            </span>
+          )}
           <span className="font-semibold text-text-tertiary">
-            {article.fromName || article.senderName || "Unbekannt"}
+            {article.fromName || article.senderName || tr("helpdesk.customer.unknown")}
           </span>
           <time title={new Date(article.createdAt).toLocaleString("de-DE")}>
             {shortTime(article.createdAt)}
           </time>
-          {isCustomer && channelIcon(article.type, 10)}
+          {isCustomer && (
+            <span
+              className="inline-flex items-center gap-0.5"
+              title={chLabel ?? undefined}
+            >
+              {chLabel ? (
+                <span className="uppercase tracking-wide text-[9px]">
+                  {chLabel}
+                </span>
+              ) : null}
+              {channelIcon(article.type, 10)}
+            </span>
+          )}
         </header>
         <div
           className={`rounded-2xl px-3 py-2 border ${
@@ -1544,6 +1804,13 @@ function Attachments({
 /*                         Composer (rich)                             */
 /* ----------------------------------------------------------------- */
 
+function isLikelyClosedState(stateName: string | undefined): boolean {
+  if (!stateName) return false;
+  return /geschlossen|closed|abgeschlossen|gelöst|solved|resolved|merged/i.test(
+    stateName,
+  );
+}
+
 function Composer({
   accent,
   states,
@@ -1561,13 +1828,16 @@ function Composer({
     internal: boolean;
     type: "note" | "email" | "phone";
     nextStateId?: number;
+    internalSolution?: string;
   }) => Promise<void> | void;
   canned: CannedResponse[];
   onSaveCanned: (next: CannedResponse[]) => void;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }) {
+  const tr = useT();
   const [tab, setTab] = useState<"reply" | "note">("reply");
   const [body, setBody] = useState("");
+  const [internalSolution, setInternalSolution] = useState("");
   const [nextStateId, setNextStateId] = useState<number>(currentStateId);
   const fallbackRef = useRef<HTMLTextAreaElement>(null);
   const taRef = textareaRef ?? fallbackRef;
@@ -1576,6 +1846,10 @@ function Composer({
 
   useEffect(() => setNextStateId(currentStateId), [currentStateId]);
 
+  const selectedStateName = states.find((s) => s.id === nextStateId)?.name;
+  const showCloseSolution =
+    tab === "reply" && isLikelyClosedState(selectedStateName);
+
   const submit = useCallback(async () => {
     if (!body.trim()) return;
     await onSend({
@@ -1583,9 +1857,11 @@ function Composer({
       internal: tab === "note",
       type: tab === "note" ? "note" : "email",
       nextStateId: tab === "reply" ? nextStateId : undefined,
+      internalSolution: showCloseSolution ? internalSolution : undefined,
     });
     setBody("");
-  }, [body, tab, nextStateId, onSend]);
+    setInternalSolution("");
+  }, [body, tab, nextStateId, onSend, internalSolution, showCloseSolution]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -1617,21 +1893,21 @@ function Composer({
     <div className="shrink-0 border-t border-stroke-1 bg-bg-elevated">
       <div className="px-3 pt-2 flex items-center gap-1">
         <ComposerTab
-          label="Antwort"
+          label={tr("helpdesk.composer.answerTab")}
           icon={<Mail size={11} />}
           active={!isNote}
           onClick={() => setTab("reply")}
           accent={accent}
         />
         <ComposerTab
-          label="Interne Notiz"
+          label={tr("helpdesk.composer.internalTab")}
           icon={<StickyNote size={11} />}
           active={isNote}
           onClick={() => setTab("note")}
           accent={"#f59e0b"}
         />
         <span className="ml-auto text-[10px] text-text-quaternary">
-          ⌘/Ctrl + Enter zum Senden
+          {tr("helpdesk.composer.sendShortcut")}
         </span>
       </div>
       <div
@@ -1646,21 +1922,35 @@ function Composer({
           onKeyDown={onKey}
           placeholder={
             isNote
-              ? "Interne Notiz — Kunde sieht das nicht."
-              : "Antwort an Kunde…"
+              ? tr("helpdesk.composer.placeholderNote")
+              : tr("helpdesk.composer.placeholderReply")
           }
           rows={3}
           className="w-full bg-transparent px-2.5 py-2 text-[12px] outline-none resize-y"
         />
+        {showCloseSolution && (
+          <div className="px-2.5 pb-2 border-t border-stroke-1 pt-2 space-y-1">
+            <label className="block text-[10px] font-medium text-text-tertiary">
+              {tr("helpdesk.composer.solutionLabel")}
+            </label>
+            <textarea
+              value={internalSolution}
+              onChange={(e) => setInternalSolution(e.target.value)}
+              placeholder={tr("helpdesk.composer.solutionPlaceholder")}
+              rows={2}
+              className="w-full bg-bg-base border border-amber-500/30 rounded-md px-2 py-1.5 text-[11px] outline-none focus:border-amber-500/50 resize-y"
+            />
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-stroke-1">
           <div className="flex items-center gap-1 relative">
             <button
               type="button"
               className="inline-flex items-center gap-1 text-[10.5px] text-text-tertiary hover:text-text-primary"
-              title="Anhang (bald verfügbar)"
+              title={tr("helpdesk.composer.attachmentSoon")}
               disabled
             >
-              <Paperclip size={11} /> Anhang
+              <Paperclip size={11} /> {tr("helpdesk.composer.attachment")}
             </button>
             <button
               type="button"
@@ -1668,9 +1958,9 @@ function Composer({
               className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] hover:bg-bg-overlay ${
                 showCanned ? "text-text-primary bg-bg-overlay" : "text-text-tertiary"
               }`}
-              title="Vorlagen einsetzen"
+              title={tr("helpdesk.composer.templatesTitle")}
             >
-              <FileText size={11} /> Vorlagen
+              <FileText size={11} /> {tr("helpdesk.composer.templates")}
               {canned.length > 0 && (
                 <span className="text-[9px] font-mono">({canned.length})</span>
               )}
@@ -1690,7 +1980,7 @@ function Composer({
           <div className="flex items-center gap-2">
             {!isNote && (
               <label className="inline-flex items-center gap-1.5 text-[10.5px] text-text-tertiary">
-                Status nach Senden
+                {tr("helpdesk.composer.statusAfterSend")}
                 <select
                   value={nextStateId}
                   onChange={(e) => setNextStateId(parseInt(e.target.value, 10))}
@@ -1714,7 +2004,7 @@ function Composer({
               style={{ background: isNote ? "#f59e0b" : accent }}
             >
               <Send size={11} />
-              {isNote ? "Notiz speichern" : "Senden"}
+              {isNote ? tr("helpdesk.composer.saveNote") : tr("common.send")}
             </button>
           </div>
         </div>
@@ -1777,6 +2067,8 @@ function CustomerCard({
   ticketTitle,
   ticketNumber,
   onOpenProfile,
+  crmPersonUrl,
+  crmPersonLabel,
 }: {
   name: string;
   email: string | null;
@@ -1786,7 +2078,10 @@ function CustomerCard({
   ticketTitle: string;
   ticketNumber: string;
   onOpenProfile?: () => void;
+  crmPersonUrl?: string;
+  crmPersonLabel?: string;
 }) {
+  const tr = useT();
   const callHref = clickToCallUrl({
     workspaceId,
     subject: `Ticket #${ticketNumber} · ${ticketTitle}`,
@@ -1805,10 +2100,10 @@ function CustomerCard({
             type="button"
             onClick={onOpenProfile}
             className="text-left text-[13px] font-semibold text-text-primary truncate hover:text-blue-400 inline-flex items-center gap-1.5"
-            title="Kundenprofil öffnen (Customer 360°)"
+            title={tr("helpdesk.customer.profileTitle")}
           >
             <UserCircle2 size={12} className="text-text-quaternary" />
-            {name || "Unbekannter Kontakt"}
+            {name || tr("helpdesk.customer.unknown")}
             <ArrowRight size={11} className="text-text-quaternary" />
           </button>
           {email && (
@@ -1832,10 +2127,10 @@ function CustomerCard({
         <a
           href={callHref}
           className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary"
-          title="Video-Call zu diesem Ticket starten"
+          title={tr("helpdesk.customer.videoCall")}
         >
           <Video size={11} />
-          Video-Call
+          {tr("helpdesk.customer.videoCall")}
         </a>
         {email && (
           <a
@@ -1843,7 +2138,19 @@ function CustomerCard({
             className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary"
           >
             <Mail size={11} />
-            Mail
+            {tr("helpdesk.customer.mailAction")}
+          </a>
+        )}
+        {crmPersonUrl && (
+          <a
+            href={crmPersonUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary"
+            title={tr("helpdesk.customer.crmTitle")}
+          >
+            <ExternalLink size={11} />
+            {crmPersonLabel ?? tr("helpdesk.customer.crm")}
           </a>
         )}
         {onOpenProfile && (
@@ -1851,10 +2158,10 @@ function CustomerCard({
             type="button"
             onClick={onOpenProfile}
             className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary ml-auto"
-            title="Customer 360° anzeigen"
+            title={tr("helpdesk.customer.profile360")}
           >
             <Users size={11} />
-            360°
+            {tr("helpdesk.customer.profile360")}
           </button>
         )}
       </div>
@@ -1925,18 +2232,19 @@ function NewTicketForm({
   onSubmit: (titleEl: HTMLInputElement, bodyEl: HTMLTextAreaElement) => Promise<void>;
   onCancel: () => void;
 }) {
+  const tr = useT();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   return (
     <div className="px-3 py-2 border-b border-stroke-1 bg-bg-elevated space-y-1.5">
       <input
         ref={inputRef}
         type="text"
-        placeholder="Betreff…"
+        placeholder={tr("helpdesk.newTicket.subjectPh")}
         className="w-full bg-transparent border border-stroke-1 rounded-md px-2 py-1.5 text-[12px] outline-none focus:border-stroke-2"
       />
       <textarea
         ref={bodyRef}
-        placeholder="Beschreibung (optional)"
+        placeholder={tr("helpdesk.newTicket.bodyPh")}
         rows={3}
         className="w-full bg-transparent border border-stroke-1 rounded-md px-2 py-1.5 text-[12px] outline-none focus:border-stroke-2 resize-y"
       />
@@ -1946,7 +2254,7 @@ function NewTicketForm({
           onClick={onCancel}
           className="px-2 py-1 text-[11px] text-text-tertiary hover:text-text-primary"
         >
-          Abbrechen
+          {tr("helpdesk.newTicket.cancel")}
         </button>
         <button
           type="button"
@@ -1958,7 +2266,7 @@ function NewTicketForm({
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11px]"
           style={{ background: accent }}
         >
-          <Plus size={10} /> Anlegen
+          <Plus size={10} /> {tr("helpdesk.newTicket.submit")}
         </button>
       </div>
     </div>
@@ -2014,10 +2322,13 @@ function SlaIndicator({
   ticket: TicketSummary;
   compact?: boolean;
 }) {
+  const tr = useT();
+  const { locale } = useLocale();
+  const locStr = locale === "en" ? "en-US" : "de-DE";
   // The "next" relevant deadline is whichever escalates first.
   const candidates: { label: string; iso: string | null }[] = [
-    { label: "First Response", iso: ticket.firstResponseEscalationAt },
-    { label: "Close", iso: ticket.closeEscalationAt },
+    { label: tr("helpdesk.sla.firstResponse"), iso: ticket.firstResponseEscalationAt },
+    { label: tr("helpdesk.sla.closeDeadline"), iso: ticket.closeEscalationAt },
   ].filter((c) => !!c.iso);
   if (!candidates.length) return null;
   const next = candidates.sort(
@@ -2037,35 +2348,39 @@ function SlaIndicator({
         compact ? "px-1.5 py-[1px] text-[9.5px]" : "px-2 py-0.5 text-[10.5px]"
       }`}
       style={{ background: tone.bg, color: tone.fg, borderColor: tone.bd }}
-      title={`${next.label} fällig: ${new Date(next.iso!).toLocaleString("de-DE")}`}
+      title={`${next.label} ${tr("helpdesk.sla.due")} ${new Date(next.iso!).toLocaleString(locStr)}`}
     >
       {state === "breached" ? (
         <AlertCircle size={compact ? 9 : 11} />
       ) : (
         <Timer size={compact ? 9 : 11} />
       )}
-      {state === "breached" ? "SLA verletzt" : "SLA"} {formatRemaining(next.iso)}
+      {state === "breached" ? tr("helpdesk.sla.breached") : tr("helpdesk.sla.pill")}{" "}
+      {formatRemaining(next.iso)}
     </span>
   );
 }
 
 function SlaPanel({ ticket }: { ticket: TicketSummary }) {
+  const tr = useT();
+  const { locale } = useLocale();
+  const locStr = locale === "en" ? "en-US" : "de-DE";
   const rows: { label: string; iso: string | null; state: SlaState }[] = [];
   if (ticket.firstResponseEscalationAt)
     rows.push({
-      label: "Erstantwort",
+      label: tr("helpdesk.sla.panel.first"),
       iso: ticket.firstResponseEscalationAt,
       state: slaState(ticket.firstResponseEscalationAt),
     });
   if (ticket.closeEscalationAt)
     rows.push({
-      label: "Lösung",
+      label: tr("helpdesk.sla.panel.close"),
       iso: ticket.closeEscalationAt,
       state: slaState(ticket.closeEscalationAt),
     });
   if (!rows.length) {
     return (
-      <p className="text-[11px] text-text-tertiary">Kein SLA aktiv.</p>
+      <p className="text-[11px] text-text-tertiary">{tr("helpdesk.sla.panel.none")}</p>
     );
   }
   return (
@@ -2087,7 +2402,7 @@ function SlaPanel({ ticket }: { ticket: TicketSummary }) {
                   ? "text-amber-400"
                   : "text-emerald-400"
             }`}
-            title={r.iso ? new Date(r.iso).toLocaleString("de-DE") : ""}
+            title={r.iso ? new Date(r.iso).toLocaleString(locStr) : ""}
           >
             {formatRemaining(r.iso)}
           </span>
@@ -2788,6 +3103,7 @@ function CustomerDrawer({
   onClose: () => void;
   onPickTicket: (id: number) => void;
 }) {
+  const t = useT();
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2830,12 +3146,12 @@ function CustomerDrawer({
       >
         <header className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
           <UserCircle2 size={16} style={{ color: accent }} />
-          <h2 className="text-[13px] font-semibold">Kundenprofil</h2>
+          <h2 className="text-[13px] font-semibold">{t("helpdesk.drawer.title")}</h2>
           <button
             type="button"
             onClick={onClose}
             className="ml-auto p-1 rounded hover:bg-bg-overlay text-text-tertiary"
-            title="Schließen (Esc)"
+            title={t("helpdesk.drawer.close")}
           >
             <XIcon size={14} />
           </button>
@@ -2873,6 +3189,9 @@ function CustomerProfileBody({
   onPickTicket: (id: number) => void;
   accent: string;
 }) {
+  const tr = useT();
+  const { locale } = useLocale();
+  const locStr = locale === "en" ? "en-US" : "de-DE";
   const { user, tickets, openCount, closedCount } = profile;
   return (
     <div className="p-4 space-y-4">
@@ -2904,18 +3223,19 @@ function CustomerProfileBody({
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <Kpi label="Tickets gesamt" value={tickets.length} />
-        <Kpi label="Offen" value={openCount} tone="warn" />
-        <Kpi label="Geschlossen" value={closedCount} tone="success" />
+        <Kpi label={tr("helpdesk.drawer.ticketsTotal")} value={tickets.length} />
+        <Kpi label={tr("helpdesk.stats.open")} value={openCount} tone="warn" />
+        <Kpi label={tr("helpdesk.filter.closed")} value={closedCount} tone="success" />
       </div>
       {user.createdAt && (
         <p className="text-[10.5px] text-text-quaternary">
-          Kunde seit {new Date(user.createdAt).toLocaleDateString("de-DE")}
+          {tr("helpdesk.drawer.customerSince")}{" "}
+          {new Date(user.createdAt).toLocaleDateString(locStr)}
         </p>
       )}
       <section>
         <h3 className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mb-1.5">
-          Ticketverlauf
+          {tr("helpdesk.drawer.history")}
         </h3>
         {tickets.length ? (
           <ul className="space-y-1">
@@ -2937,7 +3257,7 @@ function CustomerProfileBody({
                       <StatusPill label={t.stateName} />
                       <PriorityChip name={t.priorityName} />
                       <span className="text-[10px] text-text-quaternary">
-                        {relativeTime(t.updatedAt)}
+                        {relativeTime(t.updatedAt, tr)}
                       </span>
                     </span>
                   </span>
@@ -2946,7 +3266,7 @@ function CustomerProfileBody({
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-text-tertiary">Keine Tickets.</p>
+          <p className="text-[11px] text-text-tertiary">{tr("helpdesk.drawer.noTickets")}</p>
         )}
       </section>
       <div className="pt-2 border-t border-stroke-1">
@@ -2957,7 +3277,7 @@ function CustomerProfileBody({
             style={{ background: accent }}
           >
             <Mail size={11} />
-            E-Mail schreiben
+            {tr("helpdesk.drawer.writeEmail")}
           </a>
         )}
       </div>

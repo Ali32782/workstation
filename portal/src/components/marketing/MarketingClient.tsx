@@ -18,6 +18,9 @@ import {
   CheckCircle2,
   Settings as SettingsIcon,
   ArrowRight,
+  Play,
+  Pause,
+  Copy,
 } from "lucide-react";
 import {
   ThreePaneLayout,
@@ -446,7 +449,22 @@ export function MarketingClient({
   } else if (section === "segments" && selectedSegment) {
     detail = <SegmentDetail segment={selectedSegment} mauticUrl={mauticUrl} />;
   } else if (section === "campaigns" && selectedCampaign) {
-    detail = <CampaignDetail campaign={selectedCampaign} mauticUrl={mauticUrl} />;
+    detail = (
+      <CampaignDetail
+        campaign={selectedCampaign}
+        mauticUrl={mauticUrl}
+        workspaceId={workspaceId}
+        onChanged={(next) => {
+          setCampaigns((prev) =>
+            prev.map((c) => (c.id === next.id ? next : c)),
+          );
+        }}
+        onCloned={(clone) => {
+          setCampaigns((prev) => [clone, ...prev]);
+          setSelectedId(`cmp-${clone.id}`);
+        }}
+      />
+    );
   } else if (section === "emails" && selectedEmail) {
     detail = <EmailDetail email={selectedEmail} mauticUrl={mauticUrl} />;
   } else {
@@ -898,10 +916,89 @@ function SegmentDetail({
 function CampaignDetail({
   campaign,
   mauticUrl,
+  workspaceId,
+  onChanged,
+  onCloned,
 }: {
   campaign: MauticCampaign;
   mauticUrl: string;
+  workspaceId: WorkspaceId;
+  onChanged: (next: MauticCampaign) => void;
+  onCloned: (clone: MauticCampaign) => void;
 }) {
+  const [busy, setBusy] = useState<null | "toggle" | "clone">(null);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const togglePublished = async () => {
+    if (busy) return;
+    setBusy("toggle");
+    setError(null);
+    setInfo(null);
+    try {
+      const r = await fetch(
+        `/api/marketing/campaigns/${campaign.id}?ws=${workspaceId}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ isPublished: !campaign.isPublished }),
+        },
+      );
+      const body = (await r.json().catch(() => ({}))) as {
+        campaign?: MauticCampaign;
+        error?: string;
+      };
+      if (!r.ok || !body.campaign) {
+        throw new Error(body.error ?? `HTTP ${r.status}`);
+      }
+      onChanged(body.campaign);
+      setInfo(
+        body.campaign.isPublished
+          ? "Kampagne aktiviert. Mautic verteilt Kontakte ab jetzt durch den Flow."
+          : "Kampagne pausiert. Bestehende Kontakte bleiben an ihrem Schritt stehen, neue Trigger werden ignoriert.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cloneIt = async () => {
+    if (busy) return;
+    setBusy("clone");
+    setError(null);
+    setInfo(null);
+    try {
+      const r = await fetch(
+        `/api/marketing/campaigns/${campaign.id}/clone?ws=${workspaceId}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const body = (await r.json().catch(() => ({}))) as {
+        campaign?: MauticCampaign;
+        eventsCopied?: boolean;
+        error?: string;
+      };
+      if (!r.ok || !body.campaign) {
+        throw new Error(body.error ?? `HTTP ${r.status}`);
+      }
+      onCloned(body.campaign);
+      setInfo(
+        body.eventsCopied
+          ? "Kopie angelegt — Flow + Audience wurden übernommen, Status: Entwurf."
+          : "Kopie angelegt (nur Metadaten) — Mautic-API kopiert auf dieser Version keine Events. Schritte im Builder rekonstruieren.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <DetailPane
       header={
@@ -910,19 +1007,69 @@ function CampaignDetail({
           subtitle={campaign.category ?? "Ohne Kategorie"}
           icon={<Send size={14} />}
           right={
-            <a
-              href={`${mauticUrl}/s/campaigns/view/${campaign.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
-            >
-              <ExternalLink size={12} /> Editor in Mautic
-            </a>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={togglePublished}
+                disabled={busy !== null}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border transition-colors ${
+                  campaign.isPublished
+                    ? "border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                    : "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                } disabled:opacity-50`}
+                title={
+                  campaign.isPublished
+                    ? "Kampagne pausieren — neue Trigger werden ignoriert."
+                    : "Kampagne starten — Mautic schiebt Kontakte durch den Flow."
+                }
+              >
+                {busy === "toggle" ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : campaign.isPublished ? (
+                  <Pause size={12} />
+                ) : (
+                  <Play size={12} />
+                )}
+                {campaign.isPublished ? "Pausieren" : "Starten"}
+              </button>
+              <button
+                type="button"
+                onClick={cloneIt}
+                disabled={busy !== null}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated disabled:opacity-50"
+                title="Als pausierten Entwurf duplizieren — Audience + Flow werden mitkopiert."
+              >
+                {busy === "clone" ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Copy size={12} />
+                )}
+                Duplizieren
+              </button>
+              <a
+                href={`${mauticUrl}/s/campaigns/view/${campaign.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
+              >
+                <ExternalLink size={12} /> Editor
+              </a>
+            </div>
           }
         />
       }
       main={
         <div className="px-6 py-6 max-w-2xl">
+          {error && (
+            <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 text-red-300 text-[11.5px] p-2.5 leading-relaxed">
+              {error}
+            </div>
+          )}
+          {info && !error && (
+            <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 text-[11.5px] p-2.5 leading-relaxed">
+              {info}
+            </div>
+          )}
           <p className="text-[12.5px] text-text-secondary leading-relaxed">
             {campaign.description ?? "Keine Beschreibung."}
           </p>
@@ -936,7 +1083,8 @@ function CampaignDetail({
           </div>
           <p className="mt-6 text-[11.5px] text-text-tertiary">
             Drip-Sequenzen, Verzweigungen & Mail-Templates editierst du im
-            Mautic-Builder. Der Portal-Hub zeigt nur den Überblick.
+            Mautic-Builder. Start, Pause und Duplizieren laufen direkt aus dem
+            Portal — alles andere ist im Editor („In Mautic öffnen").
           </p>
         </div>
       }

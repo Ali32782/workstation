@@ -73,7 +73,9 @@ Email via **Migadu** (managed). VoIP via **Peoplefone CH + Zoiper**
     ├── keycloak-realms.md
     ├── oidc-wiring.md
     ├── jitsi-isolation-test.md
-    └── migadu-dns.md
+    ├── migadu-dns.md
+    ├── backup-staging.md           # backups, S3 restore, staging host
+    └── roadmap-step-by-step.md     # phased checklist (ops → dev → helpdesk)
 ```
 
 ---

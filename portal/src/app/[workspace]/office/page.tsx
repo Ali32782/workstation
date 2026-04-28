@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * Two modes share the same route:
  *   • Hub view (no `?path` param): lists the workspace's recent Office files
  *     and exposes Quick-Actions to spin up new documents / sheets / slides /
- *     notes, opens them in the integrated Collabora panel.
+ *     notes, opens presentations in the OpenOffice-style Nextcloud panel.
  *   • Editor view (`?path=/Documents/Brief.docx`): opens that file directly
  *     in TipTap (Word) or Univer (Excel) for editing. Used when other parts
  *     of the portal deep-link into a specific file.

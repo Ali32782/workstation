@@ -8,6 +8,7 @@ import {
 } from "@/lib/office/types";
 import {
   docxToHtml,
+  emptyXlsxBuffer,
   libreofficeConvert,
   xlsxToUniver,
 } from "@/lib/office/converter";
@@ -64,9 +65,10 @@ export async function GET(req: NextRequest) {
     if (kind === "word") {
       // Upcast legacy formats to .docx via LibreOffice first.
       if (
-        lower.endsWith(".doc") ||
-        lower.endsWith(".odt") ||
-        lower.endsWith(".rtf")
+        (lower.endsWith(".doc") ||
+          lower.endsWith(".odt") ||
+          lower.endsWith(".rtf")) &&
+        buf.length > 0
       ) {
         buf = await libreofficeConvert(buf, name, "docx");
       } else if (lower.endsWith(".txt") || lower.endsWith(".md")) {
@@ -78,16 +80,32 @@ export async function GET(req: NextRequest) {
         const doc: OfficeDocument = { kind: "word", html, text: txt, meta };
         return NextResponse.json(doc);
       }
+      if (buf.length === 0) {
+        const doc: OfficeDocument = {
+          kind: "word",
+          html: "<p></p>",
+          text: "",
+          meta,
+        };
+        return NextResponse.json(doc);
+      }
       const { html, text } = await docxToHtml(buf);
       const doc: OfficeDocument = { kind: "word", html, text, meta };
       return NextResponse.json(doc);
     }
 
     if (kind === "excel") {
-      if (lower.endsWith(".xls") || lower.endsWith(".ods")) {
+      if (
+        (lower.endsWith(".xls") || lower.endsWith(".ods")) &&
+        buf.length > 0
+      ) {
         buf = await libreofficeConvert(buf, name, "xlsx");
       }
-      // CSV/TSV are read directly by SheetJS.
+      // Empty cloud files (create-doc placeholders, or 0-byte uploads) break
+      // SheetJS — seed a minimal workbook for every spreadsheet kind.
+      if (buf.length === 0) {
+        buf = emptyXlsxBuffer();
+      }
       const workbook = xlsxToUniver(buf);
       const doc: OfficeDocument = { kind: "excel", workbook, meta };
       return NextResponse.json(doc);

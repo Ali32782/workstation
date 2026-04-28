@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Portal (Next.js)
 
-## Getting Started
+Kineo360-Portal: App Router, Keycloak (NextAuth v5), Helpdesk-, CRM- und weitere Integrationen.
 
-First, run the development server:
+## Entwicklungsserver
 
 ```bash
+cd portal
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Standard: [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Umgebungsvariablen (lokal)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Lege **`portal/.env.local`** an (wird von Git ignoriert). Mindestens für Login:
 
-## Learn More
+| Variable | Bedeutung |
+|----------|-----------|
+| `AUTH_SECRET` | Starker Zufallswert (wie `PORTAL_AUTH_SECRET` in der Root-`.env`) |
+| `KEYCLOAK_ISSUER` | z. B. `https://<dein-host>/realms/<realm>` |
+| `KEYCLOAK_CLIENT_ID` | OAuth-Client (z. B. `portal`) |
+| `KEYCLOAK_CLIENT_SECRET` | Passend zum Keycloak-Client |
 
-To learn more about Next.js, take a look at the following resources:
+Im Keycloak-Client **Valid redirect URIs** ergänzen:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`http://localhost:3000/api/auth/callback/keycloak`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Weitere Variablen (Zammad, Twenty, Mail, …) siehe **`../.env.example`** im Repo-Root — für reine UI-Arbeit reichen oft die Keycloak-Variablen; API-Routen brauchen je nach Feature die passenden Bridge-URLs und Tokens.
 
-## Deploy on Vercel
+### Build (wie in Produktion)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run build
+npm run start
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`next.config.ts` nutzt `output: "standalone"` für Docker-Images.
+
+## Backup & Staging
+
+Tägliche Backups und Staging-Hinweise: [**`../docs/backup-staging.md`**](../docs/backup-staging.md) sowie **`../scripts/backup.sh`**.
+
+Kurzreferenz Helpdesk/Zammad: **`./scripts/helpdesk-backup.sh`**.

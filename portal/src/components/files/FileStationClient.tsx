@@ -28,6 +28,12 @@ import {
   PanelRight,
 } from "lucide-react";
 import type { CloudEntry, CloudList } from "@/lib/cloud/types";
+import {
+  collaboraSafeOpenUrl,
+  opensInCollabora,
+  opensInPortalOfficeEditor,
+  primaryFileOpenLabel,
+} from "@/lib/office/open-mode";
 import type { WorkspaceId } from "@/lib/workspaces";
 
 function formatBytes(b: number): string {
@@ -70,10 +76,6 @@ function iconColor(entry: CloudEntry, accent: string): string {
   if (/\.(pptx?|odp)$/i.test(entry.name)) return "#dc2626";
   if (/\.(pdf)$/i.test(entry.name)) return "#b91c1c";
   return "#64748b";
-}
-
-function isOfficeEditable(name: string): boolean {
-  return /\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|md|rtf|csv)$/i.test(name);
 }
 
 function joinPath(dir: string, name: string): string {
@@ -218,8 +220,29 @@ export function FileStationClient({
           return;
         }
         await load(cwd);
-        // Open in Office editor if it's an office-editable file.
-        if (j.path && /\.(docx|xlsx|pptx)$/i.test(j.path)) {
+        const base = j.path?.split("/").pop() ?? "";
+        if (!j.path || !base) return;
+        if (kind === "slides") {
+          const r2 = await fetch(
+            `/api/cloud/list?ws=${workspaceId}&path=${encodeURIComponent(cwd)}`,
+            { cache: "no-store" },
+          );
+          const j2 = (await r2.json()) as CloudList;
+          const created = j2.entries.find((e) => e.path === j.path);
+          if (created?.fileId != null) {
+            window.open(
+              collaboraSafeOpenUrl(workspaceId, created.fileId),
+              "_blank",
+              "noopener,noreferrer",
+            );
+          } else {
+            alert(
+              "Präsentation angelegt; Datei-ID noch nicht verfügbar — bitte Ordner neu laden und die Datei öffnen.",
+            );
+          }
+          return;
+        }
+        if (opensInPortalOfficeEditor(base)) {
           window.open(
             `/${workspaceId}/office?path=${encodeURIComponent(j.path)}`,
             "_blank",
@@ -281,12 +304,17 @@ export function FileStationClient({
         void load(entry.path);
         return;
       }
-      if (isOfficeEditable(entry.name)) {
-        // Open the native portal Office editor (TipTap / Univer) in a new
-        // tab — keeps the file station available alongside the editor and
-        // lets the user open multiple docs in parallel.
+      if (opensInPortalOfficeEditor(entry.name)) {
         window.open(
           `/${workspaceId}/office?path=${encodeURIComponent(entry.path)}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return;
+      }
+      if (opensInCollabora(entry.name, entry.fileId)) {
+        window.open(
+          collaboraSafeOpenUrl(workspaceId, entry.fileId!),
           "_blank",
           "noopener,noreferrer",
         );
@@ -661,7 +689,11 @@ function DetailRail({
           style={{ background: accent }}
         >
           <ExternalLink size={13} />
-          {entry.type === "folder" ? "Öffnen" : isOfficeEditable(entry.name) ? "Im Editor öffnen" : "Vorschau"}
+          {primaryFileOpenLabel(
+            entry.name,
+            entry.fileId,
+            entry.type === "folder",
+          )}
         </button>
         {entry.type === "file" && (
           <a

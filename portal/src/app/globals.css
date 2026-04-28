@@ -140,3 +140,19 @@ button {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/*
+ * Touch-target boost inside the mobile slide-in drawer.
+ *
+ * The desktop sidebar uses py-1.5 (~26 px) rows, fine with a mouse but
+ * uncomfortably small on a phone. Apple HIG and Material both
+ * recommend ≥44 px hit targets, so when the same Sidebar is rendered
+ * inside `.mobile-drawer` we relax the row padding without touching
+ * the desktop styles.
+ */
+.mobile-drawer nav ul li > a,
+.mobile-drawer nav ul li > button {
+  min-height: 44px;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}

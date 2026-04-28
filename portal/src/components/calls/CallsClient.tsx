@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -224,6 +225,13 @@ export function CallsClient({
     [calls, selectedId],
   );
 
+  // Stable selection handler — passing this to every CallRow lets the
+  // memoised row skip re-renders even when the parent re-runs (which
+  // happens every 60s due to the active-calls poll).
+  const onSelectCall = useCallback((id: string) => {
+    setSelectedId(id);
+  }, []);
+
   /* ── Mutations ────────────────────────────────────────────── */
 
   const startCall = useCallback(async () => {
@@ -255,7 +263,7 @@ export function CallsClient({
   const endCall = useCallback(
     async (id: string, everyone: boolean) => {
       try {
-        const r = await fetch(`/api/calls/${id}`, {
+        const r = await fetch(apiUrl(`/api/calls/${id}`), {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "end", everyone }),
@@ -267,23 +275,26 @@ export function CallsClient({
         alert("Beenden fehlgeschlagen: " + (e instanceof Error ? e.message : e));
       }
     },
-    [],
+    [apiUrl],
   );
 
-  const joinCall = useCallback(async (id: string) => {
-    try {
-      const r = await fetch(`/api/calls/${id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "join" }),
-      });
-      const j = (await r.json()) as { call?: CallSummary; error?: string };
-      if (!r.ok || !j.call) throw new Error(j.error ?? `HTTP ${r.status}`);
-      setCalls((cur) => cur.map((c) => (c.id === id ? j.call! : c)));
-    } catch {
-      // non-fatal
-    }
-  }, []);
+  const joinCall = useCallback(
+    async (id: string) => {
+      try {
+        const r = await fetch(apiUrl(`/api/calls/${id}`), {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "join" }),
+        });
+        const j = (await r.json()) as { call?: CallSummary; error?: string };
+        if (!r.ok || !j.call) throw new Error(j.error ?? `HTTP ${r.status}`);
+        setCalls((cur) => cur.map((c) => (c.id === id ? j.call! : c)));
+      } catch {
+        // non-fatal
+      }
+    },
+    [apiUrl],
+  );
 
   /* ── Render ───────────────────────────────────────────────── */
 
@@ -365,14 +376,19 @@ export function CallsClient({
     </>
   );
 
+  const railItems = useMemo(
+    () => [
+      { id: "active" as const, label: t("calls.active"), icon: <Headphones size={14} />, count: counts.active },
+      { id: "today" as const, label: t("common.today"), icon: <PhoneIncoming size={14} />, count: counts.today },
+      { id: "week" as const, label: t("common.thisWeek"), icon: <Users size={14} />, count: counts.week },
+      { id: "all" as const, label: t("common.all"), icon: <Folder size={14} />, count: counts.all },
+    ],
+    [t, counts.active, counts.today, counts.week, counts.all],
+  );
+
   const primaryRail = (
     <nav className="flex-1 min-h-0 overflow-y-auto py-2 flex flex-col items-center gap-1 pt-12">
-      {[
-        { id: "active" as const, label: t("calls.active"), icon: <Headphones size={14} />, count: counts.active },
-        { id: "today" as const, label: t("common.today"), icon: <PhoneIncoming size={14} />, count: counts.today },
-        { id: "week" as const, label: t("common.thisWeek"), icon: <Users size={14} />, count: counts.week },
-        { id: "all" as const, label: t("common.all"), icon: <Folder size={14} />, count: counts.all },
-      ].map((it) => (
+      {railItems.map((it) => (
         <button
           key={it.id}
           type="button"
@@ -462,7 +478,7 @@ export function CallsClient({
                     key={c.id}
                     call={c}
                     selected={selectedId === c.id}
-                    onClick={() => setSelectedId(c.id)}
+                    onSelect={onSelectCall}
                   />
                 ))}
               </ul>
@@ -564,23 +580,30 @@ function ScopeButton({
   );
 }
 
-function CallRow({
+/**
+ * `CallRow` re-renders only when its own `call` reference, its
+ * `selected` flag, or the stable `onSelect` callback change — keyed by
+ * `call.id` from the parent. This prevents the entire list from
+ * thrashing when the 60s poll mutates an unrelated row.
+ */
+const CallRow = memo(function CallRow({
   call,
   selected,
-  onClick,
+  onSelect,
 }: {
   call: CallSummary;
   selected: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }) {
   const active = !call.endedAt;
   const activeParticipants = call.participants.filter((p) => !p.leftAt);
   const ctxIcon = contextIcon(call.context);
+  const handleClick = useCallback(() => onSelect(call.id), [onSelect, call.id]);
   return (
     <li>
       <button
         type="button"
-        onClick={onClick}
+        onClick={handleClick}
         className={`w-full text-left px-3 py-2 border-b border-stroke-1/60 ${
           selected
             ? "bg-bg-overlay"
@@ -628,7 +651,7 @@ function CallRow({
       </button>
     </li>
   );
-}
+});
 
 function CallDetail({
   call,
@@ -1043,7 +1066,13 @@ type JitsiApiWithCommands = JitsiApi & {
   executeCommand?: (cmd: string, ...args: unknown[]) => void;
 };
 
-function JitsiEmbed({
+/**
+ * Memoised so the embed never tears down on parent re-renders. The
+ * inner effect already guards the hard re-init to actual room/url
+ * changes; the `memo` here just stops the JSX tree from re-rendering
+ * when only sibling state (e.g. participant list) updates.
+ */
+const JitsiEmbed = memo(function JitsiEmbed({
   joinUrl,
   roomName,
   displayName,
@@ -1195,7 +1224,7 @@ function JitsiEmbed({
       />
     </div>
   );
-}
+});
 
 function fmtDuration(secs: number): string {
   if (secs < 60) return `${secs}s`;

@@ -12,11 +12,21 @@ const TONE_COLORS: Record<PulseStat["tone"], string> = {
 
 const SKELETON_KEYS = ["mail", "tasks", "chat"];
 
-export function LivePulse({ workspace }: { workspace: string }) {
+export function LivePulse({
+  workspace,
+  workspaceName,
+}: {
+  workspace: string;
+  /** Optional label, e.g. "MedTheris" — keeps the pulse block scoped to the tenant. */
+  workspaceName?: string;
+}) {
+  const title = workspaceName
+    ? `Pulse · ${workspaceName}`
+    : "Live · dein Pulse";
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
-        <h2 className="text-text-primary font-semibold text-sm">Live · dein Pulse</h2>
+        <h2 className="text-text-primary font-semibold text-sm">{title}</h2>
       </div>
       <Suspense fallback={<PulseSkeleton />}>
         <PulseGrid workspace={workspace} />

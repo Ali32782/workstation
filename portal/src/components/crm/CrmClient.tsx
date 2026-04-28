@@ -587,7 +587,18 @@ export function CrmClient({
   } else if (tab === "people") {
     secondaryBody = <PeopleGrid people={people} accent={accent} />;
   } else if (tab === "deals") {
-    secondaryBody = <DealList deals={opportunities} accent={accent} />;
+    secondaryBody = (
+      <DealList
+        deals={opportunities}
+        accent={accent}
+        workspaceId={workspaceId}
+        onMoved={(id, stage) => {
+          setOpportunities((prev) =>
+            prev.map((o) => (o.id === id ? { ...o, stage } : o)),
+          );
+        }}
+      />
+    );
   } else {
     secondaryBody = (
       <CompanyDetailsTab
@@ -1820,13 +1831,37 @@ function PeopleGrid({
   );
 }
 
+/**
+ * Twenty's `OpportunityStage` enum, repeated here as the canonical column
+ * order for the kanban. Empty values land in a synthetic "(unset)" column
+ * so admins can drag them into a real stage.
+ *
+ * Twenty's API only accepts these exact strings via OpportunityUpdateInput,
+ * which means dragging a card to e.g. "PROPOSAL" sends `stage: "PROPOSAL"`.
+ */
+const KANBAN_STAGES: { id: string; label: string }[] = [
+  { id: "NEW", label: "Neu" },
+  { id: "SCREENING", label: "Screening" },
+  { id: "MEETING", label: "Termin" },
+  { id: "PROPOSAL", label: "Angebot" },
+  { id: "CUSTOMER", label: "Kunde" },
+];
+
 function DealList({
   deals,
-  accent: _accent,
+  accent,
+  workspaceId,
+  onMoved,
 }: {
   deals: OpportunitySummary[];
   accent: string;
+  workspaceId: WorkspaceId;
+  onMoved: (id: string, stage: string) => void;
 }) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   if (deals.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary px-6 text-center">
@@ -1834,58 +1869,181 @@ function DealList({
       </div>
     );
   }
-  // Group by stage so users see a mini pipeline.
+
+  // Compose the column set: standard Twenty stages + any extra stages the
+  // backend currently has (custom stages, legacy values). This way moving
+  // is always possible to a known stage even when the data is messy.
+  const stageMap = new Map<string, { id: string; label: string }>();
+  KANBAN_STAGES.forEach((s) => stageMap.set(s.id, s));
+  for (const d of deals) {
+    const key = d.stage || "(unset)";
+    if (!stageMap.has(key)) {
+      stageMap.set(key, { id: key, label: key === "(unset)" ? "Ohne Stage" : key });
+    }
+  }
+  const columns = [...stageMap.values()];
+
   const byStage = new Map<string, OpportunitySummary[]>();
   for (const d of deals) {
-    const list = byStage.get(d.stage) ?? [];
+    const key = d.stage || "(unset)";
+    const list = byStage.get(key) ?? [];
     list.push(d);
-    byStage.set(d.stage, list);
+    byStage.set(key, list);
   }
+
+  const moveDeal = async (dealId: string, toStage: string) => {
+    const deal = deals.find((d) => d.id === dealId);
+    if (!deal) return;
+    const fromStage = deal.stage || "(unset)";
+    if (fromStage === toStage) return;
+    if (toStage === "(unset)") {
+      setError("In »Ohne Stage« kann nichts gezogen werden — wähle eine echte Stage.");
+      return;
+    }
+    setError(null);
+    onMoved(dealId, toStage);
+    try {
+      const r = await fetch(
+        `/api/crm/opportunities/${dealId}?ws=${workspaceId}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ stage: toStage }),
+        },
+      );
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `HTTP ${r.status}`);
+      }
+    } catch (e) {
+      onMoved(dealId, fromStage);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-3 space-y-4">
-      {[...byStage.entries()].map(([stage, list]) => (
-        <section key={stage}>
-          <header className="flex items-center gap-2 mb-1.5">
-            <StatusPill label={stage} tone={toneForState(stage)} />
-            <span className="text-[10.5px] text-text-tertiary">{list.length}</span>
-            <span className="ml-auto text-[11px] font-semibold text-text-primary">
-              {formatCurrency(
-                list.reduce(
-                  (sum, d) => sum + (d.amount?.amountMicros ?? 0),
-                  0,
-                ),
-                list[0]?.amount?.currencyCode,
-              )}
-            </span>
-          </header>
-          <ul className="space-y-1.5">
-            {list.map((d) => (
-              <li key={d.id}>
-                <article className="flex items-center gap-2 rounded-md border border-stroke-1 bg-bg-elevated px-2.5 py-2">
-                  <TrendingUp size={13} className="text-text-tertiary shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-medium text-text-primary truncate">
-                      {d.name || "(ohne Name)"}
-                    </p>
-                    {d.closeDate && (
-                      <p className="text-[10.5px] text-text-tertiary">
-                        Abschluss{" "}
-                        {new Date(d.closeDate).toLocaleDateString("de-DE")}
-                      </p>
-                    )}
-                  </div>
-                  <span className="text-[11.5px] font-semibold text-text-primary shrink-0">
-                    {formatCurrency(
-                      d.amount?.amountMicros,
-                      d.amount?.currencyCode,
-                    )}
+    <div className="flex-1 min-h-0 flex flex-col">
+      {error && (
+        <div className="mx-3 mt-2 rounded-md border border-red-500/30 bg-red-500/10 text-red-300 text-[11px] p-2">
+          {error}
+        </div>
+      )}
+      <div className="flex-1 min-h-0 overflow-auto p-3">
+        <div className="flex gap-3 min-w-max">
+          {columns.map((col) => {
+            const list = byStage.get(col.id) ?? [];
+            const total = list.reduce(
+              (sum, d) => sum + (d.amount?.amountMicros ?? 0),
+              0,
+            );
+            const isHover = dropTarget === col.id;
+            return (
+              <section
+                key={col.id}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dropTarget !== col.id) setDropTarget(col.id);
+                }}
+                onDragLeave={(e) => {
+                  if (
+                    e.currentTarget.contains(e.relatedTarget as Node) === false
+                  ) {
+                    setDropTarget((cur) => (cur === col.id ? null : cur));
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const id = e.dataTransfer.getData("text/plain");
+                  setDropTarget(null);
+                  setDraggingId(null);
+                  if (id) void moveDeal(id, col.id);
+                }}
+                className={`w-[240px] shrink-0 rounded-md border ${
+                  isHover
+                    ? "border-current bg-bg-elevated"
+                    : "border-stroke-1 bg-bg-base"
+                } flex flex-col`}
+                style={isHover ? { color: accent } : undefined}
+              >
+                <header className="flex items-center gap-2 px-2.5 py-2 border-b border-stroke-1 sticky top-0 bg-inherit">
+                  <StatusPill label={col.label} tone={toneForState(col.id)} />
+                  <span className="text-[10.5px] text-text-tertiary">
+                    {list.length}
                   </span>
-                </article>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+                  {total > 0 && (
+                    <span className="ml-auto text-[10.5px] font-semibold text-text-primary">
+                      {formatCurrency(total, list[0]?.amount?.currencyCode)}
+                    </span>
+                  )}
+                </header>
+                <ul className="flex-1 min-h-[60px] p-1.5 space-y-1.5">
+                  {list.map((d) => {
+                    const isDrag = draggingId === d.id;
+                    return (
+                      <li key={d.id}>
+                        <article
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", d.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setDraggingId(d.id);
+                          }}
+                          onDragEnd={() => {
+                            setDraggingId(null);
+                            setDropTarget(null);
+                          }}
+                          className={`group rounded-md border border-stroke-1 bg-bg-elevated px-2.5 py-2 cursor-grab active:cursor-grabbing transition-opacity ${
+                            isDrag ? "opacity-40" : "opacity-100"
+                          }`}
+                          title="Ziehen, um die Stage zu ändern."
+                        >
+                          <div className="flex items-start gap-2">
+                            <TrendingUp
+                              size={12}
+                              className="text-text-tertiary shrink-0 mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[12px] font-medium text-text-primary leading-snug break-words">
+                                {d.name || "(ohne Name)"}
+                              </p>
+                              {d.companyName && (
+                                <p className="text-[10.5px] text-text-tertiary truncate">
+                                  {d.companyName}
+                                </p>
+                              )}
+                              <div className="flex items-center justify-between mt-1 text-[10.5px]">
+                                <span className="text-text-tertiary">
+                                  {d.closeDate
+                                    ? new Date(d.closeDate).toLocaleDateString(
+                                        "de-DE",
+                                      )
+                                    : "—"}
+                                </span>
+                                <span className="font-semibold text-text-primary">
+                                  {formatCurrency(
+                                    d.amount?.amountMicros,
+                                    d.amount?.currencyCode,
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </article>
+                      </li>
+                    );
+                  })}
+                  {list.length === 0 && (
+                    <li className="text-[10.5px] text-text-quaternary text-center py-4">
+                      hier reinziehen
+                    </li>
+                  )}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

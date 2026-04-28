@@ -4,6 +4,7 @@ import {
   distributeDocument,
   getDocument,
   redistributeDocument,
+  repeatDocument,
 } from "@/lib/sign/documenso";
 import {
   resolveSignSession,
@@ -87,8 +88,17 @@ export async function DELETE(
 
 /**
  * Custom action verbs. Body shape:
- *   { action: "send" } — distribute draft to recipients
- *   { action: "remind", recipients?: number[] } — re-send signing emails
+ *   { action: "send", subject?, message? } — distribute draft to recipients
+ *   { action: "remind", recipients?: number[], subject?, message? }
+ *     — re-send signing emails (omit `recipients` to remind everyone
+ *     still pending; pass an array of recipient ids to send a targeted
+ *     reminder)
+ *   { action: "repeat" } — clone the document into a new DRAFT with the
+ *     same recipients, useful when a completed/rejected doc needs to be
+ *     re-run. Response includes `documentId` of the new draft.
+ *
+ * `subject` and `message` are forwarded to Documenso's `meta` envelope —
+ * if either is missing, Documenso uses the team-default email template.
  */
 export async function POST(
   req: NextRequest,
@@ -99,20 +109,38 @@ export async function POST(
   const { id: idStr } = await context.params;
   const id = parseId(idStr);
   if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  let body: { action?: string; recipients?: number[] } = {};
+  let body: {
+    action?: string;
+    recipients?: number[];
+    subject?: string;
+    message?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
     /* no body is fine */
   }
+  const meta =
+    body.subject || body.message
+      ? { subject: body.subject, message: body.message }
+      : undefined;
   try {
     if (body.action === "send") {
-      await distributeDocument(g.session.tenant, id);
+      await distributeDocument(g.session.tenant, id, meta);
       return NextResponse.json({ ok: true });
     }
     if (body.action === "remind") {
-      await redistributeDocument(g.session.tenant, id, body.recipients);
-      return NextResponse.json({ ok: true });
+      await redistributeDocument(
+        g.session.tenant,
+        id,
+        body.recipients,
+        meta,
+      );
+      return NextResponse.json({ ok: true, recipients: body.recipients ?? null });
+    }
+    if (body.action === "repeat") {
+      const out = await repeatDocument(g.session.tenant, id);
+      return NextResponse.json({ ok: true, documentId: out.documentId });
     }
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (e) {

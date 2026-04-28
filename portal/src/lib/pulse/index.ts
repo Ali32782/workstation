@@ -39,7 +39,7 @@ export async function getPulseForCurrentUser(
         label: "Chat",
         value: "→",
         tone: "neutral",
-        href: "/" + coreWorkspace + "/apps/chat",
+        href: `/${coreWorkspace}/chat`,
         hint: "Live-Counter folgt",
       },
     ],

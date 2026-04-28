@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 /**
  * Create a "blank" file in Nextcloud. For text/markdown we just write an
  * empty/placeholder body. For Office-Formate (docx/xlsx/pptx) we write a
- * tiny zero-length placeholder — Collabora will treat it as a "new" file
+ * tiny zero-length placeholder — Nextcloud/OpenOffice editor treats it as a new file
  * and let the user start editing. Existing names are suffixed `(2)`, `(3)`…
  *
  * (We deliberately don't bundle full OOXML templates here; richdocuments

@@ -279,14 +279,39 @@ export async function deleteDocument(
   }
 }
 
+/**
+ * Optional sender-customisation that the Documenso v2 endpoints accept on
+ * the same `meta` envelope. We expose the two fields admins actually tweak
+ * per-send (subject + message), and let Documenso fall back to its
+ * defaults for everything else.
+ */
+export type DistributeMeta = {
+  subject?: string;
+  message?: string;
+};
+
+function buildMeta(
+  meta: DistributeMeta | undefined,
+): Record<string, unknown> | undefined {
+  if (!meta) return undefined;
+  const out: Record<string, unknown> = {};
+  if (meta.subject?.trim()) out.subject = meta.subject.trim();
+  if (meta.message?.trim()) out.message = meta.message.trim();
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export async function distributeDocument(
   tenant: SignTenantConfig,
   documentId: number,
+  meta?: DistributeMeta,
 ): Promise<void> {
   const fetcher = tenantFetch(tenant);
+  const payload: Record<string, unknown> = { documentId };
+  const m = buildMeta(meta);
+  if (m) payload.meta = m;
   const r = await fetcher(`/api/v2/document/distribute`, {
     method: "POST",
-    json: { documentId },
+    json: payload,
   });
   if (!r.ok) {
     const body = await r.text().catch(() => "");
@@ -303,10 +328,13 @@ export async function redistributeDocument(
   tenant: SignTenantConfig,
   documentId: number,
   recipients?: number[],
+  meta?: DistributeMeta,
 ): Promise<void> {
   const fetcher = tenantFetch(tenant);
   const payload: Record<string, unknown> = { documentId };
   if (recipients?.length) payload.recipients = recipients;
+  const m = buildMeta(meta);
+  if (m) payload.meta = m;
   const r = await fetcher(`/api/v2/document/redistribute`, {
     method: "POST",
     json: payload,
@@ -320,6 +348,48 @@ export async function redistributeDocument(
       body,
     );
   }
+}
+
+/**
+ * "Repeat" workflow: take an existing (typically completed/rejected) document
+ * and create a fresh draft from it. We re-upload the rendered PDF and
+ * carry over the recipients (without the signing-state) so the user lands
+ * in the editor with everything wired up except the field positions —
+ * which they'll need to redo since the source bytes already include the
+ * signatures from the previous run.
+ *
+ * Returns the new document id; status is DRAFT until the caller calls
+ * `distributeDocument` (or hits "Senden" in the UI).
+ */
+export async function repeatDocument(
+  tenant: SignTenantConfig,
+  sourceDocumentId: number,
+): Promise<{ documentId: number }> {
+  const source = await getDocument(tenant, sourceDocumentId);
+  const pdf = await downloadDocumentPdf(tenant, sourceDocumentId);
+
+  const recipients = source.recipients
+    .filter((r) => r.role !== "CC")
+    .map((r) => ({
+      email: r.email,
+      name: r.name,
+      role: r.role,
+      signingOrder: r.signingOrder ?? undefined,
+    }));
+
+  const newTitle = source.title.startsWith("Wiederholung: ")
+    ? source.title
+    : `Wiederholung: ${source.title}`;
+
+  return createDocumentFromPdf(tenant, {
+    title: newTitle,
+    pdf,
+    filename: `${source.title.replace(/[^a-z0-9-_]+/gi, "_") || "document"}.pdf`,
+    recipients,
+    externalId: source.externalId
+      ? `${source.externalId}.repeat.${Date.now()}`
+      : undefined,
+  });
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */

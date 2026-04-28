@@ -222,18 +222,25 @@ def fetch_place_details(api_key_or_client, place_id: str) -> dict:
     else:
         gmaps = api_key_or_client
     try:
+        # Use top-level field names only. Nested paths like
+        # `opening_hours/weekday_text` break on some Places API configurations
+        # (invalid-fields error); the client still returns full objects.
         detail = gmaps.place(
             place_id=place_id,
             fields=[
-                "name", "formatted_address",
-                "formatted_phone_number", "international_phone_number",
+                "name",
+                "formatted_address",
+                "formatted_phone_number",
+                "international_phone_number",
                 "website",
-                "rating", "user_ratings_total",
-                "business_status", "type",
-                "opening_hours/weekday_text", "opening_hours/open_now",
-                "current_opening_hours/weekday_text",
-                "geometry/location",
-                "plus_code/global_code",
+                "rating",
+                "user_ratings_total",
+                "business_status",
+                "type",
+                "opening_hours",
+                "current_opening_hours",
+                "geometry",
+                "plus_code",
                 "wheelchair_accessible_entrance",
                 "url",
             ],

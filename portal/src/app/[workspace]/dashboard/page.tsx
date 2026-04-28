@@ -1,9 +1,7 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getWorkspace } from "@/lib/workspaces";
-import { CorehubDashboard } from "@/components/dashboards/CorehubDashboard";
-import { MedtherisDashboard } from "@/components/dashboards/MedtherisDashboard";
-import { KineoDashboard } from "@/components/dashboards/KineoDashboard";
+import { getWorkspace, type WorkspaceId } from "@/lib/workspaces";
+import { WorkspaceDashboard } from "@/components/dashboards/WorkspaceDashboard";
 
 export default async function DashboardPage({
   params,
@@ -19,14 +17,14 @@ export default async function DashboardPage({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        {workspace.id === "corehub" ? (
-          <CorehubDashboard firstName={firstName} accent={workspace.accent} />
-        ) : workspace.id === "kineo" ? (
-          <KineoDashboard firstName={firstName} accent={workspace.accent} />
-        ) : (
-          <MedtherisDashboard firstName={firstName} accent={workspace.accent} />
-        )}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        <WorkspaceDashboard
+          workspaceId={workspace.id as WorkspaceId}
+          workspaceName={workspace.name}
+          tagline={workspace.tagline}
+          firstName={firstName}
+          accent={workspace.accent}
+        />
       </div>
     </div>
   );

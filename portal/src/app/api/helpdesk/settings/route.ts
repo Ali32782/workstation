@@ -8,16 +8,15 @@ export const dynamic = "force-dynamic";
 /**
  * Helpdesk settings overview for the workspace's gear / settings panel.
  *
- * Returns the read-only configuration we surface in the portal:
- *   - the tenant's Zammad groups (active flag, member counts, default email
- *     and signature ids)
- *   - all email addresses configured in Zammad (sender candidates)
- *   - the email-area channels (inbound IMAP / outbound SMTP options)
- *   - admin deep-links into Zammad's own management pages
+ * Returns configuration for the settings UI:
+ *   - tenant Zammad groups (+ counts, default email / signature ids)
+ *   - email addresses (sender candidates)
+ *   - email channels (IMAP/SMTP — read-only summary in the portal)
+ *   - admin deep-links for advanced Zammad-only tasks
  *
- * Editing groups, channels and email addresses happens in Zammad itself for
- * now — see the deep-link buttons in the UI. A full admin proxy in the
- * portal is tracked as a follow-up item.
+ * Mutations for groups, members, and sender addresses go through dedicated
+ * PATCH routes under `/api/helpdesk/settings/...`. Channel credentials and
+ * other Zammad-admin surface area stay in Zammad (security + API surface).
  */
 export async function GET(req: NextRequest) {
   const ws = req.nextUrl.searchParams.get("ws");

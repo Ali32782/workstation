@@ -1696,6 +1696,67 @@ function VideoCallSection({
  * red blocks for BUSY and amber for BUSY-TENTATIVE. Self events are
  * overlaid on the first lane so the organizer can spot conflicts quickly.
  */
+/**
+ * LocalStorage namespace for the scheduling assistant. Keyed per
+ * workspace so multi-tenant operators get separate teams remembered.
+ */
+const SCHED_STORAGE_PREFIX = "corehub:sched:";
+
+type SchedSettings = {
+  participants: string;
+  meetingMin: number;
+  workStartH: number;
+  workEndH: number;
+  includeWeekends: boolean;
+};
+
+function loadSchedSettings(workspace: string): SchedSettings {
+  if (typeof window === "undefined") {
+    return {
+      participants: "",
+      meetingMin: 30,
+      workStartH: 8,
+      workEndH: 18,
+      includeWeekends: false,
+    };
+  }
+  try {
+    const raw = window.localStorage.getItem(
+      `${SCHED_STORAGE_PREFIX}${workspace}`,
+    );
+    if (!raw) throw new Error("no settings");
+    const parsed = JSON.parse(raw) as Partial<SchedSettings>;
+    return {
+      participants: typeof parsed.participants === "string" ? parsed.participants : "",
+      meetingMin:
+        typeof parsed.meetingMin === "number" && parsed.meetingMin > 0
+          ? parsed.meetingMin
+          : 30,
+      workStartH:
+        typeof parsed.workStartH === "number" &&
+        parsed.workStartH >= 0 &&
+        parsed.workStartH < 24
+          ? parsed.workStartH
+          : 8,
+      workEndH:
+        typeof parsed.workEndH === "number" &&
+        parsed.workEndH > 0 &&
+        parsed.workEndH <= 24
+          ? parsed.workEndH
+          : 18,
+      includeWeekends: Boolean(parsed.includeWeekends),
+    };
+  } catch {
+    return {
+      participants: "",
+      meetingMin: 30,
+      workStartH: 8,
+      workEndH: 18,
+      includeWeekends: false,
+    };
+  }
+}
+
 function SchedulingAssistant({
   workspace,
   anchor,
@@ -1711,10 +1772,46 @@ function SchedulingAssistant({
   selfEmail: string;
   onPickSlot: (start: Date) => void;
 }) {
-  const [participants, setParticipants] = useState("");
+  const initial = useMemo(() => loadSchedSettings(workspace), [workspace]);
+  const [participants, setParticipants] = useState(initial.participants);
   const [slots, setSlots] = useState<FreeBusySlot[]>([]);
   const [loadingFb, setLoadingFb] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Desired meeting length in minutes — controls suggestion search. */
+  const [meetingMin, setMeetingMin] = useState(initial.meetingMin);
+  /** Working window in hours, inclusive start, exclusive end. Defaults to typical office. */
+  const [workStartH, setWorkStartH] = useState(initial.workStartH);
+  const [workEndH, setWorkEndH] = useState(initial.workEndH);
+  const [includeWeekends, setIncludeWeekends] = useState(initial.includeWeekends);
+  /** Suggestion soft-limit; "Mehr" expands the list in steps of 6. */
+  const [suggestionLimit, setSuggestionLimit] = useState(6);
+
+  // Persist settings whenever the user changes them so the next visit
+  // reopens with their preferred working window + favourite team.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        `${SCHED_STORAGE_PREFIX}${workspace}`,
+        JSON.stringify({
+          participants,
+          meetingMin,
+          workStartH,
+          workEndH,
+          includeWeekends,
+        } satisfies SchedSettings),
+      );
+    } catch {
+      /* localStorage may be disabled — silent skip */
+    }
+  }, [
+    workspace,
+    participants,
+    meetingMin,
+    workStartH,
+    workEndH,
+    includeWeekends,
+  ]);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i)),
@@ -1764,6 +1861,20 @@ function SchedulingAssistant({
     void refreshFb();
   }, [refreshFb]);
 
+  // Whenever the search inputs change meaningfully, collapse the
+  // suggestion list back to the initial 6 so the user sees the freshest
+  // top picks first.
+  useEffect(() => {
+    setSuggestionLimit(6);
+  }, [
+    participants,
+    meetingMin,
+    workStartH,
+    workEndH,
+    includeWeekends,
+    anchor.toDateString(),
+  ]);
+
   const slotsByUser = useMemo(() => {
     const m = new Map<string, FreeBusySlot[]>();
     for (const s of slots) {
@@ -1793,6 +1904,82 @@ function SchedulingAssistant({
     return out;
   }, [users, slotsByUser, selfEvents, selfEmail]);
 
+  /**
+   * Suggest the next 6 common-free slots of `meetingMin` length within
+   * working hours across every lane. We treat tentative blocks as soft
+   * conflicts (still blocking), since the alternative — handing the
+   * organizer a slot the colleague might have — is the worst outcome.
+   *
+   * Algorithm: union all lanes' busy ranges, walk each day from
+   * workStart to workEnd in 15-min increments, and emit a slot when
+   * the next `meetingMin` minutes are gap-free.
+   */
+  const suggestions = useMemo(() => {
+    const allBusy: Array<{ start: number; end: number }> = [];
+    for (const lane of lanes) {
+      for (const s of lane.slots) {
+        const a = new Date(s.start).getTime();
+        const b = new Date(s.end).getTime();
+        if (Number.isFinite(a) && Number.isFinite(b) && b > a) {
+          allBusy.push({ start: a, end: b });
+        }
+      }
+    }
+    allBusy.sort((a, b) => a.start - b.start);
+    const merged: Array<{ start: number; end: number }> = [];
+    for (const b of allBusy) {
+      const last = merged[merged.length - 1];
+      if (last && b.start <= last.end) {
+        last.end = Math.max(last.end, b.end);
+      } else {
+        merged.push({ ...b });
+      }
+    }
+    const isBusy = (a: number, b: number): boolean => {
+      for (const m of merged) {
+        if (m.start >= b) break;
+        if (m.end > a) return true;
+      }
+      return false;
+    };
+
+    const out: Date[] = [];
+    const stepMs = 15 * 60_000;
+    const lengthMs = meetingMin * 60_000;
+    const now = Date.now();
+
+    for (const d of days) {
+      // 0 = Sunday, 6 = Saturday in JS — skip when weekends are off.
+      const wd = d.getDay();
+      if (!includeWeekends && (wd === 0 || wd === 6)) continue;
+      const dayStart = new Date(d);
+      dayStart.setHours(workStartH, 0, 0, 0);
+      const dayEnd = new Date(d);
+      dayEnd.setHours(workEndH, 0, 0, 0);
+      let cursor = Math.max(dayStart.getTime(), now);
+      // Round cursor up to the next 15-minute mark.
+      cursor = Math.ceil(cursor / stepMs) * stepMs;
+      while (cursor + lengthMs <= dayEnd.getTime() && out.length < suggestionLimit) {
+        if (!isBusy(cursor, cursor + lengthMs)) {
+          out.push(new Date(cursor));
+          cursor += lengthMs;
+        } else {
+          cursor += stepMs;
+        }
+      }
+      if (out.length >= suggestionLimit) break;
+    }
+    return out;
+  }, [
+    lanes,
+    days,
+    meetingMin,
+    workStartH,
+    workEndH,
+    includeWeekends,
+    suggestionLimit,
+  ]);
+
   return (
     <div className="flex flex-col">
       <div className="px-4 py-3 border-b border-stroke-1 bg-bg-chrome flex items-start gap-3">
@@ -1814,10 +2001,129 @@ function SchedulingAssistant({
               onChange={(e) => setParticipants(e.target.value)}
               spellCheck={false}
             />
+            <label className="text-[11px] text-text-tertiary flex items-center gap-1">
+              Dauer
+              <select
+                className="input text-[11px] py-0.5"
+                value={meetingMin}
+                onChange={(e) => setMeetingMin(Number(e.target.value))}
+              >
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={45}>45 min</option>
+                <option value={60}>60 min</option>
+                <option value={90}>90 min</option>
+              </select>
+            </label>
+            <label className="text-[11px] text-text-tertiary flex items-center gap-1">
+              von
+              <select
+                className="input text-[11px] py-0.5"
+                value={workStartH}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setWorkStartH(v);
+                  if (v >= workEndH) setWorkEndH(Math.min(24, v + 1));
+                }}
+                title="Arbeitsfenster Start — Vorschläge werden auf dieses Fenster begrenzt."
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {h.toString().padStart(2, "0")}:00
+                  </option>
+                ))}
+              </select>
+              bis
+              <select
+                className="input text-[11px] py-0.5"
+                value={workEndH}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setWorkEndH(v);
+                  if (v <= workStartH) setWorkStartH(Math.max(0, v - 1));
+                }}
+                title="Arbeitsfenster Ende"
+              >
+                {Array.from({ length: 24 }, (_, h) => h + 1).map((h) => (
+                  <option key={h} value={h}>
+                    {h.toString().padStart(2, "0")}:00
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label
+              className="text-[11px] text-text-tertiary flex items-center gap-1 cursor-pointer select-none"
+              title="Wochenend-Vorschläge zulassen"
+            >
+              <input
+                type="checkbox"
+                className="accent-current"
+                checked={includeWeekends}
+                onChange={(e) => setIncludeWeekends(e.target.checked)}
+              />
+              Wo-End
+            </label>
             {loadingFb && <Loader2 size={12} className="animate-spin text-text-tertiary" />}
           </div>
           {error && (
             <div className="mt-1 text-[11px] text-red-400">{error}</div>
+          )}
+          {suggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10.5px] uppercase tracking-wide text-text-quaternary">
+                Vorschläge ({suggestions.length})
+              </span>
+              {suggestions.map((s) => {
+                const end = new Date(s.getTime() + meetingMin * 60_000);
+                const dayLabel = s.toLocaleDateString("de-DE", {
+                  weekday: "short",
+                  day: "2-digit",
+                  month: "2-digit",
+                });
+                const timeLabel = `${s
+                  .toLocaleTimeString("de-DE", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}–${end.toLocaleTimeString("de-DE", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`;
+                return (
+                  <button
+                    key={s.toISOString()}
+                    type="button"
+                    onClick={() => onPickSlot(s)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-stroke-1 hover:border-stroke-2 bg-bg-elevated transition-colors"
+                    style={{ color: accent, borderColor: `${accent}40` }}
+                    title={`Termin ${dayLabel} ${timeLabel} eintragen`}
+                  >
+                    <CalendarClock size={10} />
+                    <span className="font-medium">{dayLabel}</span>
+                    <span className="text-text-secondary">{timeLabel}</span>
+                  </button>
+                );
+              })}
+              {suggestions.length >= suggestionLimit && (
+                <button
+                  type="button"
+                  onClick={() => setSuggestionLimit((n) => n + 6)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-dashed border-stroke-2 text-text-tertiary hover:text-text-primary"
+                  title="Weitere passende Lücken anzeigen"
+                >
+                  Mehr…
+                </button>
+              )}
+            </div>
+          )}
+          {users.length > 0 && suggestions.length === 0 && !loadingFb && (
+            <div className="mt-2 text-[11px] text-text-tertiary">
+              Kein gemeinsames {meetingMin}-min-Fenster im Arbeitszeit-Fenster
+              {" "}
+              {workStartH.toString().padStart(2, "0")}:00–
+              {workEndH.toString().padStart(2, "0")}:00
+              {includeWeekends ? " (inkl. Wochenende)" : ""} — Woche wechseln,
+              Dauer kürzen oder Fenster vergrößern.
+            </div>
           )}
         </div>
       </div>

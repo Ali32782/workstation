@@ -778,6 +778,10 @@ services:
       HELPDESK_TENANT_MEDTHERIS_GROUPS: ${HELPDESK_TENANT_MEDTHERIS_GROUPS:-Medtheris Support}
       HELPDESK_TENANT_KINEO_GROUPS: ${HELPDESK_TENANT_KINEO_GROUPS:-Kineo Support}
       HELPDESK_TENANT_COREHUB_GROUPS: ${HELPDESK_TENANT_COREHUB_GROUPS:-Corehub Support}
+      # Phonestar PBX → Zammad (POST webhook, see portal /api/integrations/phonestar/webhook)
+      PHONESTAR_WEBHOOK_SECRET: ${PHONESTAR_WEBHOOK_SECRET:-}
+      PHONESTAR_HELPDESK_WORKSPACE: ${PHONESTAR_HELPDESK_WORKSPACE:-kineo}
+      PHONESTAR_TICKET_WINDOW_MIN: ${PHONESTAR_TICKET_WINDOW_MIN:-240}
       NEXT_PUBLIC_ZAMMAD_URL: ${ZAMMAD_URL:-https://support.medtheris.kineo360.work}
       # --- Gitea Code bridge (admin PAT) ---
       GITEA_URL: ${GITEA_URL:-https://git.kineo360.work}
@@ -884,7 +888,8 @@ services:
       GOOGLE_MAPS_API_KEY: ${SCRAPER_GOOGLE_MAPS_API_KEY:-}
       ANTHROPIC_API_KEY: ${SCRAPER_ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${SCRAPER_ANTHROPIC_MODEL:-claude-sonnet-4-5}
-      TWENTY_API_URL: ${SCRAPER_TWENTY_API_URL:-https://crm.kineo360.work/api}
+      # Twenty GraphQL is at {origin}/graphql — NOT /api/graphql (that path 404s).
+      TWENTY_API_URL: ${SCRAPER_TWENTY_API_URL:-https://crm.kineo360.work}
       TWENTY_API_KEY: ${SCRAPER_TWENTY_API_KEY:-}
       TENANT_TAG: ${SCRAPER_TENANT_TAG:-medtheris}
       ENABLE_SOCIAL_LOOKUP: ${SCRAPER_ENABLE_SOCIAL_LOOKUP:-0}

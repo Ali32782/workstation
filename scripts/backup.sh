@@ -4,7 +4,8 @@
 #
 # Backs up:
 #   - All Docker named volumes (via tar of /var/lib/docker/volumes)
-#   - MariaDB and Postgres databases via logical dumps
+#   - MariaDB and Postgres databases via logical dumps (incl. Zammad when
+#     docker-compose.zammad.yml is running: container zammad-postgres)
 # Uploads a single timestamped archive to s3://$S3_BUCKET/<date>/
 # Retains N days (BACKUP_RETENTION_DAYS) on the bucket; older prefixes are purged.
 #
@@ -37,6 +38,13 @@ for pg in keycloak-db twenty-db gitea-db; do
       | gzip > "${WORK}/${pg}.sql.gz" || echo "   (skipped ${pg})"
   fi
 done
+
+if docker ps --format '{{.Names}}' | grep -q '^zammad-postgres$'; then
+  echo "--> dump Postgres zammad-postgres (logical)"
+  docker exec zammad-postgres \
+    pg_dump -U zammad --no-owner --format=plain zammad_production \
+    | gzip > "${WORK}/zammad-postgres.sql.gz" || echo "   (skipped zammad-postgres)"
+fi
 
 echo "--> dump Rocket.Chat MongoDB"
 if docker ps --format '{{.Names}}' | grep -q '^rocketchat-mongo$'; then

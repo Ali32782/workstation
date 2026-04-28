@@ -207,6 +207,25 @@ function tenantGroupPredicate(tenant: HelpdeskTenantConfig): string {
   return `group.name:(${quoted})`;
 }
 
+/**
+ * Find an open ticket with an exact title match, updated within the last
+ * `maxAgeMinutes`. Used by Phonestar webhooks to append call lifecycle
+ * events to the ticket opened at channel_create.
+ */
+export async function findOpenTicketByExactTitle(
+  tenant: HelpdeskTenantConfig,
+  title: string,
+  maxAgeMinutes: number,
+): Promise<number | null> {
+  const tickets = await listTickets(tenant, { state: "open", perPage: 60 });
+  const cutoff = Date.now() - maxAgeMinutes * 60_000;
+  for (const t of tickets) {
+    if (t.title !== title) continue;
+    if (new Date(t.updatedAt).getTime() >= cutoff) return t.id;
+  }
+  return null;
+}
+
 export async function listTickets(
   tenant: HelpdeskTenantConfig,
   opts: {
@@ -280,6 +299,88 @@ export async function listTickets(
     `/api/v1/tickets/search?${params}`,
   );
   return data.map((t) => summariseTicket(t));
+}
+
+const STATS_MAX_PAGES = 30;
+const STATS_PER_PAGE = 100;
+
+function ticketSlaAtRisk(t: TicketSummary, now: number): boolean {
+  const check = (iso: string | null) => {
+    if (!iso) return false;
+    return (new Date(iso).getTime() - now) / 60_000 < 60;
+  };
+  return (
+    check(t.firstResponseEscalationAt) ||
+    check(t.closeEscalationAt) ||
+    check(t.escalationAt)
+  );
+}
+
+/**
+ * Paginated queue metrics for the portal header (up to STATS_MAX_PAGES ×
+ * STATS_PER_PAGE tickets per dimension). Caps indicate “≥” when the tenant
+ * has more rows than we scanned.
+ */
+export async function getHelpdeskQueueStats(tenant: HelpdeskTenantConfig): Promise<{
+  openCount: number;
+  openCountCapped: boolean;
+  slaAtRiskCount: number;
+  /** Same as openCountCapped — SLA tally only covers scanned open pages. */
+  slaAtRiskCapped: boolean;
+  closedTodayCount: number;
+  closedTodayCapped: boolean;
+}> {
+  const now = Date.now();
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const sinceMs = dayStart.getTime();
+
+  let openCount = 0;
+  let slaAtRiskCount = 0;
+  let openCountCapped = false;
+  for (let page = 1; page <= STATS_MAX_PAGES; page++) {
+    const batch = await listTickets(tenant, {
+      state: "open",
+      perPage: STATS_PER_PAGE,
+      page,
+    });
+    openCount += batch.length;
+    for (const t of batch) {
+      if (ticketSlaAtRisk(t, now)) slaAtRiskCount++;
+    }
+    if (batch.length < STATS_PER_PAGE) break;
+    if (page === STATS_MAX_PAGES) openCountCapped = true;
+  }
+
+  let closedTodayCount = 0;
+  let closedTodayCapped = false;
+  for (let page = 1; page <= STATS_MAX_PAGES; page++) {
+    const batch = await listTickets(tenant, {
+      state: "closed",
+      perPage: STATS_PER_PAGE,
+      page,
+    });
+    let stopped = false;
+    for (const t of batch) {
+      if (new Date(t.updatedAt).getTime() >= sinceMs) {
+        closedTodayCount++;
+      } else {
+        stopped = true;
+        break;
+      }
+    }
+    if (stopped || batch.length < STATS_PER_PAGE) break;
+    if (page === STATS_MAX_PAGES) closedTodayCapped = true;
+  }
+
+  return {
+    openCount,
+    openCountCapped,
+    slaAtRiskCount,
+    slaAtRiskCapped: openCountCapped,
+    closedTodayCount,
+    closedTodayCapped,
+  };
 }
 
 export async function getTicket(
@@ -760,6 +861,35 @@ export async function listMacros(): Promise<MacroSummary[]> {
 }
 
 /**
+ * Replace `{{ticket.number}}`, `{{customer.email}}`, … in macro perform
+ * strings. Unknown keys stay as-is (literal `{{…}}`).
+ */
+function interpolateMacroPlaceholders(template: string, ticket: TicketDetail): string {
+  const map: Record<string, string> = {};
+  const add = (key: string, value: string) => {
+    map[key.replace(/\s+/g, "").toLowerCase()] = value;
+  };
+  const tagsJoined = (ticket.tags ?? []).join(", ");
+  add("ticket.id", String(ticket.id));
+  add("ticket.number", ticket.number);
+  add("ticket.title", ticket.title);
+  add("ticket.customer.email", ticket.customerEmail ?? "");
+  add("ticket.customer.name", ticket.customerName ?? "");
+  add("customer.email", ticket.customerEmail ?? "");
+  add("customer.name", ticket.customerName ?? "");
+  add("ticket.state", ticket.stateName ?? "");
+  add("ticket.priority", ticket.priorityName ?? "");
+  add("ticket.group", ticket.groupName ?? "");
+  add("ticket.tags", tagsJoined);
+  add("ticket.owner", ticket.ownerName ?? "");
+
+  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, raw: string) => {
+    const key = String(raw).replace(/\s+/g, "").toLowerCase().replace(/_/g, ".");
+    return Object.prototype.hasOwnProperty.call(map, key) ? map[key]! : full;
+  });
+}
+
+/**
  * Apply a Zammad macro server-side.
  *
  * Zammad's web app applies macros client-side: it walks the macro's
@@ -783,6 +913,8 @@ export async function executeMacro(
   if (!macro) throw new Error("Macro nicht gefunden.");
   if (!macro.active) throw new Error("Macro ist deaktiviert.");
   await assertTicketInTenant(tenant, ticketId);
+  const ticketCtx = await getTicket(tenant, ticketId);
+  if (!ticketCtx) throw new Error("Ticket nicht gefunden.");
   const perform = macro.perform ?? {};
 
   // 1) Build a single PUT-patch from all `ticket.*` operations
@@ -803,37 +935,39 @@ export async function executeMacro(
     } else if (key === "ticket.state" && v?.value != null) {
       // Resolve name -> id via meta cache (cheap call, cached)
       const meta = await loadMeta(tenant);
-      const s = meta.states.find((x) => x.name === v.value);
+      const stateName = interpolateMacroPlaceholders(String(v.value), ticketCtx);
+      const s = meta.states.find((x) => x.name === stateName);
       if (s) patch.state_id = s.id;
     } else if (key === "ticket.priority_id" && v?.value != null) {
       patch.priority_id = Number(v.value);
     } else if (key === "ticket.priority" && v?.value != null) {
       const meta = await loadMeta(tenant);
-      const p = meta.priorities.find((x) => x.name === v.value);
+      const prioName = interpolateMacroPlaceholders(String(v.value), ticketCtx);
+      const p = meta.priorities.find((x) => x.name === prioName);
       if (p) patch.priority_id = p.id;
     } else if (key === "ticket.owner_id" && v?.value != null) {
       patch.owner_id = Number(v.value);
     } else if (key === "ticket.group_id" && v?.value != null) {
       patch.group_id = Number(v.value);
     } else if (key === "ticket.title" && v?.value != null) {
-      patch.title = String(v.value);
+      patch.title = interpolateMacroPlaceholders(String(v.value), ticketCtx);
     } else if (key === "ticket.pending_time" && v?.value != null) {
-      patch.pending_time = String(v.value);
+      patch.pending_time = interpolateMacroPlaceholders(String(v.value), ticketCtx);
     } else if (key === "ticket.tags" && v?.value != null) {
-      const items = String(v.value)
+      const items = interpolateMacroPlaceholders(String(v.value), ticketCtx)
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean);
       if (v.operator === "remove") tagRemoves.push(...items);
       else tagAdds.push(...items);
     } else if (key === "article.note" && (v?.body || v?.subject)) {
-      articleBody = v.body ?? "";
-      articleSubject = v.subject ?? "";
+      articleBody = interpolateMacroPlaceholders(v.body ?? "", ticketCtx);
+      articleSubject = interpolateMacroPlaceholders(v.subject ?? "", ticketCtx);
       articleInternal = String(v.internal ?? "true") === "true";
       articleType = "note";
     } else if (key === "notification.email" && v?.body) {
-      articleBody = v.body;
-      articleSubject = v.subject ?? "";
+      articleBody = interpolateMacroPlaceholders(String(v.body), ticketCtx);
+      articleSubject = interpolateMacroPlaceholders(v.subject ?? "", ticketCtx);
       articleInternal = false;
       articleType = "email";
     }

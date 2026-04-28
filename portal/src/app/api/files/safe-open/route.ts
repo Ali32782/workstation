@@ -25,7 +25,7 @@ import type { NextRequest } from "next/server";
  *      stale cookie nuked, NC takes the OIDC path cleanly.
  *
  * The whole dance is invisible — users see ~half a second of a "Dokument
- * wird geöffnet …" splash before Collabora opens.
+ * wird geöffnet …" splash before the OpenOffice-compatible editor opens.
  */
 
 const NC_BASE: Record<string, string> = {

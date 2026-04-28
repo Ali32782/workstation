@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
@@ -16,6 +17,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { CloudEntry, CloudList } from "@/lib/cloud/types";
+import { opensInPortalOfficeEditor } from "@/lib/office/open-mode";
 import type { WorkspaceId } from "@/lib/workspaces";
 import { CollaboraPanel } from "./CollaboraPanel";
 import { useT } from "@/components/LocaleProvider";
@@ -80,7 +82,7 @@ function relativeTime(iso: string): string {
 }
 
 function isOfficeFile(name: string): boolean {
-  return /\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|md|rtf|csv)$/i.test(name);
+  return /\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|md|rtf|csv|tsv)$/i.test(name);
 }
 
 function iconFor(name: string): { Icon: typeof FileText; color: string } {
@@ -102,6 +104,7 @@ export function OfficeHubClient({
   workspaceName: string;
   accent: string;
 }) {
+  const router = useRouter();
   const t = useT();
   const [recents, setRecents] = useState<CloudEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +117,11 @@ export function OfficeHubClient({
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const pickRecents = (list: CloudList) =>
+      list.entries
+        .filter((e) => e.type === "file" && isOfficeFile(e.name))
+        .sort((a, b) => b.mtime.localeCompare(a.mtime))
+        .slice(0, 24);
     try {
       const r = await fetch(
         `/api/cloud/list?ws=${workspaceId}&path=${encodeURIComponent(ROOT_DIR)}`,
@@ -132,21 +140,11 @@ export function OfficeHubClient({
         );
         const j2 = (await r2.json()) as CloudList & { error?: string };
         if (!r2.ok) throw new Error(j2.error ?? `HTTP ${r2.status}`);
-        setRecents(
-          j2.entries
-            .filter((e) => e.type === "file" && isOfficeFile(e.name))
-            .sort((a, b) => b.mtime.localeCompare(a.mtime))
-            .slice(0, 24),
-        );
+        setRecents(pickRecents(j2));
       } else {
         const j = (await r.json()) as CloudList & { error?: string };
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-        setRecents(
-          j.entries
-            .filter((e) => e.type === "file" && isOfficeFile(e.name))
-            .sort((a, b) => b.mtime.localeCompare(a.mtime))
-            .slice(0, 24),
-        );
+        setRecents(pickRecents(j));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -184,20 +182,32 @@ export function OfficeHubClient({
           return;
         }
         await load();
-        // Direkt im Editor öffnen, sobald PROPFIND die fileid kennt.
-        // Kurzer Re-fetch für die fileid:
+        // Word/Excel/Markdown: native portal editor (kein Nextcloud-Tab).
+        if (kind !== "slides" && j.path) {
+          router.push(
+            `/${workspaceId}/office?path=${encodeURIComponent(j.path)}`,
+          );
+          return;
+        }
+        // Präsentationen: OpenOffice-Editor in Nextcloud (braucht fileId).
         const r2 = await fetch(
           `/api/cloud/list?ws=${workspaceId}&path=${encodeURIComponent(ROOT_DIR)}`,
           { cache: "no-store" },
         );
         const j2 = (await r2.json()) as CloudList;
         const created = j2.entries.find((e) => e.path === j.path);
-        if (created && created.fileId != null) setEditor(created);
+        if (created && created.fileId != null) {
+          setEditor(created);
+        } else {
+          alert(
+            "Präsentation wurde angelegt, aber Nextcloud liefert noch keine Datei-ID. Bitte Liste aktualisieren und erneut öffnen.",
+          );
+        }
       } finally {
         setBusy(false);
       }
     },
-    [load, workspaceId],
+    [load, router, workspaceId],
   );
 
   const onUpload = useCallback(
@@ -240,7 +250,7 @@ export function OfficeHubClient({
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold leading-tight">Office</h1>
           <p className="text-[10.5px] text-text-tertiary truncate">
-            {workspaceName} · Dokumente, Tabellen, Präsentationen — bearbeitet im integrierten Editor
+            {workspaceName} · Word & Excel im Portal; Folien im OpenOffice-Editor (Nextcloud)
           </p>
         </div>
         <div className="relative">
@@ -301,7 +311,7 @@ export function OfficeHubClient({
               </h2>
             </div>
             <span className="text-[10.5px] text-text-tertiary">
-              {t("office.openIn", "Im Editor öffnen")}
+              Neu → Portal-Editor (nicht Nextcloud)
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -375,13 +385,24 @@ export function OfficeHubClient({
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
               {visible.map((e) => {
                 const { Icon, color } = iconFor(e.name);
-                const editable = isOfficeFile(e.name) && e.fileId != null;
+                const native = opensInPortalOfficeEditor(e.name);
+                const collabora =
+                  isOfficeFile(e.name) && e.fileId != null && !native;
                 return (
                   <button
                     key={e.path}
                     type="button"
-                    onClick={() => editable && setEditor(e)}
-                    className="group text-left rounded-lg border border-stroke-1 bg-bg-elevated hover:border-stroke-2 hover:bg-bg-overlay px-3 py-3 transition-colors"
+                    onClick={() => {
+                      if (native) {
+                        router.push(
+                          `/${workspaceId}/office?path=${encodeURIComponent(e.path)}`,
+                        );
+                        return;
+                      }
+                      if (collabora) setEditor(e);
+                    }}
+                    className="group text-left rounded-lg border border-stroke-1 bg-bg-elevated hover:border-stroke-2 hover:bg-bg-overlay px-3 py-3 transition-colors disabled:opacity-45"
+                    disabled={!native && !collabora}
                     title={e.path}
                   >
                     <div className="flex items-start gap-2.5">

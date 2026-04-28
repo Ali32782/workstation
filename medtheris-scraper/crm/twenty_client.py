@@ -17,6 +17,20 @@ from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 
 
+def _normalize_twenty_origin(api_url: str) -> str:
+    """
+    Twenty exposes GraphQL at {SERVER_URL}/graphql.
+
+    Some deployments mistakenly set TWENTY_API_URL to …/api (copy-paste from
+    other REST stacks). That yields …/api/graphql which returns 404 on Twenty.
+    Strip a trailing /api so both styles work.
+    """
+    base = api_url.strip().rstrip("/")
+    if base.lower().endswith("/api"):
+        base = base[:-4].rstrip("/")
+    return base
+
+
 def _is_empty(value: Any) -> bool:
     """True for None / empty-string / empty container / dict-of-only-empties."""
     if value is None:
@@ -35,7 +49,7 @@ class TwentyClient:
         if not api_url or not api_key:
             raise ValueError("TwentyClient requires api_url and api_key")
 
-        self.api_url = api_url.rstrip("/")
+        self.api_url = _normalize_twenty_origin(api_url)
         self.api_key = api_key
 
         transport = RequestsHTTPTransport(

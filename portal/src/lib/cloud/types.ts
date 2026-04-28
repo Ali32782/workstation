@@ -6,7 +6,7 @@ export type CloudEntry = {
   size: number;
   /** Last modified, ISO. */
   mtime: string;
-  /** Nextcloud fileid — required to open files in the Collabora editor. */
+  /** Nextcloud fileid — required for OpenOffice-style rich-document opens. */
   fileId: number | null;
   contentType: string | null;
 };
@@ -17,7 +17,7 @@ export type CloudList = {
   entries: CloudEntry[];
 };
 
-/** Office doc subset Collabora can edit in-line. */
+/** Office doc subset editable via Nextcloud rich documents (OpenOffice-compatible). */
 export const OFFICE_EXTS = new Set([
   "docx",
   "xlsx",

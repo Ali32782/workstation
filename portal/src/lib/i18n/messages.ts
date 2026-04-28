@@ -207,6 +207,94 @@ export type Messages = {
   "helpdesk.assignee": string;
   "helpdesk.group": string;
   "helpdesk.settings": string;
+  "helpdesk.slaRisk": string;
+  "helpdesk.slaRisk.title": string;
+  "helpdesk.stats.open": string;
+  "helpdesk.stats.slaAtRisk": string;
+  "helpdesk.stats.closedToday": string;
+  "helpdesk.stats.capped": string;
+  "helpdesk.composer.answerTab": string;
+  "helpdesk.composer.internalTab": string;
+  "helpdesk.composer.sendShortcut": string;
+  "helpdesk.composer.solutionLabel": string;
+  "helpdesk.composer.solutionPlaceholder": string;
+  "helpdesk.composer.placeholderReply": string;
+  "helpdesk.composer.placeholderNote": string;
+  "helpdesk.composer.statusAfterSend": string;
+  "helpdesk.composer.saveNote": string;
+  "helpdesk.customer.crm": string;
+  "helpdesk.customer.crmTitle": string;
+  "helpdesk.channel.email": string;
+  "helpdesk.channel.phone": string;
+  "helpdesk.channel.web": string;
+  "helpdesk.channel.note": string;
+  "helpdesk.channel.sms": string;
+  "helpdesk.channel.chat": string;
+  "helpdesk.channel.twitter": string;
+  "helpdesk.channel.facebook": string;
+  "helpdesk.channel.other": string;
+  "helpdesk.import.csvTitle": string;
+  "helpdesk.conversation.title": string;
+  "helpdesk.conversation.pickTicket": string;
+  "helpdesk.portalLink.mintTitle": string;
+  "helpdesk.portalLink.button": string;
+  "helpdesk.portalLink.copied": string;
+  "helpdesk.portalLink.copiedToast": string;
+  "helpdesk.portalLink.prompt": string;
+  "helpdesk.portalLink.manualCopied": string;
+  "helpdesk.empty.noTicket": string;
+  "helpdesk.empty.noTicketHint": string;
+  "helpdesk.empty.noMessages": string;
+  "helpdesk.empty.zammadTitle": string;
+  "helpdesk.empty.zammadHint": string;
+  "helpdesk.error.loadTicket": string;
+  "helpdesk.error.createTicket": string;
+  "helpdesk.error.save": string;
+  "helpdesk.error.send": string;
+  "helpdesk.error.tagAdd": string;
+  "helpdesk.error.tagRemove": string;
+  "helpdesk.error.portalLink": string;
+  "helpdesk.error.macro": string;
+  "helpdesk.error.bulk": string;
+  "helpdesk.bulk.partialFail": string;
+  "helpdesk.card.mine": string;
+  "helpdesk.card.selectBulk": string;
+  "helpdesk.card.noTitle": string;
+  "helpdesk.card.unread": string;
+  "helpdesk.crm.twentyLabel": string;
+  "helpdesk.newTicket.subjectPh": string;
+  "helpdesk.newTicket.bodyPh": string;
+  "helpdesk.newTicket.cancel": string;
+  "helpdesk.newTicket.submit": string;
+  "helpdesk.composer.templates": string;
+  "helpdesk.composer.templatesTitle": string;
+  "helpdesk.composer.attachmentSoon": string;
+  "helpdesk.composer.attachment": string;
+  "helpdesk.customer.videoCall": string;
+  "helpdesk.customer.mailAction": string;
+  "helpdesk.customer.profile360": string;
+  "helpdesk.customer.profileTitle": string;
+  "helpdesk.customer.unknown": string;
+  "helpdesk.article.agent": string;
+  "helpdesk.sla.firstResponse": string;
+  "helpdesk.sla.closeDeadline": string;
+  "helpdesk.sla.breached": string;
+  "helpdesk.sla.pill": string;
+  "helpdesk.sla.due": string;
+  "helpdesk.sla.panel.first": string;
+  "helpdesk.sla.panel.close": string;
+  "helpdesk.sla.panel.none": string;
+  "helpdesk.time.justNow": string;
+  "helpdesk.time.mins": string;
+  "helpdesk.time.hours": string;
+  "helpdesk.time.days": string;
+  "helpdesk.drawer.ticketsTotal": string;
+  "helpdesk.drawer.customerSince": string;
+  "helpdesk.drawer.history": string;
+  "helpdesk.drawer.noTickets": string;
+  "helpdesk.drawer.writeEmail": string;
+  "helpdesk.drawer.title": string;
+  "helpdesk.drawer.close": string;
 
   // ─── Sign ───────────────────────────────────────────────────────────
   "sign.documents": string;
@@ -467,6 +555,99 @@ const de: Messages = {
   "helpdesk.assignee": "Bearbeiter",
   "helpdesk.group": "Gruppe",
   "helpdesk.settings": "Einstellungen (Gruppen, Absender, Kanäle)",
+  "helpdesk.slaRisk": "SLA-Risiko",
+  "helpdesk.slaRisk.title":
+    "Nur Tickets mit SLA unter 60 Minuten oder überfällig anzeigen",
+  "helpdesk.stats.open": "Offen",
+  "helpdesk.stats.slaAtRisk": "SLA-Risiko",
+  "helpdesk.stats.closedToday": "Heute geschlossen",
+  "helpdesk.stats.capped": "nur Teilmenge — siehe Zammad bei sehr großen Queues",
+  "helpdesk.composer.answerTab": "Antwort",
+  "helpdesk.composer.internalTab": "Interne Notiz",
+  "helpdesk.composer.sendShortcut": "⌘/Ctrl + Enter zum Senden",
+  "helpdesk.composer.solutionLabel": "Interne Lösung / Abschluss (optional, nur für die Akte)",
+  "helpdesk.composer.solutionPlaceholder":
+    "Kurz festhalten, was geklärt wurde — wird als interne Notiz gespeichert.",
+  "helpdesk.composer.placeholderReply": "Antwort an Kunde…",
+  "helpdesk.composer.placeholderNote": "Interne Notiz — Kunde sieht das nicht.",
+  "helpdesk.composer.statusAfterSend": "Status nach Senden",
+  "helpdesk.composer.saveNote": "Notiz speichern",
+  "helpdesk.customer.crm": "CRM",
+  "helpdesk.customer.crmTitle": "Person in Twenty CRM öffnen",
+  "helpdesk.channel.email": "E-Mail",
+  "helpdesk.channel.phone": "Telefon",
+  "helpdesk.channel.web": "Web / Portal",
+  "helpdesk.channel.note": "Notiz",
+  "helpdesk.channel.sms": "SMS",
+  "helpdesk.channel.chat": "Chat",
+  "helpdesk.channel.twitter": "Twitter / X",
+  "helpdesk.channel.facebook": "Facebook",
+  "helpdesk.channel.other": "Kanal",
+  "helpdesk.import.csvTitle": "Tickets aus CSV importieren",
+  "helpdesk.conversation.title": "Konversation",
+  "helpdesk.conversation.pickTicket": "Wähle ein Ticket",
+  "helpdesk.portalLink.mintTitle":
+    "Signierten Magic-Link für den Kunden erstellen und in die Zwischenablage kopieren.",
+  "helpdesk.portalLink.button": "Magic-Link",
+  "helpdesk.portalLink.copied": "Kopiert",
+  "helpdesk.portalLink.prompt": "Magic-Link kopieren:",
+  "helpdesk.portalLink.manualCopied": "Magic-Link erstellt (manuell kopieren).",
+  "helpdesk.portalLink.copiedToast": "Magic-Link kopiert (gültig 30 Tage).",
+  "helpdesk.empty.noTicket": "Kein Ticket gewählt",
+  "helpdesk.empty.noTicketHint":
+    "Wähle links ein Ticket, um Verlauf und Antwort-Composer zu sehen.",
+  "helpdesk.empty.noMessages": "Keine Nachrichten.",
+  "helpdesk.empty.zammadTitle": "Native Zammad-Integration",
+  "helpdesk.empty.zammadHint":
+    "Tickets bearbeiten, antworten, intern notieren — direkt im Portal.",
+  "helpdesk.error.loadTicket": "Ticket laden fehlgeschlagen",
+  "helpdesk.error.createTicket": "Anlegen fehlgeschlagen",
+  "helpdesk.error.save": "Speichern fehlgeschlagen",
+  "helpdesk.error.send": "Senden fehlgeschlagen",
+  "helpdesk.error.tagAdd": "Tag hinzufügen fehlgeschlagen",
+  "helpdesk.error.tagRemove": "Tag entfernen fehlgeschlagen",
+  "helpdesk.error.portalLink": "Magic-Link fehlgeschlagen",
+  "helpdesk.error.macro": "Macro fehlgeschlagen",
+  "helpdesk.error.bulk": "Bulk-Update fehlgeschlagen",
+  "helpdesk.bulk.partialFail": "konnten nicht aktualisiert werden",
+  "helpdesk.card.mine": "Mir",
+  "helpdesk.card.selectBulk": "Auswählen für Bulk-Aktionen",
+  "helpdesk.card.noTitle": "(ohne Titel)",
+  "helpdesk.card.unread": "Ungelesen",
+  "helpdesk.crm.twentyLabel": "Twenty CRM",
+  "helpdesk.newTicket.subjectPh": "Betreff…",
+  "helpdesk.newTicket.bodyPh": "Beschreibung (optional)",
+  "helpdesk.newTicket.cancel": "Abbrechen",
+  "helpdesk.newTicket.submit": "Anlegen",
+  "helpdesk.composer.templates": "Vorlagen",
+  "helpdesk.composer.templatesTitle": "Vorlagen einsetzen",
+  "helpdesk.composer.attachmentSoon": "Anhang (bald verfügbar)",
+  "helpdesk.composer.attachment": "Anhang",
+  "helpdesk.customer.videoCall": "Video-Call",
+  "helpdesk.customer.mailAction": "Mail",
+  "helpdesk.customer.profile360": "360°",
+  "helpdesk.customer.profileTitle": "Kundenprofil öffnen (Customer 360°)",
+  "helpdesk.customer.unknown": "Unbekannter Kontakt",
+  "helpdesk.article.agent": "Agent",
+  "helpdesk.sla.firstResponse": "First Response",
+  "helpdesk.sla.closeDeadline": "Close",
+  "helpdesk.sla.breached": "SLA verletzt",
+  "helpdesk.sla.pill": "SLA",
+  "helpdesk.sla.due": "fällig:",
+  "helpdesk.sla.panel.first": "Erstantwort",
+  "helpdesk.sla.panel.close": "Lösung",
+  "helpdesk.sla.panel.none": "Kein SLA aktiv.",
+  "helpdesk.time.justNow": "gerade",
+  "helpdesk.time.mins": "Min.",
+  "helpdesk.time.hours": "Std.",
+  "helpdesk.time.days": "Tg.",
+  "helpdesk.drawer.ticketsTotal": "Tickets gesamt",
+  "helpdesk.drawer.customerSince": "Kunde seit",
+  "helpdesk.drawer.history": "Ticketverlauf",
+  "helpdesk.drawer.noTickets": "Keine Tickets.",
+  "helpdesk.drawer.writeEmail": "E-Mail schreiben",
+  "helpdesk.drawer.title": "Kundenprofil",
+  "helpdesk.drawer.close": "Schließen (Esc)",
 
   "sign.documents": "Signaturen",
   "sign.status.draft": "Entwürfe",
@@ -725,6 +906,98 @@ const en: Messages = {
   "helpdesk.assignee": "Assignee",
   "helpdesk.group": "Group",
   "helpdesk.settings": "Settings (groups, senders, channels)",
+  "helpdesk.slaRisk": "SLA risk",
+  "helpdesk.slaRisk.title": "Show only tickets with SLA under 60 minutes or breached",
+  "helpdesk.stats.open": "Open",
+  "helpdesk.stats.slaAtRisk": "SLA at risk",
+  "helpdesk.stats.closedToday": "Closed today",
+  "helpdesk.stats.capped": "partial count — see Zammad for very large queues",
+  "helpdesk.composer.answerTab": "Reply",
+  "helpdesk.composer.internalTab": "Internal note",
+  "helpdesk.composer.sendShortcut": "⌘/Ctrl + Enter to send",
+  "helpdesk.composer.solutionLabel": "Internal resolution (optional, for the record)",
+  "helpdesk.composer.solutionPlaceholder":
+    "Briefly note what was resolved — saved as an internal note.",
+  "helpdesk.composer.placeholderReply": "Reply to customer…",
+  "helpdesk.composer.placeholderNote": "Internal note — not visible to customer.",
+  "helpdesk.composer.statusAfterSend": "Status after send",
+  "helpdesk.composer.saveNote": "Save note",
+  "helpdesk.customer.crm": "CRM",
+  "helpdesk.customer.crmTitle": "Open person in Twenty CRM",
+  "helpdesk.channel.email": "Email",
+  "helpdesk.channel.phone": "Phone",
+  "helpdesk.channel.web": "Web / portal",
+  "helpdesk.channel.note": "Note",
+  "helpdesk.channel.sms": "SMS",
+  "helpdesk.channel.chat": "Chat",
+  "helpdesk.channel.twitter": "Twitter / X",
+  "helpdesk.channel.facebook": "Facebook",
+  "helpdesk.channel.other": "Channel",
+  "helpdesk.import.csvTitle": "Import tickets from CSV",
+  "helpdesk.conversation.title": "Conversation",
+  "helpdesk.conversation.pickTicket": "Select a ticket",
+  "helpdesk.portalLink.mintTitle":
+    "Create a signed magic link for the customer and copy it to the clipboard.",
+  "helpdesk.portalLink.button": "Magic link",
+  "helpdesk.portalLink.copied": "Copied",
+  "helpdesk.portalLink.copiedToast": "Magic link copied (valid 30 days).",
+  "helpdesk.portalLink.prompt": "Copy magic link:",
+  "helpdesk.portalLink.manualCopied": "Magic link created (copy manually).",
+  "helpdesk.empty.noTicket": "No ticket selected",
+  "helpdesk.empty.noTicketHint":
+    "Pick a ticket on the left to see the thread and reply composer.",
+  "helpdesk.empty.noMessages": "No messages.",
+  "helpdesk.empty.zammadTitle": "Native Zammad integration",
+  "helpdesk.empty.zammadHint":
+    "Handle tickets, reply, and add internal notes — right in the portal.",
+  "helpdesk.error.loadTicket": "Failed to load ticket",
+  "helpdesk.error.createTicket": "Failed to create ticket",
+  "helpdesk.error.save": "Failed to save",
+  "helpdesk.error.send": "Failed to send",
+  "helpdesk.error.tagAdd": "Failed to add tag",
+  "helpdesk.error.tagRemove": "Failed to remove tag",
+  "helpdesk.error.portalLink": "Magic link failed",
+  "helpdesk.error.macro": "Macro failed",
+  "helpdesk.error.bulk": "Bulk update failed",
+  "helpdesk.bulk.partialFail": "could not be updated",
+  "helpdesk.card.mine": "Mine",
+  "helpdesk.card.selectBulk": "Select for bulk actions",
+  "helpdesk.card.noTitle": "(no title)",
+  "helpdesk.card.unread": "Unread",
+  "helpdesk.crm.twentyLabel": "Twenty CRM",
+  "helpdesk.newTicket.subjectPh": "Subject…",
+  "helpdesk.newTicket.bodyPh": "Description (optional)",
+  "helpdesk.newTicket.cancel": "Cancel",
+  "helpdesk.newTicket.submit": "Create",
+  "helpdesk.composer.templates": "Templates",
+  "helpdesk.composer.templatesTitle": "Insert template",
+  "helpdesk.composer.attachmentSoon": "Attachment (coming soon)",
+  "helpdesk.composer.attachment": "Attachment",
+  "helpdesk.customer.videoCall": "Video call",
+  "helpdesk.customer.mailAction": "Mail",
+  "helpdesk.customer.profile360": "360°",
+  "helpdesk.customer.profileTitle": "Open customer profile (360°)",
+  "helpdesk.customer.unknown": "Unknown contact",
+  "helpdesk.article.agent": "Agent",
+  "helpdesk.sla.firstResponse": "First response",
+  "helpdesk.sla.closeDeadline": "Close",
+  "helpdesk.sla.breached": "SLA breached",
+  "helpdesk.sla.pill": "SLA",
+  "helpdesk.sla.due": "due:",
+  "helpdesk.sla.panel.first": "First response",
+  "helpdesk.sla.panel.close": "Resolution",
+  "helpdesk.sla.panel.none": "No active SLA.",
+  "helpdesk.time.justNow": "just now",
+  "helpdesk.time.mins": "min",
+  "helpdesk.time.hours": "h",
+  "helpdesk.time.days": "d",
+  "helpdesk.drawer.ticketsTotal": "Tickets total",
+  "helpdesk.drawer.customerSince": "Customer since",
+  "helpdesk.drawer.history": "Ticket history",
+  "helpdesk.drawer.noTickets": "No tickets.",
+  "helpdesk.drawer.writeEmail": "Write email",
+  "helpdesk.drawer.title": "Customer profile",
+  "helpdesk.drawer.close": "Close (Esc)",
 
   "sign.documents": "Signatures",
   "sign.status.draft": "Drafts",

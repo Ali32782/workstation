@@ -41,7 +41,8 @@ Token wie portal-side, plus die normalen Scraper-Env-Vars):
 SCRAPER_RUNNER_TOKEN=<32-byte hex string>
 SCRAPER_GOOGLE_MAPS_API_KEY=<key>
 SCRAPER_ANTHROPIC_API_KEY=<key>
-SCRAPER_TWENTY_API_URL=https://crm.kineo360.work/api
+# Origin only — Twenty GraphQL is at {origin}/graphql (never …/api/graphql).
+SCRAPER_TWENTY_API_URL=https://crm.kineo360.work
 SCRAPER_TWENTY_API_KEY=<workspace-API-key Medtheris>
 SCRAPER_TENANT_TAG=medtheris
 SCRAPER_ENABLE_SOCIAL_LOOKUP=0   # 1 wenn web_search aktiviert werden soll

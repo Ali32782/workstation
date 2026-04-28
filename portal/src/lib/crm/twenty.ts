@@ -495,26 +495,36 @@ export async function deletePerson(
 /*                            Opportunities                                */
 /* ─────────────────────────────────────────────────────────────────────── */
 
+type RawOpp = {
+  id: string;
+  name: string;
+  stage?: string | null;
+  amount?: { amountMicros?: number | null; currencyCode?: string | null } | null;
+  closeDate?: string | null;
+  company?: { id?: string | null; name?: string | null } | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function normaliseOpp(node: RawOpp): OpportunitySummary {
+  return {
+    id: node.id,
+    name: node.name,
+    stage: node.stage ?? "",
+    amount: node.amount ?? null,
+    closeDate: node.closeDate ?? null,
+    companyId: node.company?.id ?? null,
+    companyName: node.company?.name ?? null,
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
+  };
+}
+
 export async function listOpportunitiesForCompany(
   tenant: TwentyTenantConfig,
   companyId: string,
 ): Promise<OpportunitySummary[]> {
-  const data = await gql<{
-    opportunities: {
-      edges: {
-        node: {
-          id: string;
-          name: string;
-          stage?: string | null;
-          amount?: { amountMicros?: number | null; currencyCode?: string | null } | null;
-          closeDate?: string | null;
-          company?: { id?: string | null; name?: string | null } | null;
-          createdAt: string;
-          updatedAt: string;
-        };
-      }[];
-    };
-  }>(
+  const data = await gql<{ opportunities: { edges: { node: RawOpp }[] } }>(
     tenant,
     `query Opps($filter: OpportunityFilterInput!) {
       opportunities(filter: $filter, orderBy: [{ updatedAt: DescNullsLast }], first: 50) {
@@ -526,17 +536,67 @@ export async function listOpportunitiesForCompany(
     }`,
     { filter: { companyId: { eq: companyId } } },
   );
-  return data.opportunities.edges.map((e) => ({
-    id: e.node.id,
-    name: e.node.name,
-    stage: e.node.stage ?? "",
-    amount: e.node.amount ?? null,
-    closeDate: e.node.closeDate ?? null,
-    companyId: e.node.company?.id ?? null,
-    companyName: e.node.company?.name ?? null,
-    createdAt: e.node.createdAt,
-    updatedAt: e.node.updatedAt,
-  }));
+  return data.opportunities.edges.map((e) => normaliseOpp(e.node));
+}
+
+/**
+ * Lists every Twenty opportunity, with optional substring filter on the
+ * deal name. Used by the workspace-wide pipeline kanban — companies are
+ * embedded so the card UI can render context without a second round-trip.
+ */
+export async function listAllOpportunities(
+  tenant: TwentyTenantConfig,
+  opts: { search?: string; first?: number } = {},
+): Promise<OpportunitySummary[]> {
+  const filter = opts.search?.trim()
+    ? { name: { ilike: `%${opts.search.trim()}%` } }
+    : {};
+  const data = await gql<{ opportunities: { edges: { node: RawOpp }[] } }>(
+    tenant,
+    `query AllOpps($filter: OpportunityFilterInput, $first: Int!) {
+      opportunities(filter: $filter, orderBy: [{ updatedAt: DescNullsLast }], first: $first) {
+        edges { node {
+          id name stage amount { amountMicros currencyCode } closeDate
+          company { id name } createdAt updatedAt
+        } }
+      }
+    }`,
+    { filter, first: opts.first ?? 200 },
+  );
+  return data.opportunities.edges.map((e) => normaliseOpp(e.node));
+}
+
+/**
+ * Patches a Twenty opportunity (stage / amount / closeDate / name). The
+ * stage must be a member of Twenty's OpportunityStage enum — the public
+ * pipeline columns ship that exact set.
+ */
+export async function updateOpportunity(
+  tenant: TwentyTenantConfig,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<OpportunitySummary | null> {
+  await gql(
+    tenant,
+    `mutation UpdateOpportunity($id: UUID!, $data: OpportunityUpdateInput!) {
+      updateOpportunity(id: $id, data: $data) { id }
+    }`,
+    { id, data: patch },
+  );
+  // No need for a follow-up — return a minimal record so the caller can
+  // optimistically merge. Pipeline UI re-uses the stage/amount it just
+  // sent, and only re-fetches if it cares about a server-side mutation.
+  const data = await gql<{ opportunity: RawOpp | null }>(
+    tenant,
+    `query OneOpp($id: UUID!) {
+      opportunity(filter: { id: { eq: $id } }) {
+        id name stage amount { amountMicros currencyCode } closeDate
+        company { id name } createdAt updatedAt
+      }
+    }`,
+    { id },
+  );
+  return data.opportunity ? normaliseOpp(data.opportunity) : null;
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */

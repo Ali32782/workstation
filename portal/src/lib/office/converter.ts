@@ -56,6 +56,14 @@ export async function htmlToDocxBuffer(html: string): Promise<Buffer> {
  * import would handle merges/styles but only ships in the paid tier. For
  * day-1 we get readable, editable, savable spreadsheets.
  */
+/** Minimal valid .xlsx bytes for an empty sheet (new files from create-doc). */
+export function emptyXlsxBuffer(): Buffer {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([[]]);
+  XLSX.utils.book_append_sheet(wb, ws, "Tabelle1");
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
 export function xlsxToUniver(buf: Buffer): unknown {
   const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
   const sheetOrder: string[] = [];
