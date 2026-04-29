@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
     assignToMe?: boolean;
     assignees?: string[];
     labels?: string[];
+    parent?: string | null;
   };
   try {
     body = await req.json();
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest) {
       priority: body.priority,
       assignees,
       labels: body.labels,
+      parent: body.parent,
     });
     return NextResponse.json({ issue });
   } catch (e) {

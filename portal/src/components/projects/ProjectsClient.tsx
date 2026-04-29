@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import {
   ChevronRight,
   ExternalLink,
@@ -25,6 +26,7 @@ import {
   PanelLeftClose,
   Search,
   Star,
+  Trash2,
   X,
   Settings as SettingsIcon,
 } from "lucide-react";
@@ -160,10 +162,27 @@ export function ProjectsClient({
       });
       const j = (await r.json()) as { projects?: ProjectSummary[]; error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      setProjects(j.projects ?? []);
-      if ((j.projects?.length ?? 0) > 0) {
+      const list = j.projects ?? [];
+      setProjects(list);
+
+      const params =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search)
+          : null;
+      const wantP = params?.get("project")?.trim() ?? "";
+      const wantI = params?.get("issue")?.trim() ?? "";
+
+      if (wantP && list.some((p) => p.id === wantP)) {
+        setSelectedProjectId(wantP);
+        if (wantI) setSelectedIssueId(wantI);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("project");
+        url.searchParams.delete("issue");
+        const qs = url.searchParams.toString();
+        window.history.replaceState({}, "", url.pathname + (qs ? `?${qs}` : ""));
+      } else if (list.length > 0) {
         setSelectedProjectId((cur) =>
-          cur && j.projects!.some((p) => p.id === cur) ? cur : j.projects![0].id,
+          cur && list.some((p) => p.id === cur) ? cur : list[0].id,
         );
       } else {
         setSelectedProjectId(null);
@@ -285,6 +304,21 @@ export function ProjectsClient({
     [issues, filter],
   );
 
+  /** Direkte Kinder pro Parent (Plane) — aus dem vollen Issue-Set, auch wenn die Filterliste schmaler ist. */
+  const subCountByParent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of issues) {
+      if (i.parent) m.set(i.parent, (m.get(i.parent) ?? 0) + 1);
+    }
+    return m;
+  }, [issues]);
+
+  /** Board / Sprint-Spalten: nur Top-Level wie in Jira kein Doppel mit Subtasks in der Spalte. */
+  const boardIssues = useMemo(
+    () => filteredIssues.filter((i) => !i.parent),
+    [filteredIssues],
+  );
+
   const selectedProject = useMemo(
     () => projects.find((p) => p.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
@@ -325,6 +359,38 @@ export function ProjectsClient({
       setBusy(false);
     }
   }, [loadProjects, apiUrl]);
+
+  const onDeleteProject = useCallback(
+    async (project: ProjectSummary) => {
+      if (!window.confirm(t("projects.delete.confirm"))) return;
+      setBusy(true);
+      try {
+        const r = await fetch(
+          apiUrl(
+            `/api/projects/projects?project=${encodeURIComponent(project.id)}`,
+          ),
+          { method: "DELETE" },
+        );
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        setProjects((cur) => {
+          const next = cur.filter((p) => p.id !== project.id);
+          setSelectedProjectId((sel) =>
+            sel === project.id ? next[0]?.id ?? null : sel,
+          );
+          return next;
+        });
+      } catch (e) {
+        alert(
+          t("projects.delete.failed") +
+            (e instanceof Error ? e.message : String(e)),
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [apiUrl, t],
+  );
 
   const onCreateIssue = useCallback(
     async (name: string) => {
@@ -662,14 +728,19 @@ export function ProjectsClient({
               <Plus size={13} />
             </button>
             <a
-              href="https://projects.kineo360.work/profile"
-              target="_blank"
-              rel="noopener noreferrer"
+              href={`/${workspaceId}/projects/plane`}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title={t("common.settings") + " (Plane)"}
+              title="Plane-Hub (Workspace-Direktzugriff)"
+            >
+              <ExternalLink size={13} />
+            </a>
+            <Link
+              href={`/${workspaceId}/projects/settings`}
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title={t("common.settings")}
             >
               <SettingsIcon size={13} />
-            </a>
+            </Link>
             <button
               type="button"
               onClick={() => setSidebarCollapsed(true)}
@@ -717,6 +788,17 @@ export function ProjectsClient({
             >
               {(p.emoji || p.identifier.slice(0, 2) || "P").toString().slice(0, 2)}
             </span>
+          ),
+          trailing: (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onDeleteProject(p)}
+              className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-rose-400 disabled:opacity-40"
+              title={t("projects.delete.action")}
+            >
+              <Trash2 size={13} aria-hidden />
+            </button>
           ),
         }))}
         selectedId={selectedProjectId}
@@ -932,7 +1014,8 @@ export function ProjectsClient({
   } else if (view === "board") {
     viewContent = (
       <JiraBoard
-        issues={filteredIssues}
+        issues={boardIssues}
+        subCountByParent={subCountByParent}
         states={meta.states}
         members={memberById}
         labels={labelById}
@@ -978,6 +1061,7 @@ export function ProjectsClient({
       <JiraSprints
         cycles={cycles}
         issues={issues}
+        subCountByParent={subCountByParent}
         states={meta.states}
         members={memberById}
         labels={labelById}
@@ -1005,6 +1089,7 @@ export function ProjectsClient({
     viewContent = (
       <ListView
         issues={filteredIssues}
+        subCountByParent={subCountByParent}
         identifier={selectedProject?.identifier ?? ""}
         states={stateById}
         members={memberById}
@@ -1067,6 +1152,9 @@ export function ProjectsClient({
             onDelete={() => onDeleteIssue(selectedIssue.id)}
             onClose={() => setSelectedIssueId(null)}
             onSelectIssue={setSelectedIssueId}
+            onIssuesRefresh={() => {
+              if (selectedProjectId) void loadProjectData(selectedProjectId);
+            }}
           />
         </div>
       )}
@@ -1193,6 +1281,7 @@ function FilterChips({
 
 function ListView({
   issues,
+  subCountByParent,
   identifier,
   states,
   members,
@@ -1201,6 +1290,7 @@ function ListView({
   onSelectIssue,
 }: {
   issues: IssueSummary[];
+  subCountByParent: Map<string, number>;
   identifier: string;
   states: Map<string, IssueState>;
   members: Map<string, WorkspaceMember>;
@@ -1225,6 +1315,8 @@ function ListView({
             labels={labels}
             density="compact"
             selected={selectedIssueId === i.id}
+            showStatus
+            subIssueCount={subCountByParent.get(i.id) ?? 0}
             onClick={() => onSelectIssue(i.id)}
           />
         ))

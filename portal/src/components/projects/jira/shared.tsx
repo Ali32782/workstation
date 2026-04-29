@@ -379,6 +379,7 @@ export function IssueCard({
   density = "comfortable",
   showStatus = false,
   accent,
+  subIssueCount = 0,
 }: {
   issue: IssueSummary;
   identifier: string;
@@ -394,6 +395,8 @@ export function IssueCard({
   /** Show the status pill on the card. Off in Board (column == status), on in Backlog/List. */
   showStatus?: boolean;
   accent?: string;
+  /** Direkte Kinder (Plane parent → child). */
+  subIssueCount?: number;
 }) {
   const assignedMembers = issue.assignees
     .map((id) => members.get(id))
@@ -493,6 +496,15 @@ export function IssueCard({
         <span className="ml-auto inline-flex items-center gap-1.5">
           <PriorityBadge priority={issue.priority} />
           <StoryPointsPill points={issue.estimatePoint} />
+          {subIssueCount > 0 && (
+            <span
+              className="inline-flex items-center gap-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold tabular-nums bg-bg-overlay border border-stroke-1 text-text-secondary"
+              title={`${subIssueCount} Sub‑Issues`}
+            >
+              <GitBranch size={10} aria-hidden />
+              {subIssueCount}
+            </span>
+          )}
           <span className="inline-flex items-center -space-x-1">
             {assignedMembers.slice(0, 3).map((m) => (
               <span

@@ -5,6 +5,7 @@ import {
   listFields,
   type FieldCreateInput,
 } from "@/lib/sign/documenso";
+import { blockIfSignDocumentInaccessible } from "@/lib/sign/document-access-guard";
 import { resolveSignSession, type SignSession } from "@/lib/sign/session";
 
 export const runtime = "nodejs";
@@ -51,6 +52,12 @@ export async function GET(
   const { id: idStr } = await context.params;
   const id = parseId(idStr);
   if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  const deny = await blockIfSignDocumentInaccessible(
+    g.session.workspace,
+    id,
+    g.session.username,
+  );
+  if (deny) return deny;
   try {
     const fields = await listFields(g.session.tenant, id);
     return NextResponse.json({ fields });
@@ -77,6 +84,12 @@ export async function POST(
   const { id: idStr } = await context.params;
   const id = parseId(idStr);
   if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  const deny = await blockIfSignDocumentInaccessible(
+    g.session.workspace,
+    id,
+    g.session.username,
+  );
+  if (deny) return deny;
   let body: { fields?: FieldCreateInput[] };
   try {
     body = await req.json();
@@ -99,10 +112,19 @@ export async function POST(
 
 export async function DELETE(
   req: NextRequest,
-  _context: { params: Promise<{ id: string }> },
+  context: { params: Promise<{ id: string }> },
 ) {
   const g = await gate(req);
   if (g.err) return g.err;
+  const { id: idStr } = await context.params;
+  const id = parseId(idStr);
+  if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  const deny = await blockIfSignDocumentInaccessible(
+    g.session.workspace,
+    id,
+    g.session.username,
+  );
+  if (deny) return deny;
   const fieldIdStr = req.nextUrl.searchParams.get("fieldId");
   const fieldId = fieldIdStr ? Number(fieldIdStr) : 0;
   if (!Number.isFinite(fieldId) || fieldId <= 0) {

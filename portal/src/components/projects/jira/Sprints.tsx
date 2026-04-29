@@ -25,6 +25,7 @@ import {
 export function JiraSprints({
   cycles,
   issues,
+  subCountByParent,
   states,
   members,
   labels,
@@ -39,6 +40,8 @@ export function JiraSprints({
 }: {
   cycles: CycleSummary[];
   issues: IssueSummary[];
+  /** Subtasks je Parent aus dem Projekt gesamt (wie Board/Liste). */
+  subCountByParent: Map<string, number>;
   states: IssueState[];
   members: Map<string, WorkspaceMember>;
   labels: Map<string, IssueLabel>;
@@ -117,23 +120,29 @@ export function JiraSprints({
     [active, issues],
   );
 
+  /** Keine Subtasks in den Sprint-Spalten (wie Jira Scrum Board nur Parent-Cards). */
+  const cycleIssuesBoard = useMemo(
+    () => cycleIssues.filter((i) => !i.parent),
+    [cycleIssues],
+  );
+
   const stats = useMemo(() => {
-    const total = cycleIssues.length;
-    const done = cycleIssues.filter((i) => {
+    const total = cycleIssuesBoard.length;
+    const done = cycleIssuesBoard.filter((i) => {
       const s = stateById.get(i.state);
       return s?.group === "completed";
     }).length;
-    const inProgress = cycleIssues.filter((i) => {
+    const inProgress = cycleIssuesBoard.filter((i) => {
       const s = stateById.get(i.state);
       return s?.group === "started";
     }).length;
-    const points = cycleIssues.reduce((n, i) => n + (i.estimatePoint ?? 0), 0);
-    const donePoints = cycleIssues
+    const points = cycleIssuesBoard.reduce((n, i) => n + (i.estimatePoint ?? 0), 0);
+    const donePoints = cycleIssuesBoard
       .filter((i) => stateById.get(i.state)?.group === "completed")
       .reduce((n, i) => n + (i.estimatePoint ?? 0), 0);
     const pct = total === 0 ? 0 : Math.round((done / total) * 100);
     return { total, done, inProgress, points, donePoints, pct };
-  }, [cycleIssues, stateById]);
+  }, [cycleIssuesBoard, stateById]);
 
   return (
     <div className="flex-1 min-h-0 flex">
@@ -204,7 +213,9 @@ export function JiraSprints({
           )}
           <ul>
             {ordered.map((c) => {
-              const cnt = issues.filter((i) => i.cycle === c.id).length;
+              const cnt = issues.filter(
+                (i) => i.cycle === c.id && !i.parent,
+              ).length;
               const isActive = activeId === c.id;
               return (
                 <li key={c.id}>
@@ -250,7 +261,8 @@ export function JiraSprints({
         ) : (
           <SprintDetail
             cycle={active}
-            issues={cycleIssues}
+            issues={cycleIssuesBoard}
+            subCountByParent={subCountByParent}
             stateById={stateById}
             members={members}
             labels={labels}
@@ -273,6 +285,7 @@ export function JiraSprints({
 function SprintDetail({
   cycle,
   issues,
+  subCountByParent,
   stateById,
   members,
   labels,
@@ -288,6 +301,7 @@ function SprintDetail({
 }: {
   cycle: CycleSummary;
   issues: IssueSummary[];
+  subCountByParent: Map<string, number>;
   stateById: Map<string, IssueState>;
   members: Map<string, WorkspaceMember>;
   labels: Map<string, IssueLabel>;
@@ -475,6 +489,7 @@ function SprintDetail({
               group={col.group}
               firstStateId={col.firstStateId}
               issues={col.issues}
+              subCountByParent={subCountByParent}
               members={members}
               labels={labels}
               identifier={identifier}
@@ -495,6 +510,7 @@ function SprintColumn({
   group,
   firstStateId,
   issues,
+  subCountByParent,
   members,
   labels,
   identifier,
@@ -507,6 +523,7 @@ function SprintColumn({
   group: string;
   firstStateId: string | null;
   issues: IssueSummary[];
+  subCountByParent: Map<string, number>;
   members: Map<string, WorkspaceMember>;
   labels: Map<string, IssueLabel>;
   identifier: string;
@@ -570,6 +587,7 @@ function SprintColumn({
             labels={labels}
             density="compact"
             selected={selectedIssueId === issue.id}
+            subIssueCount={subCountByParent.get(issue.id) ?? 0}
             onClick={() => onSelectIssue(issue.id)}
             draggable
             onDragStart={(e) => {

@@ -340,6 +340,14 @@ export function CrmSettingsClient({
                   </a>
                 }
               >
+                <p className="text-[11px] text-text-tertiary leading-relaxed mb-3">
+                  Stages mit Sales abstimmen, bevor ihr ein großes Kanban baut
+                  (siehe Playbook{" "}
+                  <code className="text-[10px] text-text-secondary">
+                    docs/playbooks/TWENTY-DEAL-STAGES-ALIGNMENT.md
+                  </code>
+                  ). Die Darstellung unten spiegelt nur bestehende Deals wider.
+                </p>
                 {data.pipeline.length === 0 ? (
                   <Empty>
                     Noch keine Deals erfasst. Lege im CRM die Pipeline-Stages

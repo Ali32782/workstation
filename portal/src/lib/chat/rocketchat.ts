@@ -184,6 +184,41 @@ async function getUserIdByEmail(email: string): Promise<string | null> {
   }
 }
 
+/** Resolve RC user id without provisioning (for lightweight poll handlers). */
+export async function lookupRcUserId(opts: {
+  username: string;
+  email: string;
+}): Promise<string | null> {
+  try {
+    return await getUserIdByUsername(opts.username);
+  } catch {
+    /* USER_NOT_IN_CHAT */
+  }
+  return getUserIdByEmail(opts.email);
+}
+
+/** Room type + tagged workspace customField (best-effort). */
+export async function roomInfoForUser(
+  asUserId: string,
+  roomId: string,
+): Promise<{ type: ChatRoomType; workspace: string | null; fname: string | null; name: string | null }> {
+  const r = await rcAs<{
+    room?: {
+      t?: string;
+      fname?: string;
+      name?: string;
+      customFields?: { workspace?: string };
+    };
+  }>(asUserId, `/api/v1/rooms.info?roomId=${encodeURIComponent(roomId)}`);
+  const t = r.room?.t;
+  const type: ChatRoomType =
+    t === "p" || t === "c" || t === "d" ? t : "c";
+  const w = r.room?.customFields?.workspace?.trim().toLowerCase() ?? null;
+  const fname = r.room?.fname?.trim() || null;
+  const name = r.room?.name?.trim() || null;
+  return { type, workspace: w, fname, name };
+}
+
 /**
  * Provision a user in Rocket.Chat if they don't exist yet. Returns the id.
  * Tries (in order):
@@ -997,4 +1032,96 @@ export async function findUserIdByUsername(username: string): Promise<string | n
   } catch {
     return null;
   }
+}
+
+// ─── Mentions feed ───────────────────────────────────────────────────────────
+
+export type ChatMentionRoom = {
+  /** Subscription id (rid) */
+  roomId: string;
+  /** "c" public channel · "p" private group · "d" DM */
+  type: ChatRoomType;
+  /** Display name. For DMs we resolve to the partner's username. */
+  name: string;
+  /** Counter from Rocket.Chat: number of unread @-mentions in this room. */
+  userMentions: number;
+  /** Counter for unread `@here` group mentions. */
+  groupMentions: number;
+  /** Total unread count, useful for the secondary badge. */
+  unread: number;
+  /** Workspace tag for cross-tenant filtering (kineo / corehub / medtheris). */
+  workspace: string | null;
+  /** ISO timestamp of the last unread message. May be empty. */
+  lastUpdate: string | null;
+};
+
+/**
+ * Returns subscriptions (= rooms the user is part of) where Rocket.Chat
+ * has tracked at least one unread @-mention. We rely on the
+ * `subscriptions.getAll` endpoint which is impersonation-safe and
+ * returns all subscription kinds in a single call — that means we don't
+ * fan-out three list endpoints just to discover mentions.
+ *
+ * Workspace tagging: we can't compute it cheaply from a subscription
+ * alone (RC only stores a sparse `name`), so we fall back to the same
+ * heuristic used by `mapRoom`: if the slug starts with a known
+ * workspace prefix we use that. The DailyHome card filters on this.
+ */
+export async function listMyMentions(
+  rcUserId: string,
+  selfUsername: string,
+): Promise<ChatMentionRoom[]> {
+  type Sub = {
+    rid: string;
+    name?: string;
+    fname?: string;
+    t?: ChatRoomType;
+    userMentions?: number;
+    groupMentions?: number;
+    unread?: number;
+    ls?: string;
+    _updatedAt?: string;
+    customFields?: { workspace?: string };
+  };
+  const r = await rcAs<{ update: Sub[] }>(
+    rcUserId,
+    "/api/v1/subscriptions.getAll",
+  ).catch(() => ({ update: [] as Sub[] }));
+
+  const out: ChatMentionRoom[] = [];
+  for (const s of r.update ?? []) {
+    const userMentions = Number(s.userMentions ?? 0);
+    const groupMentions = Number(s.groupMentions ?? 0);
+    if (userMentions <= 0 && groupMentions <= 0) continue;
+    const t = (s.t ?? "c") as ChatRoomType;
+    let display = s.fname ?? s.name ?? "(direct)";
+    if (t === "d" && s.name) {
+      // For DMs the subscription's `name` is the *partner's* username
+      // already (RC stores it that way). Defensive coalesce in case it
+      // contains the user pair separator (`,`).
+      display = s.name.split(",").find((u) => u !== selfUsername) ?? s.name;
+    }
+    const workspace = (() => {
+      const ws = s.customFields?.workspace;
+      if (ws && typeof ws === "string") return ws.toLowerCase();
+      const slug = (s.name ?? "").toLowerCase();
+      for (const w of ["kineo", "corehub", "medtheris"]) {
+        if (slug === w || slug.startsWith(`${w}-`)) return w;
+      }
+      return null;
+    })();
+    out.push({
+      roomId: s.rid,
+      type: t,
+      name: display,
+      userMentions,
+      groupMentions,
+      unread: Number(s.unread ?? 0),
+      workspace,
+      lastUpdate: s._updatedAt ?? s.ls ?? null,
+    });
+  }
+  // Newest first so the card surfaces the most recent attention-grabber.
+  out.sort((a, b) => (b.lastUpdate ?? "").localeCompare(a.lastUpdate ?? ""));
+  return out;
 }

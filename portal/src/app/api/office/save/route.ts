@@ -3,11 +3,13 @@ import { auth } from "@/lib/auth";
 import { uploadFile } from "@/lib/cloud/webdav";
 import { detectKind, contentTypeFor } from "@/lib/office/types";
 import {
+  countWorkbookCells,
   htmlToDocxBuffer,
-  univerToXlsx,
   libreofficeConvert,
+  simpleToXlsx,
   type SofficeTarget,
 } from "@/lib/office/converter";
+import type { SimpleWorkbook } from "@/lib/office/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,7 +38,7 @@ export async function POST(req: NextRequest) {
     kind?: "word" | "excel";
     html?: string;
     text?: string;
-    workbook?: unknown;
+    workbook?: SimpleWorkbook;
   };
   let body: SaveBody;
   try {
@@ -110,13 +112,29 @@ export async function POST(req: NextRequest) {
         }
       }
     } else if (kind === "excel") {
-      if (!body.workbook) {
+      if (!body.workbook || !Array.isArray(body.workbook.sheets)) {
         return NextResponse.json(
           { error: "missing workbook" },
           { status: 400 },
         );
       }
-      outBuf = univerToXlsx(body.workbook);
+      // Server-side empty-snapshot guard: refuse to overwrite the WebDAV
+      // file if every cell is empty — protects against client bugs that
+      // would silently truncate user data.
+      const cellsCount = countWorkbookCells(body.workbook);
+      console.log(
+        `[office/save] ws=${ws} user=${username} path=${path} cells=${cellsCount}`,
+      );
+      if (cellsCount === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "leerer Snapshot abgelehnt — bitte Tabelle füllen und erneut speichern",
+          },
+          { status: 422 },
+        );
+      }
+      outBuf = simpleToXlsx(body.workbook);
       if (lower.endsWith(".xls") || lower.endsWith(".ods")) {
         const finalExt = lower.endsWith(".ods") ? "ods" : "xlsx";
         outBuf = await libreofficeConvert(outBuf, "tmp.xlsx", finalExt);

@@ -47,6 +47,7 @@ import {
   FileUp,
   Link2,
   MessageSquare,
+  Sparkles,
 } from "lucide-react";
 import { ImportTicketsModal } from "./ImportTicketsModal";
 import Link from "next/link";
@@ -335,6 +336,32 @@ export function HelpdeskClient({
   useEffect(() => {
     void loadList(search, stateFilter, scopeFilter);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // `/helpdesk?q=…` (z.B. Firmenname aus dem Company Hub)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("q")?.trim();
+    if (!raw) return;
+    setSearch(raw);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("q");
+    const qs = url.searchParams.toString();
+    window.history.replaceState({}, "", url.pathname + (qs ? "?" + qs : ""));
+  }, []);
+
+  // `/helpdesk?ticket=12345` öffnet das Ticket direkt (Cmd+K, Notifications)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get("ticket")?.trim();
+    if (!tid || !/^\d+$/.test(tid)) return;
+    setSelectedId(parseInt(tid, 10));
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ticket");
+    const qs = url.searchParams.toString();
+    window.history.replaceState({}, "", url.pathname + (qs ? "?" + qs : ""));
+  }, []);
 
   // Debounced search / filter changes
   useEffect(() => {
@@ -1009,6 +1036,9 @@ export function HelpdeskClient({
           </div>
           <Composer
             accent={accent}
+            workspaceId={workspaceId}
+            ticketSubject={detail.title}
+            lastCustomerArticle={lastCustomerArticleOf(detail.articles)}
             states={meta?.states ?? []}
             currentStateId={detail.stateId}
             onSend={onSend}
@@ -1554,8 +1584,10 @@ function TicketCard({
         {/* Multi-select checkbox: visible on hover, always visible when bulk-mode active */}
         <label
           onClick={(e) => e.stopPropagation()}
-          className={`flex items-center justify-center w-7 shrink-0 cursor-pointer ${
-            bulkActive || bulkChecked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          className={`relative z-[1] flex items-center justify-center w-7 shrink-0 cursor-pointer min-h-[2.25rem] ${
+            bulkActive || bulkChecked
+              ? "opacity-100"
+              : "opacity-[0.52] group-hover:opacity-100"
           } transition-opacity`}
           title={tr("helpdesk.card.selectBulk")}
         >
@@ -1811,8 +1843,61 @@ function isLikelyClosedState(stateName: string | undefined): boolean {
   );
 }
 
+type LastCustomerArticle = {
+  fromName: string;
+  bodyText: string;
+  createdAt: string;
+};
+
+function lastCustomerArticleOf(
+  articles: TicketArticle[],
+): LastCustomerArticle | null {
+  for (let i = articles.length - 1; i >= 0; i--) {
+    const a = articles[i];
+    if (a.senderName === "Customer" && !a.internal) {
+      const text = stripHtml(a.bodyHtml).trim();
+      if (text) {
+        return {
+          fromName: a.fromName,
+          bodyText: text,
+          createdAt: a.createdAt,
+        };
+      }
+    }
+  }
+  // Fallback to first article (often the customer's initial mail).
+  const first = articles[0];
+  if (first) {
+    return {
+      fromName: first.fromName,
+      bodyText: stripHtml(first.bodyHtml).trim(),
+      createdAt: first.createdAt,
+    };
+  }
+  return null;
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function Composer({
   accent,
+  workspaceId,
+  ticketSubject,
+  lastCustomerArticle,
   states,
   currentStateId,
   onSend,
@@ -1821,6 +1906,9 @@ function Composer({
   textareaRef,
 }: {
   accent: string;
+  workspaceId: WorkspaceId;
+  ticketSubject?: string;
+  lastCustomerArticle: LastCustomerArticle | null;
   states: { id: number; name: string; active: boolean }[];
   currentStateId: number;
   onSend: (opts: {
@@ -1843,6 +1931,65 @@ function Composer({
   const taRef = textareaRef ?? fallbackRef;
   const [showCanned, setShowCanned] = useState(false);
   const [showCannedEditor, setShowCannedEditor] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiVariants, setAiVariants] = useState<
+    Array<{ label: string; subject?: string; body: string }>
+  >([]);
+  const [aiTone, setAiTone] = useState<
+    "freundlich" | "formell" | "kurz" | "empathisch"
+  >("freundlich");
+  const [aiIntent, setAiIntent] = useState("");
+  const [aiKnowledgeSections, setAiKnowledgeSections] = useState<string[]>([]);
+  const [aiWarnings, setAiWarnings] = useState<string[]>([]);
+
+  const aiAvailable = !!lastCustomerArticle && tab === "reply";
+
+  const aiGenerate = useCallback(async () => {
+    if (!lastCustomerArticle) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const r = await fetch("/api/ai/reply-suggest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          channel: "helpdesk",
+          workspace: workspaceId,
+          incoming: {
+            subject: ticketSubject,
+            from: lastCustomerArticle.fromName,
+            body: lastCustomerArticle.bodyText,
+            receivedAt: lastCustomerArticle.createdAt,
+          },
+          intent: aiIntent.trim() || undefined,
+          tone: aiTone,
+          variants: 3,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      setAiVariants(j.variants ?? []);
+      setAiKnowledgeSections(j.usedKnowledge ?? []);
+      setAiWarnings(j.warnings ?? []);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(false);
+    }
+  }, [lastCustomerArticle, workspaceId, ticketSubject, aiIntent, aiTone]);
+
+  const aiPick = useCallback(
+    (v: { body: string }) => {
+      setBody(v.body);
+      setAiOpen(false);
+      setTimeout(() => {
+        taRef.current?.focus();
+      }, 0);
+    },
+    [taRef],
+  );
 
   useEffect(() => setNextStateId(currentStateId), [currentStateId]);
 
@@ -1965,6 +2112,26 @@ function Composer({
                 <span className="text-[9px] font-mono">({canned.length})</span>
               )}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!aiAvailable) return;
+                const next = !aiOpen;
+                setAiOpen(next);
+                if (next && aiVariants.length === 0) void aiGenerate();
+              }}
+              disabled={!aiAvailable}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] hover:bg-bg-overlay disabled:opacity-40 disabled:cursor-not-allowed ${
+                aiOpen ? "text-text-primary bg-bg-overlay" : "text-text-tertiary"
+              }`}
+              title={
+                aiAvailable
+                  ? "AI-Antwortvorschläge mit Firmen-Wissensbasis"
+                  : "Kein Kunden-Beitrag — AI-Antwort nur im Antwort-Tab"
+              }
+            >
+              <Sparkles size={11} /> AI-Antwort
+            </button>
             {showCanned && (
               <CannedResponsesPopover
                 canned={canned}
@@ -2009,6 +2176,128 @@ function Composer({
           </div>
         </div>
       </div>
+      {aiOpen && aiAvailable && (
+        <div className="border-t border-info/30 bg-info/5">
+          <div className="px-3 py-2 flex items-center gap-2 border-b border-info/20">
+            <Sparkles size={11} className="text-info" />
+            <span className="text-[11.5px] font-medium">
+              AI-Antwortvorschläge
+            </span>
+            {aiKnowledgeSections.length > 0 && (
+              <span
+                className="text-[10px] text-text-tertiary truncate max-w-[280px]"
+                title={`Wissensbasis: ${aiKnowledgeSections.join(", ")}`}
+              >
+                · {aiKnowledgeSections.length} Wissens-Abschnitt
+                {aiKnowledgeSections.length === 1 ? "" : "e"} genutzt
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setAiOpen(false)}
+              className="ml-auto p-1 rounded-md hover:bg-bg-overlay text-text-tertiary"
+              aria-label="Schliessen"
+            >
+              <XIcon size={11} />
+            </button>
+          </div>
+          <div className="px-3 py-2 flex items-center gap-2 border-b border-info/20">
+            <input
+              type="text"
+              value={aiIntent}
+              onChange={(e) => setAiIntent(e.target.value)}
+              placeholder={"Optional: Steuerung („Termin Mi 14:00 bestätigen“)"}
+              className="flex-1 px-2 py-1 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[11.5px] outline-none"
+            />
+            <select
+              value={aiTone}
+              onChange={(e) =>
+                setAiTone(
+                  e.target.value as
+                    | "freundlich"
+                    | "formell"
+                    | "kurz"
+                    | "empathisch",
+                )
+              }
+              className="px-1.5 py-1 rounded-md bg-bg-base border border-stroke-1 text-[11.5px] outline-none"
+            >
+              <option value="freundlich">Freundlich</option>
+              <option value="formell">Formell</option>
+              <option value="kurz">Kurz</option>
+              <option value="empathisch">Empathisch</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => void aiGenerate()}
+              disabled={aiBusy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-info hover:bg-info/90 text-white text-[11px] disabled:opacity-50"
+            >
+              {aiBusy ? (
+                <Loader2 size={10} className="animate-spin" />
+              ) : (
+                <RefreshCw size={10} />
+              )}
+              {aiVariants.length === 0 ? "Generieren" : "Neu"}
+            </button>
+          </div>
+          {aiError && (
+            <div className="mx-3 my-2 rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11px] p-2">
+              {aiError}
+              {/not.?configured/i.test(aiError) && (
+                <p className="mt-0.5 text-text-tertiary">
+                  Tipp:{" "}
+                  <Link
+                    href={`/${workspaceId}/ai-knowledge`}
+                    className="underline text-info"
+                  >
+                    Wissensbasis befüllen
+                  </Link>
+                  .
+                </p>
+              )}
+            </div>
+          )}
+          {aiWarnings.length > 0 && (
+            <div className="mx-3 my-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[11px] p-2 space-y-0.5">
+              {aiWarnings.map((w, i) => (
+                <div key={i}>⚠ {w}</div>
+              ))}
+            </div>
+          )}
+          {aiBusy && aiVariants.length === 0 && (
+            <div className="px-3 py-4 text-[11.5px] text-text-tertiary flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" />
+              Generiere Vorschläge mit Firmen-Wissensbasis …
+            </div>
+          )}
+          <div className="max-h-[280px] overflow-y-auto px-3 pb-3 space-y-2">
+            {aiVariants.map((v, i) => (
+              <article
+                key={i}
+                className="rounded-md border border-stroke-1 bg-bg-elevated"
+              >
+                <header className="px-2.5 py-1.5 border-b border-stroke-1 flex items-center justify-between">
+                  <h4 className="text-[11px] font-semibold flex items-center gap-1.5">
+                    <Sparkles size={10} className="text-info" />
+                    {v.label}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => aiPick(v)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-info hover:bg-info/90 text-white text-[10.5px] font-medium"
+                  >
+                    Übernehmen
+                  </button>
+                </header>
+                <pre className="px-2.5 py-2 text-[11.5px] whitespace-pre-wrap font-sans leading-relaxed text-text-primary">
+                  {v.body}
+                </pre>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
       {showCannedEditor && (
         <CannedResponsesEditor
           canned={canned}

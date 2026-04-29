@@ -1,4 +1,5 @@
-import { Info } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Info, Inbox } from "lucide-react";
 
 import { ScraperPanel } from "./ScraperPanel";
 
@@ -43,6 +44,29 @@ export default function ScraperPage() {
       )}
 
       <ScraperPanel disabled={!configured} />
+
+      <div className="rounded-md border border-stroke-1 bg-bg-chrome p-4 flex items-start gap-3">
+        <div className="w-8 h-8 rounded-md bg-bg-elevated flex items-center justify-center text-text-tertiary shrink-0">
+          <Inbox size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-text-primary text-sm font-medium">
+            Frische Leads prüfen?
+          </div>
+          <p className="text-text-tertiary text-xs mt-0.5">
+            Sobald der Scraper neue Companies + Opportunities (stage=NEW) in
+            Twenty schreibt, landen sie in der Lead-Inbox. Dort lassen sie
+            sich pro Klick übernehmen (Mautic-Segment) oder verwerfen.
+          </p>
+        </div>
+        <Link
+          href="/admin/onboarding/leads"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 bg-bg-base text-text-secondary text-xs hover:text-text-primary"
+        >
+          Zur Lead-Inbox
+          <ArrowRight size={12} />
+        </Link>
+      </div>
     </div>
   );
 }

@@ -356,6 +356,156 @@ export async function makeCollection(opts: {
   }
 }
 
+/* --------------------------------------------------------------------- */
+/* SEARCH – workspace-wide filename search                                */
+/* --------------------------------------------------------------------- */
+
+/**
+ * Workspace-wide file search via Nextcloud's WebDAV SEARCH method.
+ *
+ * Uses `<d:like>` against `displayname` so we get prefix/contains
+ * matches without needing the optional `fulltextsearch` app.  Search
+ * is scoped to the user's WebDAV root with `infinity` depth — NC will
+ * respect the user's share permissions, so we never have to filter
+ * client-side for ACLs.
+ *
+ * SQL `LIKE` requires `%` wildcards; we wrap the user's query so
+ * "report" matches "Quarterly Report Q3.xlsx" anywhere in the name.
+ * The `%` and `_` characters in the input are escaped first to avoid
+ * accidental wildcard expansion.
+ */
+
+export type CloudSearchHit = {
+  path: string;
+  name: string;
+  type: "file" | "folder";
+  size: number;
+  mtime: string;
+  contentType: string | null;
+};
+
+function escapeLike(q: string): string {
+  return q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export async function searchFiles(opts: {
+  workspace: string;
+  user: string;
+  query: string;
+  limit?: number;
+  accessToken?: string;
+}): Promise<CloudSearchHit[]> {
+  const q = opts.query.trim();
+  if (q.length < 2) return [];
+
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 250);
+  const inst = instance(opts.workspace);
+  const literal = `%${escapeLike(q)}%`;
+
+  // Casing fallback identical to the rest of the helpers — try lowercase
+  // first, retry with Capitalised if NC throttles. We collapse both
+  // attempts behind the same nc() helper by only embedding the wildcard,
+  // not the user — the SEARCH body's <d:href> is rewritten per-attempt.
+  const buildBody = (asUser: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:basicsearch>
+    <d:select>
+      <d:prop>
+        <d:displayname/>
+        <d:getlastmodified/>
+        <d:getcontentlength/>
+        <d:getcontenttype/>
+        <d:resourcetype/>
+      </d:prop>
+    </d:select>
+    <d:from>
+      <d:scope>
+        <d:href>/files/${escapeXml(asUser)}</d:href>
+        <d:depth>infinity</d:depth>
+      </d:scope>
+    </d:from>
+    <d:where>
+      <d:like>
+        <d:prop><d:displayname/></d:prop>
+        <d:literal>${escapeXml(literal)}</d:literal>
+      </d:like>
+    </d:where>
+    <d:orderby>
+      <d:order>
+        <d:prop><d:getlastmodified/></d:prop>
+        <d:descending/>
+      </d:order>
+    </d:orderby>
+    <d:limit><d:nresults>${limit}</d:nresults></d:limit>
+  </d:basicsearch>
+</d:searchrequest>`;
+
+  // SEARCH targets the global DAV root, not the user's files endpoint.
+  const fetchSearch = async (
+    base: string,
+    asUser: string,
+  ): Promise<Response> => {
+    const auth = basicAuth(asUser, passwordFor(asUser));
+    const headers = new Headers({
+      Authorization: auth,
+      "Content-Type": "text/xml; charset=utf-8",
+      Depth: "infinity",
+    });
+    return fetch(base + "/remote.php/dav/", {
+      method: "SEARCH",
+      headers,
+      body: buildBody(asUser),
+    });
+  };
+
+  const tryUser = async (asUser: string): Promise<Response> => {
+    const r = await fetchSearch(inst.internalBase, asUser).catch(() => null);
+    if (r) return r;
+    return fetchSearch(inst.publicBase, asUser);
+  };
+
+  let res = await tryUser(opts.user);
+  if ((res.status === 401 || res.status === 429) && /^[a-z]/.test(opts.user)) {
+    const Capital = opts.user[0].toUpperCase() + opts.user.slice(1);
+    res = await tryUser(Capital);
+  }
+  if (!res.ok && res.status !== 207) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Nextcloud SEARCH ${res.status}: ${body.slice(0, 200)}`,
+    );
+  }
+
+  const xml = await res.text();
+  const userPrefix = davRoot(opts.user);
+  const userPrefixCap = davRoot(
+    opts.user[0].toUpperCase() + opts.user.slice(1),
+  );
+  const items = parseMultistatus(xml, [userPrefix, userPrefixCap]);
+
+  return items.map((it) => {
+    const p = normalizePath(it.href);
+    const name = p === "/" ? "/" : p.split("/").filter(Boolean).pop() ?? "";
+    return {
+      path: p,
+      name,
+      type: it.isDir ? ("folder" as const) : ("file" as const),
+      size: it.size,
+      mtime: it.mtime
+        ? new Date(it.mtime).toISOString()
+        : new Date(0).toISOString(),
+      contentType: it.ctype,
+    };
+  });
+}
+
 export async function deletePath(opts: {
   workspace: string;
   user: string;

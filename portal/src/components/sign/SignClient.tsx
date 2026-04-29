@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -31,6 +32,8 @@ import {
   MessageSquare,
   X,
   Settings as SettingsIcon,
+  Lock,
+  Download,
 } from "lucide-react";
 import { FieldEditor } from "./FieldEditor";
 import {
@@ -50,6 +53,12 @@ import type {
   SignStatus,
   SignTotals,
 } from "@/lib/sign/types";
+import {
+  formatSignExternalIdForCompany,
+  parseCompanyIdFromSignExternalId,
+  signArchivePdfFilename,
+  signSalesNextStepDe,
+} from "@/lib/sign/sales-flow";
 import { useT } from "@/components/LocaleProvider";
 import type { Messages } from "@/lib/i18n/messages";
 
@@ -146,12 +155,21 @@ export function SignClient({
   accent,
   documensoUrl,
   isAdmin = false,
+  documensoNativeUiEnabled = false,
+  /** If set (e.g. `?crmCompany=` from Company Hub), uploads attach Documenso `externalId` for traceability. */
+  signLinkCompanyId = null,
+  /** Deep-link from Cmd+K (`?doc=<numeric id>`) — selects document and cleans the query param. */
+  openDocumentId = null,
 }: {
   workspaceId: WorkspaceId;
   workspaceName: string;
   accent: string;
   documensoUrl: string;
   isAdmin?: boolean;
+  /** If true, show links into the Documenso web UI (narrow allowlist server-side). */
+  documensoNativeUiEnabled?: boolean;
+  signLinkCompanyId?: string | null;
+  openDocumentId?: number | null;
 }) {
   const [docs, setDocs] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,6 +192,16 @@ export function SignClient({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadInfo, setUploadInfo] = useState<string | null>(null);
+  /** false = default: portal-private listing; true = everyone in workspace sees in Sign. */
+  const [uploadListingForTeam, setUploadListingForTeam] = useState(false);
+
+  const uploadExternalId = useMemo(
+    () =>
+      signLinkCompanyId?.trim()
+        ? formatSignExternalIdForCompany(signLinkCompanyId.trim())
+        : null,
+    [signLinkCompanyId],
+  );
 
   const apiUrl = useCallback(
     (path: string, params?: Record<string, string | undefined | null>) => {
@@ -237,6 +265,21 @@ export function SignClient({
     },
     [apiUrl],
   );
+
+  useEffect(() => {
+    if (openDocumentId == null || openDocumentId <= 0) return;
+    setSelectedId(openDocumentId);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("doc")) return;
+    url.searchParams.delete("doc");
+    const qs = url.searchParams.toString();
+    window.history.replaceState(
+      {},
+      "",
+      url.pathname + (qs ? "?" + qs : ""),
+    );
+  }, [openDocumentId]);
 
   useEffect(() => {
     void loadDocs();
@@ -311,6 +354,32 @@ export function SignClient({
     [detail, apiUrl, loadDocs, loadDetail],
   );
 
+  const setPortalListingScope = useCallback(
+    async (scope: "private" | "team") => {
+      if (!detail) return;
+      setActing("portalScope");
+      try {
+        const r = await fetch(apiUrl(`/api/sign/document/${detail.id}`), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "setPortalVisibility", scope }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        await Promise.all([loadDocs(), loadDetail(detail.id)]);
+      } catch (e) {
+        alert(
+          `Sichtbarkeit konnte nicht geändert werden: ${
+            e instanceof Error ? e.message : e
+          }`,
+        );
+      } finally {
+        setActing(null);
+      }
+    },
+    [detail, apiUrl, loadDocs, loadDetail],
+  );
+
   const onDelete = useCallback(async () => {
     if (!detail) return;
     if (!confirm(`„${detail.title}“ wirklich löschen?`)) return;
@@ -353,6 +422,8 @@ export function SignClient({
       try {
         const fd = new FormData();
         fd.append("file", f);
+        fd.append("portalScope", uploadListingForTeam ? "team" : "private");
+        if (uploadExternalId) fd.append("externalId", uploadExternalId);
         // Standardtitel = Dateiname ohne Endung; Server fällt darauf zurück.
         const r = await fetch(apiUrl("/api/sign/upload"), {
           method: "POST",
@@ -378,7 +449,7 @@ export function SignClient({
         setUploading(false);
       }
     },
-    [apiUrl, documensoUrl, loadDocs],
+    [apiUrl, loadDocs, uploadListingForTeam, uploadExternalId],
   );
 
   const documensoOpenUrl = useMemo(() => {
@@ -407,15 +478,17 @@ export function SignClient({
             >
               <RefreshCw size={13} />
             </button>
-            <a
-              href="https://sign.kineo360.work/settings/profile"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title={t("common.settings") + " (Documenso)"}
-            >
-              <SettingsIcon size={13} />
-            </a>
+            {documensoNativeUiEnabled && (
+              <a
+                href={`${documensoUrl}/settings/profile`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+                title={t("common.settings") + " (Documenso)"}
+              >
+                <SettingsIcon size={13} />
+              </a>
+            )}
           </>
         }
       />
@@ -473,7 +546,53 @@ export function SignClient({
         })}
       </nav>
 
+      <details className="shrink-0 border-t border-stroke-1 px-3 py-2 text-[10.5px] text-text-tertiary">
+        <summary className="cursor-pointer text-text-secondary hover:text-text-primary list-none flex items-center gap-1.5">
+          <CornerUpRight size={12} className="shrink-0 opacity-70" />
+          Vertriebsablauf (Kurz)
+        </summary>
+        <ul className="mt-2 space-y-1.5 pl-1 leading-snug border-l border-stroke-1 ml-0.5 pl-3">
+          <li>
+            <span className="text-text-secondary font-medium">1. Entwurf</span> — PDF
+            hochladen (oder aus Office exportieren). Felder &amp; Empfänger im Editor.
+          </li>
+          <li>
+            <span className="text-text-secondary font-medium">2. Zur Unterschrift</span>{" "}
+            — senden; Empfänger erhalten Documenso-Mail.
+          </li>
+          <li>
+            <span className="text-text-secondary font-medium">3. Erledigt</span> — PDF
+            archivieren (Documenso).
+          </li>
+        </ul>
+      </details>
+
+      {signLinkCompanyId?.trim() && (
+        <div className="shrink-0 px-2 py-1.5 mx-1 mb-0.5 rounded-md border border-stroke-1 bg-bg-elevated/80 text-[10.5px] text-text-secondary leading-snug">
+          CRM-Verknüpfung aktiv: Upload landet mit Documenso-{" "}
+          <code className="text-[10px] text-text-primary">externalId</code>.{" "}
+          <Link
+            href={`/${workspaceId}/crm/company/${encodeURIComponent(signLinkCompanyId.trim())}`}
+            className="text-info hover:underline"
+          >
+            Zum Company-Hub
+          </Link>
+        </div>
+      )}
+
       <div className="shrink-0 border-t border-stroke-1 p-2 space-y-1.5">
+        <label className="flex items-start gap-2 px-1 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 rounded border-stroke-2"
+            checked={uploadListingForTeam}
+            onChange={(e) => setUploadListingForTeam(e.target.checked)}
+          />
+          <span className="text-[10.5px] text-text-tertiary leading-snug">
+            Für das gesamte Team in dieser Sign-Liste sichtbar (sonst Standard:{" "}
+            <span className="text-text-secondary">nur für mich</span>)
+          </span>
+        </label>
         <input
           ref={fileInputRef}
           type="file"
@@ -496,15 +615,17 @@ export function SignClient({
           )}
           {uploading ? "Wird hochgeladen…" : "Dokument hochladen"}
         </button>
-        <a
-          href={`${documensoUrl}/documents`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[10.5px]"
-        >
-          <ExternalLink size={11} />
-          In Documenso verwalten
-        </a>
+        {documensoNativeUiEnabled && (
+          <a
+            href={`${documensoUrl}/documents`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[10.5px]"
+          >
+            <ExternalLink size={11} />
+            In Documenso verwalten
+          </a>
+        )}
         <p className="text-[10px] text-text-quaternary text-center leading-snug flex items-center justify-center gap-1">
           <FileType2 size={10} />
           Word, ODT &amp; mehr werden automatisch zu PDF
@@ -594,7 +715,9 @@ export function SignClient({
           hint={
             search
               ? "Versuche einen anderen Suchbegriff."
-              : "Lege das erste Dokument im Documenso an."
+              : documensoNativeUiEnabled
+                ? "Lege das erste Dokument hier oder in Documenso an."
+                : "Lade über die linke Seitenleiste ein Dokument hoch oder warte auf freigegebene Dokumente."
           }
           icon={<FileSignature size={28} />}
         />
@@ -651,9 +774,12 @@ export function SignClient({
     detailNode = (
       <DocumentDetailView
         doc={detail}
+        workspaceId={workspaceId}
         accent={accent}
         documensoOpenUrl={documensoOpenUrl}
+        isAdmin={isAdmin}
         acting={acting}
+        documensoNativeUiEnabled={documensoNativeUiEnabled}
         onSend={() => void performAction("send")}
         onSendWithMessage={() => setComposeOpen({ kind: "send" })}
         onRemind={() => void performAction("remind")}
@@ -667,6 +793,7 @@ export function SignClient({
         onRepeat={() => void performAction("repeat")}
         onDelete={() => void onDelete()}
         onOpenEditor={() => setEditorOpen(true)}
+        onSetPortalListingScope={(scope) => void setPortalListingScope(scope)}
       />
     );
   }
@@ -694,15 +821,17 @@ export function SignClient({
           <StatusPill label={statusLabel(detail.status, t)} tone={statusTone(detail.status)} />
         </div>
       </div>
-      <a
-        href={documensoOpenUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
-      >
-        <ExternalLink size={11} />
-        In Documenso öffnen
-      </a>
+      {documensoNativeUiEnabled && (
+        <a
+          href={documensoOpenUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
+        >
+          <ExternalLink size={11} />
+          In Documenso öffnen
+        </a>
+      )}
     </div>
   ) : (
     <div
@@ -714,15 +843,17 @@ export function SignClient({
         Sign ·{" "}
         <span className="text-text-tertiary font-normal">{workspaceName}</span>
       </h1>
-      <a
-        href={`${documensoUrl}/documents`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
-      >
-        <ExternalLink size={11} />
-        In Documenso öffnen
-      </a>
+      {documensoNativeUiEnabled && (
+        <a
+          href={`${documensoUrl}/documents`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
+        >
+          <ExternalLink size={11} />
+          In Documenso öffnen
+        </a>
+      )}
     </div>
   );
 
@@ -856,6 +987,18 @@ function DocumentRow({
             <span className="text-[12.5px] font-semibold truncate flex-1">
               {doc.title}
             </span>
+            {doc.portalPrivate && (
+              <span
+                title="In CoreLab nur für dich gelistet"
+                aria-label="In CoreLab nur für dich gelistet"
+              >
+                <Lock
+                  size={11}
+                  className="text-text-tertiary shrink-0"
+                  aria-hidden
+                />
+              </span>
+            )}
             {stalled && (
               <AlertTriangle
                 size={11}
@@ -933,8 +1076,11 @@ function DocumentRow({
 
 function DocumentDetailView({
   doc,
+  workspaceId,
   accent,
   documensoOpenUrl,
+  documensoNativeUiEnabled,
+  isAdmin,
   acting,
   onSend,
   onSendWithMessage,
@@ -945,10 +1091,14 @@ function DocumentDetailView({
   onRepeat,
   onDelete,
   onOpenEditor,
+  onSetPortalListingScope,
 }: {
   doc: DocumentDetail;
+  workspaceId: WorkspaceId;
   accent: string;
   documensoOpenUrl: string;
+  documensoNativeUiEnabled: boolean;
+  isAdmin: boolean;
   acting: string | null;
   onSend: () => void;
   onSendWithMessage: () => void;
@@ -959,8 +1109,10 @@ function DocumentDetailView({
   onRepeat: () => void;
   onDelete: () => void;
   onOpenEditor: () => void;
+  onSetPortalListingScope: (scope: "private" | "team") => void;
 }) {
   const t = useT();
+  const linkedCompanyId = parseCompanyIdFromSignExternalId(doc.externalId);
   const signers = doc.recipients.filter((r) => r.role === "SIGNER");
   const totalSigners = signers.length;
   const signedCount = signers.filter((r) => r.signingStatus === "SIGNED").length;
@@ -1022,6 +1174,25 @@ function DocumentDetailView({
               Bewegung. Eine Erinnerung — gerne mit kurzem persönlichem Hinweis —
               hilft erfahrungsgemäß deutlich.
             </span>
+          </div>
+        )}
+        <p className="text-[11px] text-text-secondary mt-3 leading-relaxed border-t border-stroke-1/50 pt-3">
+          {signSalesNextStepDe(doc.status)}
+        </p>
+        {doc.externalId?.trim() && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-tertiary">
+            <span>
+              Portal-Referenz:{" "}
+              <code className="text-[10px] text-text-primary">{doc.externalId}</code>
+            </span>
+            {linkedCompanyId ? (
+              <Link
+                href={`/${workspaceId}/crm/company/${encodeURIComponent(linkedCompanyId)}`}
+                className="text-info hover:underline"
+              >
+                Company-Hub
+              </Link>
+            ) : null}
           </div>
         )}
       </div>
@@ -1098,7 +1269,18 @@ function DocumentDetailView({
           </>
         )}
         {(doc.status === "COMPLETED" || doc.status === "REJECTED") && (
-          <button
+          <>
+            {doc.status === "COMPLETED" && (
+              <a
+                href={`/api/sign/document/${doc.id}/pdf?ws=${encodeURIComponent(workspaceId)}&download=1&filename=${encodeURIComponent(signArchivePdfFilename(doc.title, doc.id))}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary"
+                title="Signiertes PDF als Datei speichern (Archiv)"
+              >
+                <Download size={12} />
+                PDF archivieren
+              </a>
+            )}
+            <button
             type="button"
             onClick={onRepeat}
             disabled={acting === "repeat"}
@@ -1113,16 +1295,19 @@ function DocumentDetailView({
             )}
             Erneut versenden
           </button>
+          </>
         )}
-        <a
-          href={documensoOpenUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary text-[12px]"
-        >
-          <CornerUpRight size={12} />
-          {doc.status === "DRAFT" ? "Entwurf öffnen" : "Detail öffnen"}
-        </a>
+        {documensoNativeUiEnabled && (
+          <a
+            href={documensoOpenUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary text-[12px]"
+          >
+            <CornerUpRight size={12} />
+            {doc.status === "DRAFT" ? "Entwurf öffnen" : "Detail öffnen"}
+          </a>
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -1181,6 +1366,69 @@ function DocumentDetailView({
           <Field label={t("common.status")}>
             <StatusPill label={statusLabel(doc.status, t)} tone={statusTone(doc.status)} />
           </Field>
+          {(doc.uploadedViaPortal || doc.portalPrivate || isAdmin) && (
+            <>
+              <Field label="Liste (CoreLab)">
+                <div className="flex flex-col gap-2 min-w-0">
+                  <span className="text-text-secondary">
+                    {doc.portalPrivate
+                      ? "Nur in deinem Sign-Bereich sichtbar"
+                      : "Für alle mit Workspace-Zugang"}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      disabled={acting === "portalScope"}
+                      onClick={() => onSetPortalListingScope("private")}
+                      className="px-2 py-1 rounded-md text-[11px] border disabled:opacity-50"
+                      style={
+                        doc.portalPrivate
+                          ? {
+                              borderColor: accent,
+                              color: accent,
+                              background: `${accent}12`,
+                            }
+                          : {
+                              borderColor: "rgba(255,255,255,0.12)",
+                              color: undefined,
+                            }
+                      }
+                    >
+                      Nur ich
+                    </button>
+                    <button
+                      type="button"
+                      disabled={acting === "portalScope"}
+                      onClick={() => onSetPortalListingScope("team")}
+                      className="px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 disabled:opacity-50"
+                      style={
+                        !doc.portalPrivate
+                          ? {
+                              borderColor: accent,
+                              color: accent,
+                              background: `${accent}12`,
+                            }
+                          : undefined
+                      }
+                    >
+                      Team
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-text-quaternary leading-snug">
+                    Betrifft nur die CoreLab-Sign-Liste, nicht die Sichtbarkeit in
+                    Documenso selbst.
+                  </p>
+                </div>
+              </Field>
+            </>
+          )}
+          {!doc.uploadedViaPortal && !doc.portalPrivate && !isAdmin && (
+            <Field label="Liste (CoreLab)">
+              <span className="text-text-tertiary text-[11px] leading-snug">
+                Nur für im Portal hochgeladene Dokumente änderbar.
+              </span>
+            </Field>
+          )}
           <Field label="Quelle">
             <span className="text-text-secondary">
               {doc.source === "DOCUMENT"

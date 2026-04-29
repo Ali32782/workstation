@@ -17,15 +17,11 @@ export default async function HelpdeskSettingsPage({
   const session = await auth();
   if (!session?.user?.username) redirect("/login");
 
-  const zammadUrl =
-    process.env.ZAMMAD_URL ?? "https://support.medtheris.kineo360.work";
-
   return (
     <HelpdeskSettingsClient
       workspaceId={workspace.id}
       workspaceName={workspace.name}
       accent={workspace.accent}
-      zammadUrl={zammadUrl}
     />
   );
 }

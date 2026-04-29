@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateOpportunity } from "@/lib/crm/twenty";
+import { getOpportunityById, updateOpportunity } from "@/lib/crm/twenty";
 import { resolveCrmSession, type CrmSession } from "@/lib/crm/session";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,34 @@ async function gate(
     };
   }
   return { session: r.session };
+}
+
+/**
+ * GET /api/crm/opportunities/{id}?ws={workspace}
+ *
+ * Returns one opportunity (with company id/name) for CRM deep-links (`?deal=`).
+ */
+export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  const g = await gate(req);
+  if (g.err) return g.err;
+  const { id } = await ctx.params;
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  try {
+    const opportunity = await getOpportunityById(g.session.tenant, id);
+    if (!opportunity) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    return NextResponse.json({ opportunity });
+  } catch (e) {
+    console.error(`[/api/crm/opportunities/${id} GET] failed:`, e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 502 },
+    );
+  }
 }
 
 /**

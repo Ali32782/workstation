@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-import type { OfficeDocument } from "@/lib/office/types";
+import type { OfficeDocument, SimpleWorkbook } from "@/lib/office/types";
 import type { WorkspaceId } from "@/lib/workspaces";
 
 const WordEditor = dynamic(() => import("./WordEditor").then((m) => m.WordEditor), {
@@ -35,7 +35,7 @@ type SaveState =
 
 /**
  * Top-level Office Hub editor shell. Loads the document via /api/office/load,
- * dispatches to either WordEditor (TipTap) or ExcelEditor (Univer), and
+ * dispatches to either WordEditor (TipTap) or ExcelEditor (native), and
  * handles save / PDF export. Designed to be opened in a regular tab so the
  * user can keep multiple Office docs side-by-side.
  */
@@ -59,7 +59,7 @@ export function OfficeEditorPage({
   // Buffer the current editor state for save / PDF.
   const [wordHtml, setWordHtml] = useState<string>("");
   const [wordText, setWordText] = useState<string>("");
-  const [workbook, setWorkbook] = useState<unknown>(null);
+  const [workbook, setWorkbook] = useState<SimpleWorkbook | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +108,21 @@ export function OfficeEditorPage({
 
   const onSave = useCallback(async () => {
     if (!doc) return;
+    // Empty-snapshot guard for spreadsheets: refuse to overwrite the WebDAV
+    // file with a workbook that contains zero cell values. Protects against
+    // an editor bug ever silently truncating user data.
+    if (doc.kind === "excel") {
+      const cells = countCells(workbook);
+      if (cells === 0) {
+        setSaveState({
+          status: "error",
+          message:
+            "Tabelle ist leer — nicht gespeichert. Bitte mindestens eine Zelle ausfüllen.",
+        });
+        return;
+      }
+    }
+
     setSaveState({ status: "saving" });
     try {
       const payload =
@@ -304,15 +319,18 @@ function SaveIndicator({ state }: { state: SaveState }) {
   }
   if (state.status === "saved") {
     return (
-      <span className="text-[11px] text-emerald-500 inline-flex items-center gap-1">
-        <CheckCircle2 size={11} /> Gespeichert
+      <span
+        className="text-[11px] text-emerald-500 inline-flex items-center gap-1"
+        title={`Gespeichert um ${new Date(state.at).toLocaleString()}`}
+      >
+        <CheckCircle2 size={11} /> Gespeichert · {fmtTime(state.at)}
       </span>
     );
   }
   if (state.status === "error") {
     return (
       <span
-        className="text-[11px] text-red-500 inline-flex items-center gap-1 max-w-[260px] truncate"
+        className="text-[11px] text-red-500 inline-flex items-center gap-1 max-w-[320px] truncate"
         title={state.message}
       >
         <AlertCircle size={11} /> {state.message}
@@ -320,6 +338,38 @@ function SaveIndicator({ state }: { state: SaveState }) {
     );
   }
   return null;
+}
+
+function fmtTime(ts: number): string {
+  try {
+    return new Date(ts).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Count non-empty cell values in a `SimpleWorkbook`. Returns 0 for null /
+ * malformed payloads so callers treat that case as "definitely empty"
+ * and refuse to persist.
+ */
+function countCells(workbook: SimpleWorkbook | null): number {
+  if (!workbook || !Array.isArray(workbook.sheets)) return 0;
+  let n = 0;
+  for (const sheet of workbook.sheets) {
+    if (!Array.isArray(sheet?.rows)) continue;
+    for (const row of sheet.rows) {
+      if (!Array.isArray(row)) continue;
+      for (const v of row) {
+        if (typeof v === "string" && v.length > 0) n += 1;
+      }
+    }
+  }
+  return n;
 }
 
 function EditorLoading({ label }: { label: string }) {

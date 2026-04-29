@@ -54,6 +54,7 @@ export default async function MailPage({
         initialFolders={folders}
         selfEmail={mailbox}
         selfName={session?.user?.name ?? undefined}
+        workspaceId={workspace.id}
       />
     </div>
   );

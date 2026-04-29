@@ -5,6 +5,7 @@ import {
   findOpenTicketByExactTitle,
 } from "@/lib/helpdesk/zammad";
 import { getHelpdeskTenant } from "@/lib/helpdesk/config";
+import { appendPhonestarRingEvent } from "@/lib/phonestar/ring-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -167,19 +168,38 @@ export async function POST(req: NextRequest) {
               `<p><strong>Folge-Anruf</strong> — es existiert bereits ein offenes Ticket mit gleichem Titel im Zeitfenster.</p>` +
               htmlDetail(p),
           });
+          await appendPhonestarRingEvent({
+            workspace: wsRaw,
+            direction: "inbound",
+            action: "article_deduped_inbound",
+            caller,
+            ticketId: existing,
+            title,
+          });
           return NextResponse.json({
             ok: true,
             action: "article_deduped_inbound",
             ticketId: existing,
           });
         }
-        await createTicket(tenant, {
+        const createdInbound = await createTicket(tenant, {
           title,
           body: htmlDetail(p),
           customerEmail: synthCustomerEmail(caller),
           customerName: `Tel. ${caller}`,
           internal: false,
         });
+        if (createdInbound) {
+          await appendPhonestarRingEvent({
+            workspace: wsRaw,
+            direction: "inbound",
+            action: "ticket_created_inbound",
+            caller,
+            ticketId: createdInbound.id,
+            ticketNumber: createdInbound.number,
+            title,
+          });
+        }
         return NextResponse.json({ ok: true, action: "ticket_created_inbound" });
       }
       if (leg === "outbound") {

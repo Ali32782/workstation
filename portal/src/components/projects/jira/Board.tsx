@@ -62,6 +62,7 @@ const GROUP_BY_LABEL: Record<GroupBy, string> = {
  */
 export function JiraBoard({
   issues,
+  subCountByParent,
   states,
   members,
   labels,
@@ -76,6 +77,8 @@ export function JiraBoard({
   onQuickFilterToggle,
 }: {
   issues: IssueSummary[];
+  /** Subtask-Anzahl je Parent-ID (aus allen Projekt-Issues, nicht nur diese Liste). */
+  subCountByParent: Map<string, number>;
   states: IssueState[];
   members: Map<string, WorkspaceMember>;
   labels: Map<string, IssueLabel>;
@@ -460,6 +463,7 @@ export function JiraBoard({
                         selected={selectedIssueId === issue.id}
                         showStatus={groupBy !== "status"}
                         accent={accent}
+                        subIssueCount={subCountByParent.get(issue.id) ?? 0}
                         onClick={() => onSelectIssue(issue.id)}
                         draggable={acceptsDrop}
                         onDragStart={(e) => {

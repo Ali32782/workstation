@@ -26,6 +26,8 @@ import {
   Globe,
   Crown,
   Shield,
+  Mic,
+  Wifi,
 } from "lucide-react";
 import type {
   ChatMessage,
@@ -33,6 +35,8 @@ import type {
   ChatTeam,
   ChatUserSummary,
 } from "@/lib/chat/types";
+import { useResizableWidth, ResizeHandle } from "@/components/ui/resizable";
+import { PREFLIGHT_MESSAGES } from "@/components/calls/usePreflight";
 
 type RoomMember = {
   id: string;
@@ -90,6 +94,23 @@ export function ChatClient({
   const [showSettings, setShowSettings] = useState(false);
   const [drawerTab, setDrawerTab] = useState<"members" | "files" | "settings">("members");
   const [dragActive, setDragActive] = useState(false);
+
+  // Resizable column widths (persisted per browser).
+  // Sidebar = left rail with rooms / DMs.
+  // Call panel = right rail (only present while a call is active).
+  const sidebarResize = useResizableWidth({
+    storageKey: "chat:sidebar",
+    defaultWidth: 256, // matches the original w-64
+    min: 200,
+    max: 420,
+  });
+  const callPanelResize = useResizableWidth({
+    storageKey: "chat:call",
+    defaultWidth: 440, // matches the original sm:w-[440px]
+    min: 320,
+    max: 720,
+    side: "right",
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const createMenuRef = useRef<HTMLDivElement>(null);
@@ -214,6 +235,20 @@ export function ChatClient({
     return () => clearInterval(id);
   }, [refreshRooms]);
 
+  // Mobile/tablet Safari throttles setInterval aggressively in background tabs;
+  // Kathrin sieht dann die Video-Einladung erst sehr spät. Beim Zurück zur App synchronisieren.
+  useEffect(() => {
+    const sync = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshRooms();
+      const id = activeRoomId;
+      const type = activeTypeRef.current;
+      if (id && type) void refreshMessages(id, type, false);
+    };
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, [activeRoomId, refreshMessages, refreshRooms]);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -274,6 +309,8 @@ export function ChatClient({
       body: JSON.stringify({
         roomId: activeRoom.id,
         roomName: activeRoom.name,
+        roomType: activeRoom.type,
+        portalWorkspace: workspace,
         postInvite: true,
       }),
     });
@@ -286,7 +323,7 @@ export function ChatClient({
     } else {
       alert("Call konnte nicht gestartet werden.");
     }
-  }, [activeRoom, refreshMessages]);
+  }, [activeRoom, refreshMessages, workspace]);
 
   const startDM = useCallback(
     async (username: string) => {
@@ -366,7 +403,10 @@ export function ChatClient({
   return (
     <div className="flex h-full bg-bg-base text-text-primary text-[13px] overflow-hidden">
       {/* ─── Sidebar: Rooms ─────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col">
+      <aside
+        className="shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col"
+        style={{ width: sidebarResize.width }}
+      >
         <div className="p-3 border-b border-stroke-1 flex items-center gap-2">
           <div className="relative flex-1">
             <Search
@@ -480,6 +520,11 @@ export function ChatClient({
           </button>
         </div>
       </aside>
+
+      <ResizeHandle
+        onPointerDown={sidebarResize.startDrag}
+        ariaLabel="Seitenleiste verschieben"
+      />
 
       {/* ─── Main Pane ──────────────────────────────────────────── */}
       <section className="flex-1 flex flex-col min-w-0 bg-bg-base">
@@ -707,13 +752,20 @@ export function ChatClient({
 
       {/* ─── Call Panel (right) ─────────────────────────────────── */}
       {callPanelOpen && callLink && (
-        <CallPanel
-          link={callLink}
-          onClose={() => {
-            setCallPanelOpen(false);
-            setCallLink(null);
-          }}
-        />
+        <>
+          <ResizeHandle
+            onPointerDown={callPanelResize.startDrag}
+            ariaLabel="Anrufseite verschieben"
+          />
+          <CallPanel
+            link={callLink}
+            width={callPanelResize.width}
+            onClose={() => {
+              setCallPanelOpen(false);
+              setCallLink(null);
+            }}
+          />
+        </>
       )}
 
       {/* ─── New Chat Modal ─────────────────────────────────────── */}
@@ -1120,7 +1172,13 @@ function jitsiRoomFromInviteLink(href: string): { domain: string; room: string; 
   return { domain: u.hostname, room, origin: u.origin };
 }
 
-type JitsiApi = { dispose: () => void };
+type JitsiApi = {
+  dispose: () => void;
+  getIFrame?: () => HTMLIFrameElement | null;
+};
+
+const JITSI_IFRAME_ALLOW =
+  "camera *; microphone *; display-capture *; clipboard-write *; autoplay; fullscreen; web-share";
 
 const jitsiScriptByOrigin = new Map<string, Promise<void>>();
 
@@ -1146,11 +1204,311 @@ function loadJitsiExternalApi(origin: string): Promise<void> {
   return p;
 }
 
-function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
+/**
+ * Best-effort permission probe that *avoids* re-prompting the user when the
+ * browser already remembers the grant. We try the Permissions API first
+ * (no UI at all if already "granted") and only fall back to a real
+ * `getUserMedia` probe when the state is unknown or "prompt".
+ *
+ * History: this used to only check `audio` and skip cam entirely, which
+ * gave the user a green light at panel-open and *then* failed silently
+ * when Jitsi enabled the camera mid-call. We now check mic AND camera
+ * but treat camera-denied as a non-fatal warning (the call works
+ * audio-only) — only mic-denied blocks join.
+ *
+ * Returning early on "granted" for both is what kills the
+ * "Erlauben?"-popup that used to appear on every chat-spawned call.
+ */
+async function probeMediaPermission(): Promise<
+  | { ok: true; cameraOk: boolean }
+  | { ok: false; reason: keyof typeof PREFLIGHT_MESSAGES }
+> {
+  if (typeof window === "undefined") return { ok: false, reason: "unsupported" };
+  if (typeof window.isSecureContext === "boolean" && !window.isSecureContext) {
+    return { ok: false, reason: "insecure" };
+  }
+  const md = navigator.mediaDevices;
+  if (!md || typeof md.getUserMedia !== "function") {
+    return { ok: false, reason: "unsupported" };
+  }
+
+  // Permissions API: if mic is already granted, skip the silent probe so we
+  // don't double-open the device (some Linux audio stacks misbehave on this).
+  let micState: PermissionState | null = null;
+  let camState: PermissionState | null = null;
+  try {
+    const perms = (
+      navigator as unknown as {
+        permissions?: { query?: (q: { name: string }) => Promise<PermissionStatus> };
+      }
+    ).permissions;
+    if (perms?.query) {
+      const [mic, cam] = await Promise.all([
+        perms.query({ name: "microphone" }).catch(() => null),
+        perms.query({ name: "camera" }).catch(() => null),
+      ]);
+      micState = mic?.state ?? null;
+      camState = cam?.state ?? null;
+    }
+  } catch {
+    // Permissions API not available — fall through to active probe.
+  }
+
+  if (micState === "denied") return { ok: false, reason: "denied" };
+  if (micState === "granted") {
+    return { ok: true, cameraOk: camState !== "denied" };
+  }
+
+  // Active probe — mic is required, cam is best-effort. We request both
+  // in one shot so the user gets a single OS prompt rather than two.
+  try {
+    const stream = await md.getUserMedia({ audio: true, video: true });
+    stream.getTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch {
+        // ignore
+      }
+    });
+    return { ok: true, cameraOk: true };
+  } catch (firstErr) {
+    // Cam-only failure — retry audio-only so the user can still join the
+    // call without a camera. Mic refusal blocks the call.
+    try {
+      const audioStream = await md.getUserMedia({ audio: true, video: false });
+      audioStream.getTracks().forEach((t) => {
+        try {
+          t.stop();
+        } catch {
+          // ignore
+        }
+      });
+      return { ok: true, cameraOk: false };
+    } catch (e) {
+      const name =
+        e && typeof e === "object" && "name" in e
+          ? String((e as { name?: unknown }).name)
+          : "";
+      void firstErr;
+      switch (name) {
+        case "NotAllowedError":
+        case "SecurityError":
+          return { ok: false, reason: "denied" };
+        case "NotFoundError":
+        case "OverconstrainedError":
+          return { ok: false, reason: "no-device" };
+        case "NotReadableError":
+        case "AbortError":
+          return { ok: false, reason: "in-use" };
+        default:
+          return { ok: false, reason: "unknown" };
+      }
+    }
+  }
+}
+
+/**
+ * Pre-join quality probe. Runs once per call open AFTER the permission
+ * preflight succeeded — re-uses the granted mic permission, opens an
+ * audio-only stream for ~1.1 s, and samples peak levels via an
+ * AudioContext analyser. Pings the Jitsi origin in parallel for a rough
+ * RTT to surface "your network looks slow"-style hints before the user
+ * burns 5 seconds wondering why audio is choppy.
+ *
+ * `onTick` lets the UI render a live mic-level meter while the probe
+ * runs; final aggregated values are returned for badge display once the
+ * probe is done.
+ */
+async function quickQualityProbe(
+  origin: string,
+  onTick?: (peak: number) => void,
+): Promise<{ micPeak: number; networkMs: number | null }> {
+  let micPeak = 0;
+  let networkMs: number | null = null;
+
+  // RTT probe in parallel with the mic sample so total wall-time stays
+  // around 1.2 s on a fast connection.
+  const netPromise = (async () => {
+    try {
+      const t0 = performance.now();
+      // `no-cors` so cross-origin Jitsi domains don't fail CORS preflight;
+      // we only care about timing, not the body. HEAD is cheaper than GET.
+      await fetch(`${origin}/`, {
+        method: "HEAD",
+        cache: "no-store",
+        mode: "no-cors",
+      });
+      networkMs = Math.max(1, Math.round(performance.now() - t0));
+    } catch {
+      networkMs = null;
+    }
+  })();
+
+  try {
+    const md = navigator.mediaDevices;
+    if (md && typeof md.getUserMedia === "function") {
+      const stream = await md.getUserMedia({ audio: true, video: false });
+      try {
+        const Ctx =
+          (window as unknown as { AudioContext?: typeof AudioContext })
+            .AudioContext ??
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (Ctx) {
+          const ctx = new Ctx();
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 1024;
+          src.connect(analyser);
+          const buf = new Uint8Array(analyser.fftSize);
+          const start = performance.now();
+          while (performance.now() - start < 1100) {
+            analyser.getByteTimeDomainData(buf);
+            let peak = 0;
+            for (let i = 0; i < buf.length; i++) {
+              const v = Math.abs(buf[i] - 128);
+              if (v > peak) peak = v;
+            }
+            const norm = Math.min(1, peak / 64);
+            if (norm > micPeak) micPeak = norm;
+            onTick?.(norm);
+            await new Promise((r) => setTimeout(r, 80));
+          }
+          try {
+            src.disconnect();
+          } catch {
+            // ignore
+          }
+          try {
+            await ctx.close();
+          } catch {
+            // ignore
+          }
+        }
+      } finally {
+        stream.getTracks().forEach((t) => {
+          try {
+            t.stop();
+          } catch {
+            // ignore
+          }
+        });
+      }
+    }
+  } catch {
+    // Quality probe is best-effort — never block the call on it.
+  }
+
+  await netPromise;
+  return { micPeak, networkMs };
+}
+
+function MicMeter({ level }: { level: number }) {
+  // 8 bars; light up proportionally to the live peak. Colour ramps from
+  // grey (silent) → green (speaking) → amber (clipping). Width is fixed
+  // so the badge doesn't reflow as bars come and go.
+  const bars = 8;
+  const lit = Math.round(Math.min(1, Math.max(0, level)) * bars);
+  return (
+    <div className="flex items-end gap-[2px] w-[52px] h-3">
+      {Array.from({ length: bars }, (_, i) => {
+        const active = i < lit;
+        const heightPct = 30 + (i / (bars - 1)) * 70;
+        const colour = !active
+          ? "bg-stroke-1"
+          : i < bars * 0.7
+            ? "bg-emerald-400"
+            : "bg-amber-400";
+        return (
+          <span
+            key={i}
+            className={`w-[4px] rounded-sm transition-colors ${colour}`}
+            style={{ height: `${heightPct}%` }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function networkLabel(ms: number | null): { text: string; tone: "ok" | "warn" | "bad" | "unknown" } {
+  if (ms == null) return { text: "—", tone: "unknown" };
+  if (ms < 120) return { text: `${ms} ms`, tone: "ok" };
+  if (ms < 350) return { text: `${ms} ms`, tone: "warn" };
+  return { text: `${ms} ms`, tone: "bad" };
+}
+
+function CallQualityPreview({
+  liveMicPeak,
+  quality,
+}: {
+  liveMicPeak: number;
+  quality: { micPeak: number; networkMs: number | null } | null;
+}) {
+  // While the probe is still running, mirror the live peak so the bars
+  // dance as the user speaks. Once the probe finishes we keep showing
+  // the captured peak — the mic stream has been released by then so a
+  // continuously updating meter would lie.
+  const displayedPeak = quality ? quality.micPeak : liveMicPeak;
+  const net = networkLabel(quality?.networkMs ?? null);
+  const micQuiet = quality != null && quality.micPeak < 0.05;
+  return (
+    <div className="flex min-w-[240px] items-center gap-3 rounded-md border border-stroke-1 bg-bg-elevated/85 px-3 py-2 text-[11px] text-text-secondary backdrop-blur">
+      <div className="flex items-center gap-1.5">
+        <Mic
+          size={12}
+          className={micQuiet ? "text-amber-400" : "text-text-tertiary"}
+        />
+        <MicMeter level={displayedPeak} />
+      </div>
+      <div className="h-4 w-px bg-stroke-1" />
+      <div className="flex items-center gap-1.5">
+        <Wifi
+          size={12}
+          className={
+            net.tone === "ok"
+              ? "text-emerald-400"
+              : net.tone === "warn"
+                ? "text-amber-400"
+                : net.tone === "bad"
+                  ? "text-rose-400"
+                  : "text-text-tertiary"
+          }
+        />
+        <span className="tabular-nums">{net.text}</span>
+      </div>
+      {micQuiet && (
+        <span className="ml-1 text-[10px] text-amber-300">
+          Mikrofon still
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CallPanel({
+  link,
+  width,
+  onClose,
+}: {
+  link: string;
+  width: number;
+  onClose: () => void;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<JitsiApi | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "iframe-fallback" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "iframe-fallback" | "error" | "perm-block">("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [permIssue, setPermIssue] = useState<keyof typeof PREFLIGHT_MESSAGES | null>(null);
+  const [permRetry, setPermRetry] = useState(0);
+  // Pre-join quality preview. `liveMicPeak` updates ~12×/sec while the
+  // probe runs so users see the meter respond when they speak; the final
+  // `quality` snapshot is what we display once the probe completes.
+  const [liveMicPeak, setLiveMicPeak] = useState(0);
+  const [quality, setQuality] = useState<{ micPeak: number; networkMs: number | null } | null>(null);
+  // Jitsi connection-quality (0–100) once the call is live. Kept simple:
+  // a single number; the badge maps it to good/ok/poor.
+  const [liveConnQuality, setLiveConnQuality] = useState<number | null>(null);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -1173,8 +1531,44 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
     let cancelled = false;
     setStatus("loading");
     setErrMsg(null);
+    setPermIssue(null);
+    setLiveMicPeak(0);
+    setQuality(null);
+    setLiveConnQuality(null);
 
     const run = async () => {
+      // 1) Permission preflight — checks BOTH mic + cam in one OS prompt.
+      //    Mic refusal blocks the call (no audio = no meeting). Cam refusal
+      //    is non-fatal — we just start with `startWithVideoMuted: true`.
+      const perm = await probeMediaPermission();
+      if (cancelled) return;
+      if (!perm.ok) {
+        setPermIssue(perm.reason);
+        // Hard block when the user denied mic — Jitsi would just spin and
+        // throw NotAllowedError inside the iframe with no user-facing
+        // recovery. We render a clear retry UI instead.
+        if (perm.reason === "denied" || perm.reason === "no-device" || perm.reason === "insecure") {
+          setStatus("perm-block");
+          return;
+        }
+      }
+      const startWithVideoMuted = !perm.ok || !("cameraOk" in perm) || !perm.cameraOk;
+
+      // 1b) Quality preview — runs only on the happy path so a denied user
+      //     doesn't see a confusing "checking mic" spinner. The promise
+      //     races with the Jitsi script load below; we don't await here so
+      //     the call still launches as fast as possible. The UI updates
+      //     in-place once the probe finishes (~1.2 s).
+      void quickQualityProbe(origin, (peak) => {
+        if (!cancelled) setLiveMicPeak(peak);
+      })
+        .then((q) => {
+          if (!cancelled) setQuality(q);
+        })
+        .catch(() => {
+          // Probe is best-effort — silent failure is fine.
+        });
+
       try {
         await loadJitsiExternalApi(origin);
         if (cancelled) return;
@@ -1194,10 +1588,19 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
           height: "100%",
           lang: "de",
           configOverwrite: {
-            // Direkt in den geplanten Raum — kein willkürlicher Zufallsname auf der Startseite
+            // Drop the prejoin form: we already have the grant from the
+            // preflight above, and the prejoin step was the main reason
+            // mic permission felt "tedious" from the chat — every call
+            // re-asked. Joining straight in matches the dedicated /calls
+            // page behaviour.
             subject: "Kineo360 Besprechung",
             disableDeepLinking: true,
-            prejoinConfig: { enabled: true },
+            prejoinConfig: { enabled: false },
+            prejoinPageEnabled: false, // legacy name on older Jitsi builds
+            // Mute video when the camera permission failed or we couldn't
+            // probe — Jitsi otherwise renders a permission error overlay.
+            startWithAudioMuted: false,
+            startWithVideoMuted,
             hideDisplayName: false,
           },
           interfaceConfigOverwrite: {
@@ -1212,18 +1615,56 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
           },
         });
         apiRef.current = api;
+
+        // 2) Critical fix: JitsiMeetExternalAPI builds an iframe internally
+        //    *without* an `allow` attribute. Chrome/Firefox then reject
+        //    getUserMedia inside that iframe even when our top-level
+        //    Permissions-Policy delegates to meet.kineo360.work. Patch the
+        //    attribute as soon as the iframe exists (before Jitsi's first
+        //    track request).
+        try {
+          const ifr = api.getIFrame?.();
+          if (ifr) {
+            ifr.setAttribute("allow", JITSI_IFRAME_ALLOW);
+            ifr.setAttribute("allowfullscreen", "true");
+          }
+        } catch {
+          // ignore — fallback path will handle the rare case the API
+          // doesn't expose getIFrame.
+        }
+
+        // 2b) Wire connection-quality stream so users see jitter/loss
+        //     without opening Jitsi's stats overlay. The event fires every
+        //     ~5 s with a quality score (0–100); we display a tiny dot
+        //     coloured by good/ok/poor.
+        try {
+          const apiAny = api as unknown as {
+            addListener?: (
+              evt: string,
+              cb: (data: { connectionQuality?: number; quality?: number }) => void,
+            ) => void;
+          };
+          apiAny.addListener?.("connectionQuality", (data) => {
+            if (cancelled) return;
+            const c = Number(data?.connectionQuality ?? data?.quality ?? NaN);
+            if (Number.isFinite(c)) setLiveConnQuality(c);
+          });
+        } catch {
+          // ignore — listener is purely cosmetic.
+        }
+
         if (!cancelled) setStatus("ready");
       } catch (e) {
         if (cancelled) return;
-        // Fallback: klassisches iframe mit gleichem Ziel-URL
+        // Fallback: klassisches iframe mit gleichem Ziel-URL — hier ist
+        // das `allow`-Attribut bereits explizit gesetzt.
         setStatus("iframe-fallback");
         el.innerHTML = "";
         const ifr = document.createElement("iframe");
         ifr.src = link;
         ifr.className = "w-full h-full min-h-[280px] border-0";
         ifr.title = "Video-Anruf";
-        ifr.allow =
-          "camera *; microphone *; display-capture *; clipboard-write *; autoplay; fullscreen; web-share";
+        ifr.allow = JITSI_IFRAME_ALLOW;
         ifr.setAttribute("allowFullScreen", "");
         el.appendChild(ifr);
         setErrMsg(
@@ -1245,10 +1686,13 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
       apiRef.current = null;
       if (el) el.innerHTML = "";
     };
-  }, [link]);
+  }, [link, permRetry]);
 
   return (
-    <aside className="w-[min(100%,480px)] sm:w-[440px] shrink-0 border-l border-stroke-1 bg-bg-chrome flex flex-col shadow-2xl">
+    <aside
+      className="shrink-0 border-l border-stroke-1 bg-bg-chrome flex flex-col shadow-2xl"
+      style={{ width }}
+    >
       <div className="h-1 bg-gradient-to-r from-[#4f52b2] to-[#5b5fc7] shrink-0" aria-hidden />
       <div className="px-3 py-2.5 border-b border-stroke-1 flex items-center gap-2 bg-bg-elevated">
         <div className="w-8 h-8 rounded bg-[#5b5fc7]/20 flex items-center justify-center shrink-0">
@@ -1261,9 +1705,33 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
           <p className="text-[10px] text-text-tertiary truncate">
             {status === "loading"
               ? "Starte Anruf …"
-              : "Kamera & Mikro im Browser-Dialog zulassen"}
+              : status === "perm-block"
+                ? "Mikrofon &amp; Kamera blockiert"
+                : permIssue === "no-device"
+                  ? "Kein Mikrofon erkannt"
+                  : permIssue
+                    ? "Audio läuft – Kamera nicht freigegeben"
+                    : "Audio &amp; Kamera bereit"}
           </p>
         </div>
+        {status === "ready" && liveConnQuality != null && (
+          <span
+            className="flex items-center gap-1 rounded-full border border-stroke-1 bg-bg-base/60 px-1.5 py-0.5 text-[10px] text-text-tertiary"
+            title={`Verbindungsqualität: ${liveConnQuality}/100`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                liveConnQuality >= 70
+                  ? "bg-emerald-400"
+                  : liveConnQuality >= 35
+                    ? "bg-amber-400"
+                    : "bg-rose-400"
+              }`}
+              aria-hidden
+            />
+            {liveConnQuality >= 70 ? "Gut" : liveConnQuality >= 35 ? "OK" : "Schwach"}
+          </span>
+        )}
         <a
           href={link}
           target="_blank"
@@ -1282,6 +1750,11 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
           <X size={15} />
         </button>
       </div>
+      {permIssue && (
+        <div className="px-3 py-1.5 text-[11px] text-amber-200 bg-amber-500/15 border-b border-amber-500/30">
+          {PREFLIGHT_MESSAGES[permIssue]}
+        </div>
+      )}
       {errMsg && status !== "loading" && (
         <p className="px-2 py-1 text-[10px] text-text-tertiary border-b border-stroke-1 bg-bg-base/80">
           {errMsg}
@@ -1292,8 +1765,54 @@ function CallPanel({ link, onClose }: { link: string; onClose: () => void }) {
       )}
       <div className="flex-1 min-h-0 bg-[#11151a] relative">
         {status === "loading" && (
-          <div className="absolute inset-0 flex items-center justify-center z-10 bg-bg-chrome/90">
-            <Loader2 className="w-6 h-6 text-[#5b5fc7] spin" />
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-bg-chrome/90">
+            <Loader2 className="h-6 w-6 text-[#5b5fc7] spin" />
+            <CallQualityPreview
+              liveMicPeak={liveMicPeak}
+              quality={quality}
+            />
+          </div>
+        )}
+        {status === "perm-block" && permIssue && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg-chrome/95 p-4">
+            <div className="max-w-sm rounded-lg border border-stroke-1 bg-bg-elevated p-4 text-center shadow-xl">
+              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15">
+                <Phone size={18} className="text-amber-400" />
+              </div>
+              <h4 className="mb-1 text-sm font-semibold text-text-primary">
+                Mikrofon &amp; Kamera freigeben
+              </h4>
+              <p className="mb-3 text-[12px] leading-relaxed text-text-secondary">
+                {PREFLIGHT_MESSAGES[permIssue]}
+              </p>
+              <p className="mb-3 text-[11px] leading-relaxed text-text-tertiary">
+                In der Adressleiste auf das Schloss-Symbol klicken, Mikrofon
+                &amp; Kamera erlauben, dann hier neu starten.
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatus("loading");
+                    setPermIssue(null);
+                    setPermRetry((n) => n + 1);
+                  }}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#5b5fc7]/40 bg-[#5b5fc7]/15 px-3 text-[12px] font-medium text-[#a5a8e6] transition-colors hover:bg-[#5b5fc7]/25"
+                >
+                  <Loader2 size={13} />
+                  Erneut versuchen
+                </button>
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-stroke-1 px-3 text-[12px] text-text-secondary transition-colors hover:bg-bg-overlay"
+                >
+                  <Maximize2 size={13} />
+                  In neuem Tab öffnen
+                </a>
+              </div>
+            </div>
           </div>
         )}
         <div
@@ -1923,7 +2442,7 @@ function MembersTab({
             {canEdit && !m.isOwner && (
               <button
                 onClick={() => void remove(m.username)}
-                className="p-1.5 rounded text-text-tertiary hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
+                className="p-1.5 rounded text-text-tertiary hover:text-red-400 hover:bg-red-500/10 opacity-[0.52] group-hover:opacity-100 transition-opacity"
                 title={`@${m.username} entfernen`}
               >
                 <UserMinus size={13} />

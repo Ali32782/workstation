@@ -12,7 +12,7 @@
 #                   rocketchat-corehub, rocketchat-medtheris,
 #                   gitea, zammad-medtheris, twenty-corehub
 #     Each gets a 'groups' protocol mapper so JWTs carry group memberships.
-#   - Migrates internal users (ali, johannes, diana, richard) with group memberships
+#   - Migrates internal users (ali, johannes, contractors, …) with group memberships
 #
 # Outputs:
 #   /tmp/main-secrets.env   — all generated client secrets, ready for app configs
@@ -49,11 +49,13 @@ CLIENTS=(
 )
 
 # Internal users (username|email|firstName|lastName|groups,comma-separated)
+# Für neue Contractor siehe docs/playbooks/COREHUB-CONTRACTOR-ONBOARDING.md .
 USERS=(
   "ali|ali.peters@kineo.swiss|Ali|Peters|/kineo/executives,/corehub/dev-ops,/medtheris/sales"
   "johannes|johannes@corehub.kineo360.work|Johannes Ali|Peters|/corehub/product-owner,/kineo/leadership"
-  "diana|diana@corehub.kineo360.work|Diana|Schneider|/corehub/full-stack"
-  "richard|richard@corehub.kineo360.work|Richard|Bauer|/corehub/back-end"
+  "diana.matushkina|diana.matushkina@corehub.kineo360.work|Diana|Matushkina|/corehub/product-owner,/medtheris/onboarding"
+  "richard.bilous|richard.bilous@corehub.kineo360.work|Richard|Bilous|/corehub/back-end,/medtheris/onboarding"
+  "daria.kyrychenko|daria.kyrychenko@corehub.kineo360.work|Daria|Kyrychenko|/corehub/ui-ux,/medtheris/onboarding"
 )
 
 # --- helpers --------------------------------------------------------------

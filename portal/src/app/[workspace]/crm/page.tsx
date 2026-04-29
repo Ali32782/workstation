@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { isAdminUsername } from "@/lib/admin-allowlist";
@@ -26,11 +27,19 @@ export default async function CrmPage({
     !!process.env.SCRAPER_RUNNER_TOKEN;
 
   return (
-    <CrmClient
-      workspaceId={workspace.id as WorkspaceId}
-      workspaceName={workspace.name}
-      accent={workspace.accent}
-      scraperAvailable={scraperAvailable}
-    />
+    <Suspense
+      fallback={
+        <div className="flex-1 flex items-center justify-center min-h-[40vh] p-8 text-text-tertiary text-[13px]">
+          CRM wird geladen…
+        </div>
+      }
+    >
+      <CrmClient
+        workspaceId={workspace.id as WorkspaceId}
+        workspaceName={workspace.name}
+        accent={workspace.accent}
+        scraperAvailable={scraperAvailable}
+      />
+    </Suspense>
   );
 }

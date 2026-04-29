@@ -1408,6 +1408,373 @@ export async function updateEmailAddress(
   };
 }
 
+/* ─────────────────────────────────────────────────────────────────────── */
+/*           Settings mutations: create/delete address + channel           */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Create a new sender (email address) in Zammad. Optionally bind it to
+ * an existing email channel via `channelId`. Tenant safety: the caller
+ * is expected to guard create-without-channel by other means (we can't
+ * verify tenant ownership before the address is wired up), but if a
+ * `channelId` is supplied we verify it belongs to the tenant first.
+ */
+export async function createEmailAddress(
+  tenant: HelpdeskTenantConfig,
+  input: { name: string; email: string; channelId?: number | null },
+): Promise<HelpdeskEmailAddressSetting> {
+  if (input.channelId != null) {
+    await ensureChannelInTenant(tenant, input.channelId);
+  }
+  const created = await fetchJson<{
+    id: number;
+    name: string;
+    email: string;
+    channel_id: number | null;
+    active: boolean;
+  }>(zammadFetch, "zammad", "/api/v1/email_addresses", {
+    method: "POST",
+    json: {
+      name: input.name,
+      email: input.email,
+      active: true,
+      channel_id: input.channelId ?? null,
+    },
+  });
+  invalidateMetaCache(tenant.workspace);
+  return {
+    id: created.id,
+    name: created.name,
+    email: created.email,
+    channelId: created.channel_id,
+    active: created.active,
+    // The freshly-created address is by definition not yet wired into a
+    // tenant group. Caller can patch a group's emailAddressId in a
+    // follow-up call to make it inUseByTenant.
+    inUseByTenant: false,
+  };
+}
+
+export async function deleteEmailAddress(
+  tenant: HelpdeskTenantConfig,
+  emailAddressId: number,
+): Promise<void> {
+  // Only allow deleting an address that's in this tenant's surface.
+  const settings = await getHelpdeskSettings(tenant);
+  const ea = settings.emailAddresses.find((e) => e.id === emailAddressId);
+  if (!ea) {
+    throw new Error("Absender-Adresse nicht gefunden.");
+  }
+  if (!ea.inUseByTenant) {
+    // Allow deleting an address that's *not* in use by anyone (orphaned)
+    // — Zammad will return an error if it's still referenced. But forbid
+    // deleting an address actively used by a different tenant.
+    const allEmails = await fetchJson<
+      { id: number; channel_id: number | null }[]
+    >(zammadFetch, "zammad", "/api/v1/email_addresses");
+    const found = allEmails.find((x) => x.id === emailAddressId);
+    if (found?.channel_id != null) {
+      throw new Error(
+        "Absender-Adresse gehört nicht zu diesem Workspace.",
+      );
+    }
+  }
+  await fetchJson(
+    zammadFetch,
+    "zammad",
+    `/api/v1/email_addresses/${emailAddressId}`,
+    { method: "DELETE" },
+  );
+  invalidateMetaCache(tenant.workspace);
+}
+
+/** IMAP/SMTP form input that the wizard collects from the operator. */
+export type EmailChannelInput = {
+  /** Group id this channel will route inbound mail into. */
+  groupId: number;
+  inbound: {
+    adapter: "imap" | "pop3";
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    /** "off" | "ssl" | "starttls" — Zammad calls "ssl" "ssl=true". */
+    ssl: "off" | "ssl" | "starttls";
+    folder?: string;
+    /** Mark messages as read after fetching. */
+    keepOnServer?: boolean;
+  };
+  outbound: {
+    adapter: "smtp" | "sendmail";
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    ssl: "off" | "ssl" | "starttls";
+  };
+};
+
+function buildChannelOptions(input: EmailChannelInput): {
+  inbound: { adapter: string; options: Record<string, unknown> };
+  outbound: { adapter: string; options: Record<string, unknown> };
+} {
+  return {
+    inbound: {
+      adapter: input.inbound.adapter,
+      options: {
+        host: input.inbound.host,
+        port: input.inbound.port,
+        user: input.inbound.user,
+        password: input.inbound.password,
+        ssl: input.inbound.ssl === "ssl",
+        ssl_verify: true,
+        folder: input.inbound.folder ?? "INBOX",
+        keep_on_server: !!input.inbound.keepOnServer,
+      },
+    },
+    outbound: {
+      adapter: input.outbound.adapter,
+      options:
+        input.outbound.adapter === "sendmail"
+          ? {}
+          : {
+              host: input.outbound.host,
+              port: input.outbound.port,
+              user: input.outbound.user,
+              password: input.outbound.password,
+              ssl_verify: true,
+              start_tls: input.outbound.ssl === "starttls",
+              ssl: input.outbound.ssl === "ssl",
+            },
+    },
+  };
+}
+
+/**
+ * Probe IMAP credentials before persisting. Zammad exposes
+ * `/api/v1/channels_email_inbound` and `_outbound` for this exact use
+ * case; both return `{ result: "ok" }` or `{ result: "invalid",
+ * message_human: "..." }`. We treat non-ok as a normal error so the
+ * UI can show the underlying server message.
+ */
+export async function verifyEmailInbound(
+  input: EmailChannelInput["inbound"],
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  type Resp = { result?: string; message_human?: string; message?: string };
+  try {
+    const resp = await fetchJson<Resp>(
+      zammadFetch,
+      "zammad",
+      "/api/v1/channels_email_inbound",
+      {
+        method: "POST",
+        json: {
+          adapter: input.adapter,
+          options: {
+            host: input.host,
+            port: input.port,
+            user: input.user,
+            password: input.password,
+            ssl: input.ssl === "ssl",
+            ssl_verify: true,
+            folder: input.folder ?? "INBOX",
+            keep_on_server: !!input.keepOnServer,
+          },
+        },
+      },
+    );
+    if (resp.result === "ok") return { ok: true };
+    return {
+      ok: false,
+      message: resp.message_human ?? resp.message ?? "Verbindung fehlgeschlagen",
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function verifyEmailOutbound(
+  input: EmailChannelInput["outbound"],
+  fromEmail: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (input.adapter === "sendmail") return { ok: true };
+  type Resp = { result?: string; message_human?: string; message?: string };
+  try {
+    const resp = await fetchJson<Resp>(
+      zammadFetch,
+      "zammad",
+      "/api/v1/channels_email_outbound",
+      {
+        method: "POST",
+        json: {
+          adapter: input.adapter,
+          options: {
+            host: input.host,
+            port: input.port,
+            user: input.user,
+            password: input.password,
+            ssl_verify: true,
+            start_tls: input.ssl === "starttls",
+            ssl: input.ssl === "ssl",
+          },
+          email: fromEmail,
+        },
+      },
+    );
+    if (resp.result === "ok") return { ok: true };
+    return {
+      ok: false,
+      message: resp.message_human ?? resp.message ?? "SMTP-Verbindung fehlgeschlagen",
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Create an email channel with both inbound (IMAP/POP3) and outbound
+ * (SMTP) settings. Tenant guard: the channel must be tied to a group
+ * that belongs to the calling tenant — otherwise we'd let one tenant
+ * inject mail-flow into another's queue.
+ */
+export async function createEmailChannel(
+  tenant: HelpdeskTenantConfig,
+  input: EmailChannelInput,
+): Promise<HelpdeskChannelSetting> {
+  await ensureGroupInTenant(tenant, input.groupId);
+  const opts = buildChannelOptions(input);
+  const created = await fetchJson<{
+    id: number;
+    area: string;
+    active: boolean;
+    options?: Record<string, unknown>;
+  }>(zammadFetch, "zammad", "/api/v1/channels", {
+    method: "POST",
+    json: {
+      area: "Email::Account",
+      group_id: input.groupId,
+      active: true,
+      options: opts,
+    },
+  });
+  invalidateMetaCache(tenant.workspace);
+  return {
+    id: created.id,
+    area: created.area,
+    active: created.active,
+    options: created.options ?? {},
+  };
+}
+
+export async function updateEmailChannel(
+  tenant: HelpdeskTenantConfig,
+  channelId: number,
+  patch: Partial<EmailChannelInput> & {
+    active?: boolean;
+  },
+): Promise<HelpdeskChannelSetting> {
+  await ensureChannelInTenant(tenant, channelId);
+
+  // Read current options so a partial patch (e.g., only outbound) doesn't
+  // wipe inbound settings.
+  const current = await fetchJson<{
+    id: number;
+    area: string;
+    active: boolean;
+    group_id?: number | null;
+    options?: Record<string, unknown>;
+  }>(zammadFetch, "zammad", `/api/v1/channels/${channelId}`);
+  const currentOpts = (current.options ?? {}) as Record<string, unknown>;
+
+  const merged: Record<string, unknown> = { ...currentOpts };
+  if (patch.inbound) {
+    merged.inbound = buildChannelOptions({
+      ...patch,
+      groupId: patch.groupId ?? current.group_id ?? 0,
+      inbound: patch.inbound,
+      outbound:
+        patch.outbound ??
+        ({
+          adapter: "smtp",
+          host: "",
+          port: 0,
+          user: "",
+          password: "",
+          ssl: "off",
+        } satisfies EmailChannelInput["outbound"]),
+    }).inbound;
+  }
+  if (patch.outbound) {
+    merged.outbound = buildChannelOptions({
+      ...patch,
+      groupId: patch.groupId ?? current.group_id ?? 0,
+      inbound:
+        patch.inbound ??
+        ({
+          adapter: "imap",
+          host: "",
+          port: 0,
+          user: "",
+          password: "",
+          ssl: "off",
+        } satisfies EmailChannelInput["inbound"]),
+      outbound: patch.outbound,
+    }).outbound;
+  }
+
+  const updated = await fetchJson<{
+    id: number;
+    area: string;
+    active: boolean;
+    options?: Record<string, unknown>;
+  }>(zammadFetch, "zammad", `/api/v1/channels/${channelId}`, {
+    method: "PUT",
+    json: {
+      ...(patch.active !== undefined ? { active: patch.active } : {}),
+      ...(patch.groupId !== undefined ? { group_id: patch.groupId } : {}),
+      options: merged,
+    },
+  });
+  invalidateMetaCache(tenant.workspace);
+  return {
+    id: updated.id,
+    area: updated.area,
+    active: updated.active,
+    options: updated.options ?? {},
+  };
+}
+
+export async function deleteEmailChannel(
+  tenant: HelpdeskTenantConfig,
+  channelId: number,
+): Promise<void> {
+  await ensureChannelInTenant(tenant, channelId);
+  await fetchJson(zammadFetch, "zammad", `/api/v1/channels/${channelId}`, {
+    method: "DELETE",
+  });
+  invalidateMetaCache(tenant.workspace);
+}
+
+/**
+ * Tenant guard for channel mutations. A channel "belongs to a tenant"
+ * iff it's bound (via Zammad's `group_id`) to a tenant group.
+ */
+async function ensureChannelInTenant(
+  tenant: HelpdeskTenantConfig,
+  channelId: number,
+): Promise<void> {
+  const ch = await fetchJson<{
+    id: number;
+    group_id?: number | null;
+    options?: Record<string, unknown>;
+  }>(zammadFetch, "zammad", `/api/v1/channels/${channelId}`);
+  if (!ch.group_id) {
+    throw new Error("Kanal ist keiner Gruppe zugeordnet — kein Tenant-Bezug.");
+  }
+  // Reuse the existing group-in-tenant probe.
+  await ensureGroupInTenant(tenant, ch.group_id);
+}
+
 /**
  * Members of a single Zammad group. Zammad models membership as a
  * per-user `group_ids` map: `{ "<group_id>": ["full","read","change", ...] }`.

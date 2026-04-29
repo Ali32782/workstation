@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { resolveHelpdeskSession } from "@/lib/helpdesk/session";
 import {
+  deleteEmailAddress,
   getHelpdeskSettings,
   updateEmailAddress,
 } from "@/lib/helpdesk/zammad";
@@ -67,6 +68,38 @@ export async function PATCH(
     return NextResponse.json({
       emailAddress: { ...updated, inUseByTenant: true },
     });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 502 },
+    );
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const ws = req.nextUrl.searchParams.get("ws");
+  const r = await resolveHelpdeskSession(ws);
+  if (r.kind === "unauthenticated") {
+    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  }
+  if (r.kind === "forbidden") {
+    return NextResponse.json({ error: r.message }, { status: 403 });
+  }
+  if (r.kind === "not_configured") {
+    return NextResponse.json({ error: r.message }, { status: 503 });
+  }
+  const { id: idParam } = await params;
+  const id = Number(idParam);
+  if (!Number.isFinite(id) || id <= 0) {
+    return NextResponse.json({ error: "ungültige id" }, { status: 400 });
+  }
+
+  try {
+    await deleteEmailAddress(r.session.tenant, id);
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },

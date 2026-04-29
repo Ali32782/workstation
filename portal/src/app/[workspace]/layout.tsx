@@ -5,6 +5,11 @@ import { fetchHealthSummary } from "@/lib/health";
 import { getWorkspace, type WorkspaceId } from "@/lib/workspaces";
 import { TopBar } from "@/components/TopBar";
 import { MobileShell } from "@/components/MobileShell";
+import { CmdK } from "@/components/CmdK";
+import { QuickCapture } from "@/components/QuickCapture";
+import { QuickIssue } from "@/components/QuickIssue";
+import { IncomingCallPortal } from "@/components/calls/IncomingCallPortal";
+import { PhonestarRingListener } from "@/components/phonestar/PhonestarRingListener";
 
 export default async function WorkspaceLayout({
   children,
@@ -40,6 +45,22 @@ export default async function WorkspaceLayout({
       >
         {children}
       </MobileShell>
+      <CmdK workspaceId={workspace.id} />
+      <QuickCapture workspaceId={workspace.id} />
+      <QuickIssue
+        workspaceId={workspace.id}
+        planeUrl={process.env.PLANE_BASE_URL ?? "https://plane.kineo360.work"}
+      />
+      {session?.user?.email ? (
+        <>
+          <PhonestarRingListener workspaceId={workspace.id as WorkspaceId} />
+          <IncomingCallPortal
+            workspaceId={workspace.id as WorkspaceId}
+            accent={workspace.accent}
+            meEmail={session.user.email}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

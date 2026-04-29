@@ -449,7 +449,7 @@ export async function replaceRecipients(
     existing
       .filter((r) => !wantedEmails.has(r.email.toLowerCase()))
       .map(async (r) => {
-        const res = await fetcher(`/api/v2/recipient/delete`, {
+        const res = await fetcher(`/api/v2/document/recipient/delete`, {
           method: "POST",
           json: { recipientId: r.id },
         });
@@ -457,7 +457,7 @@ export async function replaceRecipients(
           throw new AppApiError(
             "documenso",
             res.status,
-            "/api/v2/recipient/delete",
+            "/api/v2/document/recipient/delete",
             await res.text().catch(() => ""),
           );
         }
@@ -473,7 +473,7 @@ export async function replaceRecipients(
     })
     .filter((x): x is { ex: RawRecipient; i: RecipientUpsertInput } => x !== null);
   if (toUpdate.length > 0) {
-    const res = await fetcher(`/api/v2/recipient/update-many`, {
+    const res = await fetcher(`/api/v2/document/recipient/update-many`, {
       method: "POST",
       json: {
         documentId,
@@ -490,7 +490,7 @@ export async function replaceRecipients(
       throw new AppApiError(
         "documenso",
         res.status,
-        "/api/v2/recipient/update-many",
+        "/api/v2/document/recipient/update-many",
         body,
       );
     }
@@ -501,7 +501,7 @@ export async function replaceRecipients(
     (i) => !existingByEmail.has(i.email.toLowerCase()),
   );
   if (toCreate.length > 0) {
-    const res = await fetcher(`/api/v2/recipient/create-many`, {
+    const res = await fetcher(`/api/v2/document/recipient/create-many`, {
       method: "POST",
       json: {
         documentId,
@@ -518,7 +518,7 @@ export async function replaceRecipients(
       throw new AppApiError(
         "documenso",
         res.status,
-        "/api/v2/recipient/create-many",
+        "/api/v2/document/recipient/create-many",
         body,
       );
     }
@@ -534,7 +534,7 @@ export async function deleteRecipient(
   recipientId: number,
 ): Promise<void> {
   const fetcher = tenantFetch(tenant);
-  const res = await fetcher(`/api/v2/recipient/delete`, {
+  const res = await fetcher(`/api/v2/document/recipient/delete`, {
     method: "POST",
     json: { recipientId },
   });
@@ -542,7 +542,7 @@ export async function deleteRecipient(
     throw new AppApiError(
       "documenso",
       res.status,
-      "/api/v2/recipient/delete",
+      "/api/v2/document/recipient/delete",
       await res.text().catch(() => ""),
     );
   }

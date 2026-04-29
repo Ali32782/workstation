@@ -10,6 +10,7 @@ import {
   type MailFull,
   type MailListItem,
 } from "./types";
+import { normMessageId } from "./thread-utils";
 
 const HOST = process.env.IMAP_HOST ?? "imap.migadu.com";
 const PORT = Number(process.env.IMAP_PORT ?? 993);
@@ -187,6 +188,8 @@ export async function listMessages(
           flags: flagSet,
           hasAttachments: hasAttach,
           size: (msg.size as number) ?? 0,
+          messageId: normMessageId(msg.envelope?.messageId),
+          inReplyTo: normMessageId(msg.envelope?.inReplyTo),
         });
       }
       items.sort((a, b) => (a.date < b.date ? 1 : -1));

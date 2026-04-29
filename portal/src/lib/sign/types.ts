@@ -48,6 +48,11 @@ export type DocumentSummary = {
   ownerEmail: string | null;
   /** Convenience: count of NOT_SIGNED + SIGNER recipients. */
   pendingSigners: number;
+  /**
+   * When true, this document was marked portal-private (portal layer); other
+   * team members won't see it in the CoreLab Sign list unless they are portal admins.
+   */
+  portalPrivate?: boolean;
 };
 
 export type DocumentDetail = DocumentSummary & {
@@ -56,6 +61,8 @@ export type DocumentDetail = DocumentSummary & {
   externalId: string | null;
   teamId: number;
   teamUrl: string | null;
+  /** True when this document was first created via a portal upload (authoritative for privacy toggles). */
+  uploadedViaPortal?: boolean;
 };
 
 export type SignTotals = {

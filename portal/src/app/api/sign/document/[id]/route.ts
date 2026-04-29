@@ -7,9 +7,18 @@ import {
   repeatDocument,
 } from "@/lib/sign/documenso";
 import {
-  resolveSignSession,
-  type SignSession,
-} from "@/lib/sign/session";
+  workspaceIdOrNull,
+  deletePortalAnnotations,
+  copyPortalDocumentAnnotations,
+  setPortalPrivate,
+  clearPortalPrivate,
+  getPortalUploader,
+  getPortalPrivateOwners,
+  registerPortalUpload,
+} from "@/lib/sign/document-privacy-store";
+import { blockIfSignDocumentInaccessible } from "@/lib/sign/document-access-guard";
+import { isAdminUsername } from "@/lib/admin-allowlist";
+import { resolveSignSession, type SignSession } from "@/lib/sign/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,8 +65,23 @@ export async function GET(
   const id = parseId(idStr);
   if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
   try {
+    const deny = await blockIfSignDocumentInaccessible(
+      g.session.workspace,
+      id,
+      g.session.username,
+    );
+    if (deny) return deny;
     const document = await getDocument(g.session.tenant, id);
-    return NextResponse.json({ document });
+    const owners = await getPortalPrivateOwners(g.session.workspace);
+    const portalPrivate = owners.has(id);
+    const uploader = await getPortalUploader(g.session.workspace, id);
+    return NextResponse.json({
+      document: {
+        ...document,
+        portalPrivate,
+        uploadedViaPortal: Boolean(uploader),
+      },
+    });
   } catch (e) {
     console.error(`[/api/sign/document/${idStr}] failed:`, e);
     const msg = e instanceof Error ? e.message : String(e);
@@ -76,7 +100,14 @@ export async function DELETE(
   const id = parseId(idStr);
   if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
   try {
+    const deny = await blockIfSignDocumentInaccessible(
+      g.session.workspace,
+      id,
+      g.session.username,
+    );
+    if (deny) return deny;
     await deleteDocument(g.session.tenant, id);
+    await deletePortalAnnotations(g.session.workspace, id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
@@ -93,6 +124,9 @@ export async function DELETE(
  *     — re-send signing emails (omit `recipients` to remind everyone
  *     still pending; pass an array of recipient ids to send a targeted
  *     reminder)
+ *   { action: "setPortalVisibility", scope: "private" | "team" } — CoreLab-only
+ *     listing scope (who sees the envelope in Sign). Requires portal upload origin
+ *     to lock to yourself, unless you release a private doc you own or are admin.
  *   { action: "repeat" } — clone the document into a new DRAFT with the
  *     same recipients, useful when a completed/rejected doc needs to be
  *     re-run. Response includes `documentId` of the new draft.
@@ -114,6 +148,7 @@ export async function POST(
     recipients?: number[];
     subject?: string;
     message?: string;
+    scope?: "private" | "team";
   } = {};
   try {
     body = await req.json();
@@ -125,6 +160,61 @@ export async function POST(
       ? { subject: body.subject, message: body.message }
       : undefined;
   try {
+    const deny = await blockIfSignDocumentInaccessible(
+      g.session.workspace,
+      id,
+      g.session.username,
+    );
+    if (deny) return deny;
+
+    const wid = workspaceIdOrNull(g.session.workspace);
+    const userLower = g.session.username.trim().toLowerCase();
+    const admin = isAdminUsername(g.session.username);
+
+    if (body.action === "setPortalVisibility") {
+      if (!wid) {
+        return NextResponse.json(
+          { error: "Ungültiger Workspace." },
+          { status: 400 },
+        );
+      }
+      const scope = body.scope;
+      if (scope !== "private" && scope !== "team") {
+        return NextResponse.json(
+          { error: "scope muss \"private\" oder \"team\" sein." },
+          { status: 400 },
+        );
+      }
+      if (scope === "private") {
+        if (!admin) {
+          const uploader = await getPortalUploader(g.session.workspace, id);
+          if (!uploader || uploader !== userLower) {
+            return NextResponse.json(
+              {
+                error:
+                  "Nur Dokumente, die im Portal hochgeladen wurden, können auf „nur für mich“ gesetzt werden.",
+              },
+              { status: 403 },
+            );
+          }
+        } else {
+          await registerPortalUpload(wid, id, userLower);
+        }
+        await setPortalPrivate(wid, id, userLower);
+        return NextResponse.json({ ok: true });
+      }
+      const owners = await getPortalPrivateOwners(g.session.workspace);
+      const privOwner = owners.get(id);
+      if (privOwner && !admin && privOwner !== userLower) {
+        return NextResponse.json(
+          { error: "Nur der Inhaber oder ein Admin kann für das Team freigeben." },
+          { status: 403 },
+        );
+      }
+      await clearPortalPrivate(g.session.workspace, id);
+      return NextResponse.json({ ok: true });
+    }
+
     if (body.action === "send") {
       await distributeDocument(g.session.tenant, id, meta);
       return NextResponse.json({ ok: true });
@@ -140,6 +230,9 @@ export async function POST(
     }
     if (body.action === "repeat") {
       const out = await repeatDocument(g.session.tenant, id);
+      if (wid) {
+        await copyPortalDocumentAnnotations(wid, id, out.documentId);
+      }
       return NextResponse.json({ ok: true, documentId: out.documentId });
     }
     return NextResponse.json({ error: "unknown action" }, { status: 400 });

@@ -86,19 +86,27 @@ export function FileStationClient({
   workspaceId,
   workspaceName,
   accent,
+  /** Server may pass `/files?q=…` to pre-fill cloud filename search */
+  initialGlobalSearchQuery,
 }: {
   workspaceId: WorkspaceId;
   workspaceName: string;
   accent: string;
+  initialGlobalSearchQuery?: string | null;
 }) {
   const [cwd, setCwd] = useState("/");
   const [data, setData] = useState<CloudList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  const q0 = initialGlobalSearchQuery?.trim() ?? "";
+  const [filter, setFilter] = useState(q0.length >= 2 ? q0 : "");
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState(() => q0.length >= 2);
+  const [searchHits, setSearchHits] = useState<CloudEntry[] | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const newMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!showNewMenu) return;
@@ -154,11 +162,64 @@ export function FileStationClient({
   }, [load]);
 
   const visibleEntries = useMemo(() => {
+    if (globalSearch && searchHits) return searchHits;
     if (!data) return [];
     if (!filter.trim()) return data.entries;
     const q = filter.toLowerCase();
     return data.entries.filter((e) => e.name.toLowerCase().includes(q));
-  }, [data, filter]);
+  }, [data, filter, globalSearch, searchHits]);
+
+  // Workspace-wide filename search (NC SEARCH method).  We debounce
+  // to 350 ms — typical Nextcloud SEARCH responses come back in
+  // 80-300 ms over Tailscale, so much shorter just spams the network
+  // while the user is mid-type.
+  useEffect(() => {
+    if (!globalSearch) {
+      setSearchHits(null);
+      setSearchError(null);
+      return;
+    }
+    const q = filter.trim();
+    if (q.length < 2) {
+      setSearchHits([]);
+      setSearchError(null);
+      setSearchBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchBusy(true);
+    setSearchError(null);
+    const timer = window.setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `/api/cloud/search?ws=${workspaceId}&q=${encodeURIComponent(q)}`,
+          { cache: "no-store" },
+        );
+        const j = (await r.json()) as {
+          hits?: CloudEntry[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!r.ok) {
+          setSearchError(j.error ?? `HTTP ${r.status}`);
+          setSearchHits([]);
+        } else {
+          setSearchHits(j.hits ?? []);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setSearchError(e instanceof Error ? e.message : String(e));
+          setSearchHits([]);
+        }
+      } finally {
+        if (!cancelled) setSearchBusy(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [filter, globalSearch, workspaceId]);
 
   const breadcrumbs = useMemo(() => {
     const parts = cwd.split("/").filter(Boolean);
@@ -352,18 +413,52 @@ export function FileStationClient({
             </p>
           </div>
 
-          <div className="relative">
-            <Search
-              size={13}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-text-quaternary"
-            />
-            <input
-              type="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="In Ordner suchen…"
-              className="bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2.5 py-1.5 w-[220px] text-[12px] outline-none focus:border-stroke-2"
-            />
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <Search
+                size={13}
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-text-quaternary"
+              />
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={
+                  globalSearch
+                    ? "Workspace-weit suchen…"
+                    : "In Ordner suchen…"
+                }
+                className="bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2.5 py-1.5 w-[220px] text-[12px] outline-none focus:border-stroke-2"
+              />
+              {searchBusy && globalSearch && (
+                <Loader2
+                  size={11}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary animate-spin"
+                />
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setGlobalSearch((v) => !v);
+                if (!globalSearch && filter.trim().length === 0) {
+                  // Hint via empty-state when toggle flips on.
+                  setSearchHits([]);
+                }
+              }}
+              title={
+                globalSearch
+                  ? "Wieder nur in diesem Ordner suchen"
+                  : "Workspace-weit suchen (alle Ordner)"
+              }
+              className={`px-2 py-1.5 rounded-md text-[11px] border ${
+                globalSearch
+                  ? "bg-info/15 border-info/40 text-info"
+                  : "border-stroke-1 text-text-tertiary hover:bg-bg-overlay"
+              }`}
+            >
+              alle Ordner
+            </button>
           </div>
 
           <div ref={newMenuRef} className="relative">
@@ -539,14 +634,30 @@ export function FileStationClient({
               <tbody>
                 {visibleEntries.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={4} className="text-center text-text-tertiary px-4 py-12 text-[12px]">
-                      Dieser Ordner ist leer.
+                    <td
+                      colSpan={4}
+                      className="text-center text-text-tertiary px-4 py-12 text-[12px]"
+                    >
+                      {globalSearch
+                        ? searchError
+                          ? `Suche fehlgeschlagen: ${searchError}`
+                          : filter.trim().length < 2
+                            ? "Tippe mindestens 2 Zeichen für die Workspace-weite Suche."
+                            : searchBusy
+                              ? "Suche läuft…"
+                              : `Keine Treffer für „${filter}".`
+                        : "Dieser Ordner ist leer."}
                     </td>
                   </tr>
                 )}
                 {visibleEntries.map((e) => {
                   const Icon = iconForFile(e.name, e.type === "folder");
                   const isSel = e.path === selected;
+                  const parentPath = e.path
+                    .split("/")
+                    .slice(0, -1)
+                    .join("/")
+                    .replace(/^$/, "/");
                   return (
                     <tr
                       key={e.path}
@@ -559,16 +670,34 @@ export function FileStationClient({
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <Icon size={16} style={{ color: iconColor(e, accent) }} />
-                          <button
-                            type="button"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              onActivate(e);
-                            }}
-                            className="text-text-primary hover:underline truncate text-left"
-                          >
-                            {e.name}
-                          </button>
+                          <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                onActivate(e);
+                              }}
+                              className="text-text-primary hover:underline truncate text-left block"
+                            >
+                              {e.name}
+                            </button>
+                            {globalSearch && parentPath && parentPath !== "/" && (
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setGlobalSearch(false);
+                                  setFilter("");
+                                  void load(parentPath);
+                                  setSelected(e.path);
+                                }}
+                                className="text-[10.5px] text-text-tertiary hover:text-info truncate block text-left"
+                                title={`Im Ordner „${parentPath}" öffnen`}
+                              >
+                                {parentPath}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-2 py-2 text-text-tertiary text-[11.5px]">
@@ -578,7 +707,7 @@ export function FileStationClient({
                         {e.type === "folder" ? "—" : formatBytes(e.size)}
                       </td>
                       <td className="px-2 py-2 text-right">
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 justify-end">
+                        <div className="opacity-[0.52] group-hover:opacity-100 flex items-center gap-0.5 justify-end transition-opacity">
                           {e.type === "file" && (
                             <a
                               href={`/api/cloud/download?ws=${workspaceId}&path=${encodeURIComponent(e.path)}`}

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getTotals,
-  listDocuments,
-} from "@/lib/sign/documenso";
+  getTotalsVisible,
+  listDocumentsVisible,
+} from "@/lib/sign/document-portal-access";
+import { getPortalPrivateOwners } from "@/lib/sign/document-privacy-store";
 import {
   resolveSignSession,
   type SignSession,
 } from "@/lib/sign/session";
 import type { SignStatus } from "@/lib/sign/types";
+import { isAdminUsername } from "@/lib/admin-allowlist";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,14 +62,24 @@ export async function GET(req: NextRequest) {
       : undefined;
 
   try {
+    const privateOwners = await getPortalPrivateOwners(g.session.workspace);
+    const accessCtx = {
+      viewerUsername: g.session.username,
+      isPortalAdmin: isAdminUsername(g.session.username),
+      privateOwners,
+    };
     const [list, totals] = await Promise.all([
-      listDocuments(g.session.tenant, {
-        status: filter,
-        query: q,
-        page,
-      }),
+      listDocumentsVisible(
+        g.session.tenant,
+        {
+          status: filter,
+          query: q,
+          page,
+        },
+        accessCtx,
+      ),
       includeTotals
-        ? getTotals(g.session.tenant)
+        ? getTotalsVisible(g.session.tenant, accessCtx)
         : Promise.resolve(undefined),
     ]);
     return NextResponse.json({

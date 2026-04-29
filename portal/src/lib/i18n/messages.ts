@@ -161,6 +161,14 @@ export type Messages = {
   "mail.delete": string;
   "mail.moveTo": string;
   "mail.settings": string;
+  "mail.bulk.one": string;
+  "mail.bulk.many": string;
+  "mail.bulk.visible": string;
+  "mail.bulk.selectAllVisible": string;
+  "mail.bulk.clearSelection": string;
+  "mail.bulk.moveToTrash": string;
+  "mail.bulk.deleteConfirm": string;
+  "mail.bulk.partialFail": string;
 
   // ─── CRM ────────────────────────────────────────────────────────────
   "crm.companies": string;
@@ -360,6 +368,16 @@ export type Messages = {
   "projects.import.failed": string;
   "projects.import.empty": string;
   "projects.import.help.jira": string;
+  "projects.delete.action": string;
+  "projects.delete.confirm": string;
+  "projects.delete.failed": string;
+  "projects.settings.lead": string;
+  "projects.settings.link.portalViews": string;
+  "projects.settings.link.planeHub": string;
+  "projects.settings.link.openPlane": string;
+  "projects.settings.link.profile": string;
+  "projects.settings.instance": string;
+  "projects.settings.crumbSettings": string;
 
   // ─── Files / Office ────────────────────────────────────────────────
   "files.upload": string;
@@ -510,6 +528,16 @@ const de: Messages = {
   "mail.delete": "In den Papierkorb",
   "mail.moveTo": "Verschieben in …",
   "mail.settings": "Mail-Einstellungen (SnappyMail Admin)",
+  "mail.bulk.one": "ausgewählt",
+  "mail.bulk.many": "ausgewählt",
+  "mail.bulk.visible": "sichtbar",
+  "mail.bulk.selectAllVisible": "Alle sichtbare auswählen",
+  "mail.bulk.clearSelection": "Auswahl aufheben",
+  "mail.bulk.moveToTrash": "In den Papierkorb",
+  "mail.bulk.deleteConfirm":
+    "Ausgewählte Nachrichten wirklich löschen? (Liegen sie nicht bereits im Papierkorb, verschieben wir sie in den Papierkorb.)",
+  "mail.bulk.partialFail":
+    "Einige Nachrichten konnten nicht gelöscht werden. Bitte Liste aktualisieren und prüfen.",
 
   "crm.companies": "Firmen",
   "crm.people": "Personen",
@@ -712,6 +740,18 @@ const de: Messages = {
   "projects.import.empty": "Noch keine CSV geladen.",
   "projects.import.help.jira":
     "Tipp: In Jira → Filter → „Export → CSV (alle Felder)“ liefert ein direkt kompatibles Format.",
+  "projects.delete.action": "Projekt löschen",
+  "projects.delete.confirm":
+    "Projekt endgültig löschen? Alle Issues und Daten in Plane zu diesem Projekt gehen verloren.",
+  "projects.delete.failed": "Projekt konnte nicht gelöscht werden: ",
+  "projects.settings.lead":
+    "Issues, Boards und Cycles kannst du direkt hier verwalten. Profil-Einstellungen und die volle Plane-Oberfläche erreichst du über Plane — dieselbe Zuordnung wie über die SSO-Brücke.",
+  "projects.settings.link.portalViews": "Portal-Ansicht (Board, Backlog …)",
+  "projects.settings.link.planeHub": "Plane-Hub · Direktzugriffe",
+  "projects.settings.link.openPlane": "Plane öffnen (SSO-Brücke)",
+  "projects.settings.link.profile": "Plane-Profil & Konto-Einstellungen",
+  "projects.settings.instance": "Instanz",
+  "projects.settings.crumbSettings": "Einstellungen",
 
   "files.upload": "Hochladen",
   "files.newFolder": "Neuer Ordner",
@@ -861,6 +901,16 @@ const en: Messages = {
   "mail.delete": "Move to trash",
   "mail.moveTo": "Move to …",
   "mail.settings": "Mail settings (SnappyMail Admin)",
+  "mail.bulk.one": "selected",
+  "mail.bulk.many": "selected",
+  "mail.bulk.visible": "visible",
+  "mail.bulk.selectAllVisible": "Select all visible",
+  "mail.bulk.clearSelection": "Clear selection",
+  "mail.bulk.moveToTrash": "Move to trash",
+  "mail.bulk.deleteConfirm":
+    "Delete the selected messages? (Messages not already in Trash will be moved there first.)",
+  "mail.bulk.partialFail":
+    "Some messages could not be deleted. Refresh the list and try again.",
 
   "crm.companies": "Companies",
   "crm.people": "People",
@@ -1062,6 +1112,18 @@ const en: Messages = {
   "projects.import.empty": "No CSV loaded yet.",
   "projects.import.help.jira":
     "Tip: In Jira → Filter → ‘Export → CSV (all fields)’ produces a directly compatible file.",
+  "projects.delete.action": "Delete project",
+  "projects.delete.confirm":
+    "Delete this project permanently? All issues and data in Plane for this project will be lost.",
+  "projects.delete.failed": "Could not delete project: ",
+  "projects.settings.lead":
+    "You can manage issues, boards and cycles here. For profile settings and Plane’s full UI, open Plane — same SSO mapping as elsewhere in the workspace.",
+  "projects.settings.link.portalViews": "Portal view (board, backlog …)",
+  "projects.settings.link.planeHub": "Plane hub · Shortcuts",
+  "projects.settings.link.openPlane": "Open Plane (SSO bridge)",
+  "projects.settings.link.profile": "Plane profile & account settings",
+  "projects.settings.instance": "Instance",
+  "projects.settings.crumbSettings": "Settings",
 
   "files.upload": "Upload",
   "files.newFolder": "New folder",

@@ -300,6 +300,61 @@ export async function listIssues(
   return all;
 }
 
+/**
+ * Cmd+K: shallow issue search — first result page per project only (fast).
+ * Not exhaustive for huge backlogs; good enough to jump to a known issue.
+ */
+export async function searchIssuesShallow(
+  workspaceSlug: string,
+  qRaw: string,
+  opts?: { maxHits?: number; maxProjects?: number },
+): Promise<
+  Array<{
+    issue: IssueSummary;
+    projectId: string;
+    projectIdentifier: string;
+    projectName: string;
+  }>
+> {
+  const q = qRaw.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const maxHits = Math.min(opts?.maxHits ?? 6, 12);
+  const maxProjects = Math.min(opts?.maxProjects ?? 8, 20);
+  const projects = (await listProjects(workspaceSlug)).slice(0, maxProjects);
+  const out: Array<{
+    issue: IssueSummary;
+    projectId: string;
+    projectIdentifier: string;
+    projectName: string;
+  }> = [];
+  for (const proj of projects) {
+    if (out.length >= maxHits) break;
+    const path = `/api/v1/workspaces/${workspaceSlug}/projects/${proj.id}/issues/?per_page=100`;
+    const page: { results?: RawIssue[] } = await fetchJson(
+      planeFetch,
+      "plane",
+      path,
+    );
+    for (const r of page.results ?? []) {
+      const issue = normaliseIssue(r);
+      const descPlain = (issue.descriptionHtml ?? "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+      if (issue.name.toLowerCase().includes(q) || descPlain.includes(q)) {
+        out.push({
+          issue,
+          projectId: proj.id,
+          projectIdentifier: proj.identifier,
+          projectName: proj.name,
+        });
+        if (out.length >= maxHits) return out;
+      }
+    }
+  }
+  return out;
+}
+
 export async function getIssue(
   workspaceSlug: string,
   projectId: string,

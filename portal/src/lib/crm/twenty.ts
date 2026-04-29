@@ -11,6 +11,7 @@ import type {
   TaskSummary,
   WorkspaceMember,
 } from "./types";
+import { OPPORTUNITY_STAGE_NEW } from "./opportunity-stages";
 
 /**
  * Native Twenty CRM client — multi-tenant.
@@ -466,6 +467,7 @@ export async function createPerson(
   data: {
     name: { firstName: string; lastName: string };
     emails?: { primaryEmail: string };
+    phones?: { primaryPhoneNumber: string };
     companyId?: string;
   },
 ): Promise<PersonDetail | null> {
@@ -566,6 +568,58 @@ export async function listAllOpportunities(
   return data.opportunities.edges.map((e) => normaliseOpp(e.node));
 }
 
+/** Loads one opportunity by id (company embedded) — deep-links, GET API. */
+export async function getOpportunityById(
+  tenant: TwentyTenantConfig,
+  id: string,
+): Promise<OpportunitySummary | null> {
+  const data = await gql<{ opportunity: RawOpp | null }>(
+    tenant,
+    `query OneOppById($id: UUID!) {
+      opportunity(filter: { id: { eq: $id } }) {
+        id name stage amount { amountMicros currencyCode } closeDate
+        company { id name } createdAt updatedAt
+      }
+    }`,
+    { id },
+  );
+  return data.opportunity ? normaliseOpp(data.opportunity) : null;
+}
+
+/**
+ * Creates a pipeline opportunity (inbound form, scraper, etc.).
+ * `stage` defaults to `NEW` to match `listScraperLeads` / Lead-Inbox conventions.
+ */
+export async function createOpportunity(
+  tenant: TwentyTenantConfig,
+  data: {
+    name: string;
+    companyId: string;
+    stage?: string;
+    source?: string | null;
+    pointOfContactId?: string | null;
+  },
+): Promise<{ id: string }> {
+  const payload: Record<string, unknown> = {
+    name: data.name.trim(),
+    companyId: data.companyId,
+    stage: (data.stage ?? OPPORTUNITY_STAGE_NEW).trim(),
+  };
+  const src = data.source?.trim();
+  if (src) payload.source = src;
+  const poc = data.pointOfContactId?.trim();
+  if (poc) payload.pointOfContactId = poc;
+
+  const result = await gql<{ createOpportunity: { id: string } }>(
+    tenant,
+    `mutation CreateOpportunity($data: OpportunityCreateInput!) {
+      createOpportunity(data: $data) { id }
+    }`,
+    { data: payload },
+  );
+  return result.createOpportunity;
+}
+
 /**
  * Patches a Twenty opportunity (stage / amount / closeDate / name). The
  * stage must be a member of Twenty's OpportunityStage enum — the public
@@ -583,20 +637,150 @@ export async function updateOpportunity(
     }`,
     { id, data: patch },
   );
-  // No need for a follow-up — return a minimal record so the caller can
-  // optimistically merge. Pipeline UI re-uses the stage/amount it just
-  // sent, and only re-fetches if it cares about a server-side mutation.
-  const data = await gql<{ opportunity: RawOpp | null }>(
+  return getOpportunityById(tenant, id);
+}
+
+/**
+ * Lists "fresh" opportunities matching a `(source, stage)` pair together with
+ * the embedded company snapshot — exactly what the admin Lead-Inbox needs in
+ * a single round-trip. The Python scraper writes opportunities with
+ * `source = "google-maps-scraper"` and `stage = "NEW"`; the inbox queues
+ * those for human review before they get pushed into the Mautic funnel.
+ */
+export type ScraperLead = {
+  opportunityId: string;
+  opportunityName: string;
+  opportunityStage: string;
+  opportunitySource: string | null;
+  opportunityCreatedAt: string;
+  company: CompanyDetail;
+};
+
+export async function listScraperLeads(
+  tenant: TwentyTenantConfig,
+  opts: { source?: string; stage?: string; first?: number } = {},
+): Promise<ScraperLead[]> {
+  const source = opts.source ?? "google-maps-scraper";
+  const stage = opts.stage ?? OPPORTUNITY_STAGE_NEW;
+  const data = await gql<{
+    opportunities: {
+      edges: {
+        node: {
+          id: string;
+          name: string;
+          stage?: string | null;
+          source?: string | null;
+          createdAt: string;
+          company?: RawCompany | null;
+        };
+      }[];
+    };
+  }>(
     tenant,
-    `query OneOpp($id: UUID!) {
-      opportunity(filter: { id: { eq: $id } }) {
-        id name stage amount { amountMicros currencyCode } closeDate
-        company { id name } createdAt updatedAt
+    `query ScraperLeads($filter: OpportunityFilterInput!, $first: Int!) {
+      opportunities(filter: $filter, orderBy: [{ createdAt: DescNullsLast }], first: $first) {
+        edges { node {
+          id name stage source createdAt
+          company { ${COMPANY_DETAIL_FIELDS} }
+        } }
       }
     }`,
-    { id },
+    {
+      filter: {
+        stage: { eq: stage },
+        source: { eq: source },
+      },
+      first: opts.first ?? 100,
+    },
   );
-  return data.opportunity ? normaliseOpp(data.opportunity) : null;
+  return data.opportunities.edges
+    .filter((e) => Boolean(e.node.company))
+    .map((e) => {
+      const c = e.node.company as RawCompany;
+      const company: CompanyDetail = {
+        ...compactSummary(c),
+        address: (c.address as CompanyDetail["address"]) ?? null,
+        domainName: (c.domainName as CompanyDetail["domainName"]) ?? null,
+        linkedinLink: (c.linkedinLink as CompanyDetail["linkedinLink"]) ?? null,
+        xLink: (c.xLink as CompanyDetail["xLink"]) ?? null,
+        annualRecurringRevenue:
+          (c.annualRecurringRevenue as CompanyDetail["annualRecurringRevenue"]) ?? null,
+        idealCustomerProfile: Boolean(c.idealCustomerProfile),
+        tenant: (c.tenant as string | null) ?? null,
+        specializations: (c.specializations as string | null) ?? null,
+        languages: (c.languages as string | null) ?? null,
+        leadTherapistName: (c.leadTherapistName as string | null | undefined) ?? null,
+        leadTherapistEmail: (c.leadTherapistEmail as string | null | undefined) ?? null,
+        ownerSource: (c.ownerSource as string | null) ?? null,
+        position: (c.position as number) ?? 0,
+      };
+      return {
+        opportunityId: e.node.id,
+        opportunityName: e.node.name,
+        opportunityStage: e.node.stage ?? "",
+        opportunitySource: e.node.source ?? null,
+        opportunityCreatedAt: e.node.createdAt,
+        company,
+      };
+    });
+}
+
+/**
+ * Single-shot opportunity loader — returns the embedded company too so the
+ * admin UI can render the full lead context after an approve/reject without
+ * a second round-trip.
+ */
+export async function getScraperLead(
+  tenant: TwentyTenantConfig,
+  opportunityId: string,
+): Promise<ScraperLead | null> {
+  const data = await gql<{
+    opportunity: {
+      id: string;
+      name: string;
+      stage?: string | null;
+      source?: string | null;
+      createdAt: string;
+      company?: RawCompany | null;
+    } | null;
+  }>(
+    tenant,
+    `query OneScraperLead($id: UUID!) {
+      opportunity(filter: { id: { eq: $id } }) {
+        id name stage source createdAt
+        company { ${COMPANY_DETAIL_FIELDS} }
+      }
+    }`,
+    { id: opportunityId },
+  );
+  const o = data.opportunity;
+  if (!o || !o.company) return null;
+  const c = o.company;
+  const company: CompanyDetail = {
+    ...compactSummary(c),
+    address: (c.address as CompanyDetail["address"]) ?? null,
+    domainName: (c.domainName as CompanyDetail["domainName"]) ?? null,
+    linkedinLink: (c.linkedinLink as CompanyDetail["linkedinLink"]) ?? null,
+    xLink: (c.xLink as CompanyDetail["xLink"]) ?? null,
+    annualRecurringRevenue:
+      (c.annualRecurringRevenue as CompanyDetail["annualRecurringRevenue"]) ?? null,
+    idealCustomerProfile: Boolean(c.idealCustomerProfile),
+    tenant: (c.tenant as string | null) ?? null,
+    specializations: (c.specializations as string | null) ?? null,
+    languages: (c.languages as string | null) ?? null,
+    leadTherapistName: (c.leadTherapistName as string | null | undefined) ?? null,
+    leadTherapistEmail: (c.leadTherapistEmail as string | null | undefined) ?? null,
+    ownerSource: (c.ownerSource as string | null) ?? null,
+    position: (c.position as number) ?? 0,
+  };
+  return {
+    opportunityId: o.id,
+    opportunityName: o.name,
+    opportunityStage: o.stage ?? "",
+    opportunitySource: o.source ?? null,
+    opportunityCreatedAt: o.createdAt,
+    company,
+  };
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */

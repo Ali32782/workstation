@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -15,11 +16,13 @@ import {
   Clock,
   Search,
   ExternalLink,
+  PenLine,
 } from "lucide-react";
 import type { CloudEntry, CloudList } from "@/lib/cloud/types";
 import { opensInPortalOfficeEditor } from "@/lib/office/open-mode";
 import type { WorkspaceId } from "@/lib/workspaces";
 import { CollaboraPanel } from "./CollaboraPanel";
+import { ProposalGeneratorDialog } from "@/components/office/ProposalGeneratorDialog";
 import { useT } from "@/components/LocaleProvider";
 import type { Messages } from "@/lib/i18n/messages";
 
@@ -99,10 +102,13 @@ export function OfficeHubClient({
   workspaceId,
   workspaceName,
   accent,
+  /** Deep-link from CRM Company Hub — offers Sign with same `externalId` prefix. */
+  crmLinkCompanyId = null,
 }: {
   workspaceId: WorkspaceId;
   workspaceName: string;
   accent: string;
+  crmLinkCompanyId?: string | null;
 }) {
   const router = useRouter();
   const t = useT();
@@ -113,6 +119,7 @@ export function OfficeHubClient({
   const [editor, setEditor] = useState<CloudEntry | null>(null);
   const [filter, setFilter] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [proposalOpen, setProposalOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -295,6 +302,28 @@ export function OfficeHubClient({
         </button>
       </header>
 
+      {crmLinkCompanyId?.trim() && (
+        <div className="shrink-0 mx-5 mt-3 rounded-lg border border-stroke-1 bg-bg-elevated px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary">
+          <span className="inline-flex items-center gap-1.5 text-text-tertiary">
+            <PenLine size={12} style={{ color: accent }} />
+            CRM-Kontext aktiv
+          </span>
+          <Link
+            href={`/${workspaceId}/crm/company/${encodeURIComponent(crmLinkCompanyId.trim())}`}
+            className="text-info hover:underline"
+          >
+            Company-Hub
+          </Link>
+          <span className="text-text-quaternary">·</span>
+          <Link
+            href={`/${workspaceId}/sign?crmCompany=${encodeURIComponent(crmLinkCompanyId.trim())}`}
+            className="text-info hover:underline"
+          >
+            Dokument zur Unterschrift (Sign)
+          </Link>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto">
         {/* ── Quick Actions (prominent CTA) ───────────────────── */}
         <section className="px-5 pt-5">
@@ -350,6 +379,34 @@ export function OfficeHubClient({
               );
             })}
           </div>
+
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setProposalOpen(true)}
+            className="mt-4 w-full text-left rounded-xl border-2 border-dashed px-4 py-3 transition-all hover:shadow-md disabled:opacity-50"
+            style={{
+              borderColor: `${accent}44`,
+              background: `linear-gradient(135deg, ${accent}08 0%, transparent 55%)`,
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: `${accent}22` }}
+              >
+                <PenLine size={20} style={{ color: accent }} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-text-primary">
+                  Angebot / Proposal aus CRM
+                </p>
+                <p className="text-[10.5px] text-text-tertiary">
+                  Vorlage wählen, Firma anklicken, DOCX erzeugen (gleiche Variablen wie Serienbrief)
+                </p>
+              </div>
+            </div>
+          </button>
         </section>
 
         {/* ── Recents ─────────────────────────────────────────── */}
@@ -434,6 +491,14 @@ export function OfficeHubClient({
           )}
         </section>
       </div>
+
+      {proposalOpen && (
+        <ProposalGeneratorDialog
+          workspaceId={workspaceId}
+          accent={accent}
+          onClose={() => setProposalOpen(false)}
+        />
+      )}
 
       {editor && editor.fileId != null && (
         <CollaboraPanel

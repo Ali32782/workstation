@@ -54,40 +54,48 @@ export function RecordList({
     <ul className="flex-1 min-h-0 overflow-auto">
       {items.map((it) => {
         const isSel = it.id === selectedId;
+        const rowAccent =
+          isSel && accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined;
         return (
           <li key={it.id}>
-            <button
-              type="button"
-              onClick={() => onSelect?.(it.id)}
-              className={`group w-full text-left px-3 py-2.5 border-b border-stroke-1/60 flex items-start gap-2 ${
+            <div
+              className={`group flex items-stretch border-b border-stroke-1/60 min-w-0 ${
                 isSel ? "bg-bg-overlay" : "hover:bg-bg-elevated"
               }`}
-              style={
-                isSel && accent
-                  ? { boxShadow: `inset 3px 0 0 0 ${accent}` }
-                  : undefined
-              }
+              style={rowAccent}
             >
-              {it.leading && <div className="shrink-0 mt-[2px]">{it.leading}</div>}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <p className="text-[12.5px] font-medium text-text-primary truncate flex-1">
-                    {it.title}
-                  </p>
-                  {it.meta && (
-                    <span className="text-[10.5px] text-text-tertiary shrink-0">
-                      {it.meta}
-                    </span>
+              <button
+                type="button"
+                onClick={() => onSelect?.(it.id)}
+                className="flex-1 min-w-0 text-left px-3 py-2.5 flex items-start gap-2"
+              >
+                {it.leading && (
+                  <div className="shrink-0 mt-[2px]">{it.leading}</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-[12.5px] font-medium text-text-primary truncate flex-1">
+                      {it.title}
+                    </p>
+                    {it.meta && (
+                      <span className="text-[10.5px] text-text-tertiary shrink-0">
+                        {it.meta}
+                      </span>
+                    )}
+                  </div>
+                  {it.subtitle && (
+                    <p className="text-[11.5px] text-text-tertiary truncate mt-0.5">
+                      {it.subtitle}
+                    </p>
                   )}
                 </div>
-                {it.subtitle && (
-                  <p className="text-[11.5px] text-text-tertiary truncate mt-0.5">
-                    {it.subtitle}
-                  </p>
-                )}
-              </div>
-              {it.trailing && <div className="shrink-0 self-center">{it.trailing}</div>}
-            </button>
+              </button>
+              {it.trailing !== undefined && it.trailing !== null && (
+                <div className="shrink-0 flex items-center justify-center px-2 self-stretch border-l border-stroke-1/40">
+                  {it.trailing}
+                </div>
+              )}
+            </div>
           </li>
         );
       })}

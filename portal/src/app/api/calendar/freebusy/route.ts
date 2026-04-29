@@ -9,7 +9,7 @@ export const runtime = "nodejs";
  * Multi-user free-busy report for the Scheduling Assistant.
  *
  * Body:
- *   { users: ["mara", "diana@kineo360.work"], from: ISO, to: ISO }
+ *   { users: ["mara", "diana.matushkina@corehub.kineo360.work"], from: ISO, to: ISO }
  *
  * The API accepts both bare usernames and email addresses; for emails we
  * keep the local-part as the NC username (matching the `@<workspace>` mail

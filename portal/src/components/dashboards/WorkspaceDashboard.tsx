@@ -14,9 +14,16 @@ import {
   Video,
   Lightbulb,
   ArrowUpRight,
+  Brain,
 } from "lucide-react";
 import { LivePulse } from "@/components/dashboards/LivePulse";
 import { ScraperRunCard } from "@/components/dashboards/ScraperRunCard";
+import { FunnelOverviewCard } from "@/components/dashboards/FunnelOverviewCard";
+import { UnifiedInboxCard } from "@/components/dashboards/UnifiedInboxCard";
+import { MyIssuesTodayCard } from "@/components/dashboards/MyIssuesTodayCard";
+import { ActiveCycleCard } from "@/components/dashboards/ActiveCycleCard";
+import { MailFollowupsCard } from "@/components/dashboards/MailFollowupsCard";
+import { MentionsFeedCard } from "@/components/dashboards/MentionsFeedCard";
 import type { WorkspaceId } from "@/lib/workspaces";
 
 const DATE_DE = new Intl.DateTimeFormat("de-DE", {
@@ -49,6 +56,7 @@ const SHORTCUTS: Record<WorkspaceId, ShortcutDef[]> = {
     { path: "/projects", label: "Projekte", hint: "Plane · Issues & Board", Icon: Kanban },
     { path: "/files", label: "Files", hint: "Nextcloud Datei-Station", Icon: FolderOpen },
     { path: "/apps/code", label: "Code", hint: "Gitea · Repositories & CI", Icon: Code2 },
+    { path: "/ai-knowledge", label: "AI-Wissen", hint: "Firmen-Kontext für Antworten", Icon: Brain },
   ],
   medtheris: [
     { path: "/mail", label: "Mail", hint: "Sales & Praxis-Kommunikation", Icon: Mail },
@@ -58,6 +66,7 @@ const SHORTCUTS: Record<WorkspaceId, ShortcutDef[]> = {
     { path: "/marketing", label: "Marketing", hint: "Mautic · Kampagnen", Icon: Megaphone },
     { path: "/projects", label: "Projekte", hint: "Plane · Delivery", Icon: Kanban },
     { path: "/office", label: "Office", hint: "Dokumente & Tabellen", Icon: FileText },
+    { path: "/ai-knowledge", label: "AI-Wissen", hint: "Firmen-Kontext für Mail, Tickets, SMS", Icon: Brain },
   ],
   kineo: [
     { path: "/mail", label: "Mail", hint: "Group-Mailbox", Icon: Mail },
@@ -68,6 +77,7 @@ const SHORTCUTS: Record<WorkspaceId, ShortcutDef[]> = {
     { path: "/sign", label: "Sign", hint: "Documenso · Verträge", Icon: PenLine },
     { path: "/office", label: "Office", hint: "Dokumente im Portal", Icon: FileText },
     { path: "/helpdesk", label: "Helpdesk", hint: "Interne & Vendor-Tickets", Icon: HeadphonesIcon },
+    { path: "/ai-knowledge", label: "AI-Wissen", hint: "Firmen-Kontext für Antworten", Icon: Brain },
   ],
 };
 
@@ -132,6 +142,16 @@ export function WorkspaceDashboard({
       </header>
 
       <LivePulse workspace={workspaceId} workspaceName={workspaceName} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <UnifiedInboxCard workspaceId={workspaceId} accent={accent} />
+        <MyIssuesTodayCard workspaceId={workspaceId} accent={accent} />
+        <ActiveCycleCard workspaceId={workspaceId} accent={accent} />
+        <MailFollowupsCard workspaceId={workspaceId} accent={accent} />
+        <MentionsFeedCard workspaceId={workspaceId} accent={accent} />
+      </div>
+
+      <FunnelOverviewCard workspaceId={workspaceId} accent={accent} />
 
       {showScraper && <ScraperRunCard accent={accent} />}
 

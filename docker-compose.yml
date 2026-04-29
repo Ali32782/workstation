@@ -767,6 +767,9 @@ services:
       DOCUMENSO_TEAM_MEDTHERIS_URL: ${DOCUMENSO_TEAM_MEDTHERIS_URL:-medtheris}
       DOCUMENSO_TEAM_KINEO_TOKEN: ${DOCUMENSO_TEAM_KINEO_TOKEN:-}
       DOCUMENSO_TEAM_KINEO_URL: ${DOCUMENSO_TEAM_KINEO_URL:-kineo}
+      # Comma-separated portal usernames (must also be in PORTAL_ADMIN_USERNAMES)
+      # who may open native Documenso from CoreLab. Default in code: ali only.
+      SIGN_DOCUMENSO_NATIVE_USERNAMES: ${SIGN_DOCUMENSO_NATIVE_USERNAMES:-ali}
       SIGN_ALLOWED_GROUPS: ${SIGN_ALLOWED_GROUPS:-/kineo,/medtheris,/corehub}
       # PDF-Konvertierung für Sign-Uploads (.docx/.odt/etc → .pdf via Collabora).
       COLLABORA_INTERNAL_BASE: ${COLLABORA_INTERNAL_BASE:-http://collabora:9980}
@@ -889,9 +892,14 @@ services:
       ANTHROPIC_API_KEY: ${SCRAPER_ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${SCRAPER_ANTHROPIC_MODEL:-claude-sonnet-4-5}
       # Twenty GraphQL is at {origin}/graphql — NOT /api/graphql (that path 404s).
+      # Same Twenty server hosts multiple workspaces; the API_KEY swaps the workspace.
       TWENTY_API_URL: ${SCRAPER_TWENTY_API_URL:-https://crm.kineo360.work}
+      # Medtheris workspace (used by physio profile)
       TWENTY_API_KEY: ${SCRAPER_TWENTY_API_KEY:-}
-      TENANT_TAG: ${SCRAPER_TENANT_TAG:-medtheris}
+      # Kineo workspace (used by aerzte + sportvereine profiles)
+      TWENTY_KINEO_API_KEY: ${SCRAPER_TWENTY_KINEO_API_KEY:-${TWENTY_WORKSPACE_KINEO_TOKEN:-}}
+      TENANT_TAG: ${SCRAPER_TENANT_TAG:-}
+      SCRAPER_DEFAULT_PROFILE: ${SCRAPER_DEFAULT_PROFILE:-physio}
       ENABLE_SOCIAL_LOOKUP: ${SCRAPER_ENABLE_SOCIAL_LOOKUP:-0}
     volumes:
       - scraper_state:/var/scraper

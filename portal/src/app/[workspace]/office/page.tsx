@@ -33,12 +33,18 @@ export default async function OfficePage({
   if (!session?.user?.username) redirect("/login");
 
   const path = typeof sp.path === "string" ? sp.path : null;
+  const crmCompanyRaw = sp.crmCompany;
+  const crmLinkCompanyId =
+    typeof crmCompanyRaw === "string" && /^[0-9a-f-]{36}$/i.test(crmCompanyRaw.trim())
+      ? crmCompanyRaw.trim()
+      : null;
   if (!path) {
     return (
       <OfficeHubClient
         workspaceId={workspace.id as WorkspaceId}
         workspaceName={workspace.name}
         accent={workspace.accent}
+        crmLinkCompanyId={crmLinkCompanyId}
       />
     );
   }

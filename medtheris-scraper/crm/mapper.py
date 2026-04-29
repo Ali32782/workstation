@@ -16,11 +16,19 @@ Inferred (guessed) emails are pushed into Person.guessedEmail with the
 'guess:' prefix so Sales-Reps know they're trying a probable but unverified
 address. Confirmed emails (harvested from the website) always win and overwrite
 the guess.
+
+Multi-profile (April 2026):
+  Mappings now accept an optional `Profile` and use it for `industry`,
+  `leadSource`, `tenant`, role-keyword translation, and the opportunity
+  label. Callers that don't pass a profile fall back to the historical
+  Medtheris physio behaviour, which keeps every existing test/script
+  working unchanged.
 """
 import json
 from typing import Any
 
 from scraper.email_inference import domain_from_url, infer_email_candidates
+from scraper.profiles import PROFILE_PHYSIO, Profile
 
 
 def split_owner_name(full: str | None) -> tuple[str, str]:
@@ -31,7 +39,11 @@ def split_owner_name(full: str | None) -> tuple[str, str]:
     return (parts[0], parts[1] if len(parts) > 1 else "")
 
 
-def practice_to_company_input(practice: dict, tenant: str) -> dict[str, Any]:
+def practice_to_company_input(
+    practice: dict,
+    tenant: str | None = None,
+    profile: Profile = PROFILE_PHYSIO,
+) -> dict[str, Any]:
     """
     Build a CompanyCreateInput for Twenty.
 
@@ -42,7 +54,7 @@ def practice_to_company_input(practice: dict, tenant: str) -> dict[str, Any]:
     every field below to your workspace before running the scraper end-to-end:
 
       Identity / pipeline:
-        tenant (Text), leadSource (Text)
+        tenant (Text), leadSource (Text), industry (Text)
 
       Booking integration:
         bookingSystem (Text)         — provider key (onedoc/doctolib/...)
@@ -77,9 +89,16 @@ def practice_to_company_input(practice: dict, tenant: str) -> dict[str, Any]:
       Team (full roster as JSON for downstream automations):
         teamMembersJson (Text)
 
-    Without `tenant` the leads land in the workspace but won't be filterable
-    as MedTheris-vs-Corehub.
+    The `profile` parameter controls vertical-specific fields:
+      * tenant_tag (medtheris/kineo) — feeds `tenant` if no override
+      * industry_label (physiotherapie/arztpraxis/sportverein)
+      * lead_source (google-maps-scraper-… per profile)
+
+    `tenant` arg is kept for backwards compatibility with existing
+    push_cache callers that already resolved the tenant themselves;
+    if None, the profile default is used.
     """
+    effective_tenant = tenant or profile.tenant_tag
     website = practice.get("website") or ""
     domain = ""
     if website:
@@ -110,8 +129,9 @@ def practice_to_company_input(practice: dict, tenant: str) -> dict[str, Any]:
         },
 
         # --- pipeline tagging ---
-        "tenant": tenant,
-        "leadSource": "google-maps-scraper",
+        "tenant": effective_tenant,
+        "leadSource": profile.lead_source,
+        "industry": profile.industry_label,
 
         # --- booking integration ---
         "bookingSystem": booking.get("provider") or practice.get("booking_system") or "none",
@@ -245,8 +265,12 @@ def _name_key(name: str | None) -> str:
     return " ".join((name or "").lower().split())
 
 
-def practice_to_people_inputs(practice: dict, company_id: str,
-                              tenant: str) -> list[dict[str, Any]]:
+def practice_to_people_inputs(
+    practice: dict,
+    company_id: str,
+    tenant: str | None = None,
+    profile: Profile = PROFILE_PHYSIO,
+) -> list[dict[str, Any]]:
     """
     Return PersonCreateInput dicts for a practice:
       - Owner (always if owner_name or owner_email present)
@@ -262,7 +286,16 @@ def practice_to_people_inputs(practice: dict, company_id: str,
     aus {Vorname.Nachname @ website-domain} eine 'guess:...'-Adresse
     abgeleitet und in guessedEmail geschrieben. Sales-Reps sehen sofort,
     dass es ein heuristischer Vorschlag ist (nicht bestätigt).
+
+    The `profile` parameter swaps the role-keyword vocabulary:
+      * physio:       owner / lead_therapist / therapist / contact
+      * aerzte:       owner / lead_doctor / doctor / contact
+      * sportverein:  vorstand / trainer / kontakt
+    so the same JSON output from extractor.py renders as the right
+    label in Twenty without needing per-vertical mapping logic on
+    the Twenty side.
     """
+    effective_tenant = tenant or profile.tenant_tag
     website = practice.get("website") or ""
     domain = domain_from_url(website)
     known_emails = practice.get("emails_found") or []
@@ -277,9 +310,9 @@ def practice_to_people_inputs(practice: dict, company_id: str,
     lt_email = (practice.get("lead_therapist_email") or "").strip() or None
     lt_phone = (practice.get("lead_therapist_phone") or "").strip() or None
 
-    role_owner = "owner"
+    role_owner = profile.role_for("owner")
     if owner_name and lt_name and _name_key(owner_name) == _name_key(lt_name):
-        role_owner = "owner_and_lead_therapist"
+        role_owner = profile.role_for("owner_and_lead_therapist")
         lt_name = ""
         lt_email = None
         lt_phone = None
@@ -299,7 +332,7 @@ def practice_to_people_inputs(practice: dict, company_id: str,
         owner_p = _person_input(
             name=owner_name or None, email=owner_email,
             phone=owner_phone, company_id=company_id,
-            tenant=tenant, role=role_owner,
+            tenant=effective_tenant, role=role_owner,
             guessed_email=guesses,
             linkedin_url=owner_linkedin,
             title=owner_title,
@@ -316,7 +349,7 @@ def practice_to_people_inputs(practice: dict, company_id: str,
         lt_p = _person_input(
             name=lt_name or None, email=lt_email,
             phone=lt_phone, company_id=company_id,
-            tenant=tenant, role="lead_therapist",
+            tenant=effective_tenant, role=profile.role_for("lead_therapist"),
             guessed_email=guesses,
         )
         if lt_p:
@@ -340,7 +373,7 @@ def practice_to_people_inputs(practice: dict, company_id: str,
         tm_p = _person_input(
             name=tm_name, email=tm_email,
             phone=None, company_id=company_id,
-            tenant=tenant, role="therapist",
+            tenant=effective_tenant, role=profile.role_for("therapist"),
             guessed_email=guesses,
             practice_role_label=tm_role_label,
             linkedin_url=tm_linkedin,
@@ -359,7 +392,7 @@ def practice_to_people_inputs(practice: dict, company_id: str,
                 name=None, email=fallback_email,
                 phone=practice.get("phone"),
                 company_id=company_id,
-                tenant=tenant, role="contact",
+                tenant=effective_tenant, role=profile.role_for("contact"),
             )
             if generic:
                 people.append(generic)
@@ -367,13 +400,26 @@ def practice_to_people_inputs(practice: dict, company_id: str,
     return people
 
 
-def practice_to_opportunity_input(practice: dict, company_id: str,
-                                  tenant: str) -> dict[str, Any]:
-    """Build an OpportunityCreateInput (lead) for the practice."""
+def practice_to_opportunity_input(
+    practice: dict,
+    company_id: str,
+    tenant: str | None = None,
+    profile: Profile = PROFILE_PHYSIO,
+) -> dict[str, Any]:
+    """Build an OpportunityCreateInput (lead) for the entity.
+
+    `profile.opportunity_label` controls the prefix ("Lead", "Lead
+    Arzt", "Lead Verein") so a sales rep skimming the funnel
+    immediately knows which vertical they're looking at.
+    """
+    effective_tenant = tenant or profile.tenant_tag
+    fallback_label = (
+        "Praxis" if profile.key in ("physio", "aerzte") else "Verein"
+    )
     return {
-        "name": f"Lead: {practice.get('name') or 'Praxis'}",
+        "name": f"{profile.opportunity_label}: {practice.get('name') or fallback_label}",
         "stage": "NEW",
         "companyId": company_id,
-        "tenant": tenant,
-        "source": "google-maps-scraper",
+        "tenant": effective_tenant,
+        "source": profile.lead_source,
     }

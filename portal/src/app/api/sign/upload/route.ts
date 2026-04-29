@@ -6,6 +6,11 @@ import {
   UnsupportedFileTypeError,
 } from "@/lib/sign/converter";
 import { createDocumentFromPdf } from "@/lib/sign/documenso";
+import {
+  workspaceIdOrNull,
+  registerPortalUpload,
+  setPortalPrivate,
+} from "@/lib/sign/document-privacy-store";
 import { resolveSignSession } from "@/lib/sign/session";
 
 export const runtime = "nodejs";
@@ -43,6 +48,14 @@ export async function POST(req: NextRequest) {
 
   const file = form.get("file");
   const titleInput = (form.get("title") as string | null)?.trim() || "";
+  const externalIdRaw = (form.get("externalId") as string | null)?.trim() || "";
+  /** Optional bridge ref (e.g. `company:<uuid>`) for CRM / ops — Documenso stores on document. */
+  const externalId =
+    externalIdRaw.length > 0 && externalIdRaw.length <= 512 ? externalIdRaw : undefined;
+  const portalScopeRaw = (form.get("portalScope") as string | null)?.toLowerCase()?.trim();
+  /** Default: privately listed in CoreLab (`private`). Use `team` for workspace-wide visibility. */
+  const portalTeamVisible = portalScopeRaw === "team";
+
   if (!(file instanceof File)) {
     return NextResponse.json(
       { error: "Feld `file` fehlt im multipart-Body." },
@@ -101,7 +114,25 @@ export async function POST(req: NextRequest) {
       title,
       pdf,
       filename: outputFilename,
+      ...(externalId ? { externalId } : {}),
     });
+
+    const wid = workspaceIdOrNull(r.session.workspace);
+    if (!wid) {
+      return NextResponse.json(
+        { error: "Ungültiger Workspace für Sign-Konfiguration." },
+        { status: 400 },
+      );
+    }
+    const portalUser = (r.session.username?.trim().toLowerCase() ||
+      r.session.email?.split("@")[0]?.toLowerCase() ||
+      "user") as string;
+
+    await registerPortalUpload(wid, documentId, portalUser);
+    if (!portalTeamVisible) {
+      await setPortalPrivate(wid, documentId, portalUser);
+    }
+
     return NextResponse.json({
       documentId,
       title,

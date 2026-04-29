@@ -1,15 +1,21 @@
 """
-LLM-based structured extraction from practice website text.
+LLM-based structured extraction from website text.
 
 Sends merged homepage + team/contact subpage text plus the harvested email
-list to Claude and asks for a structured JSON describing:
-  - Inhaber (owner_name + owner_email)
-  - Leitender Therapeut (lead_therapist_name + lead_therapist_email)
-  - Generic practice contact (general_email — info@/kontakt@)
-  - Team-Größe, Sprachen, Spezialisierungen, Buchungs-System
+list to Claude and asks for a structured JSON describing the entity (a
+physio practice, a doctor's office, or a sports club) plus the people
+working there.
 
 The prompt forces the model to PICK matching emails from the harvested list
 instead of hallucinating, which is the main reliability lever.
+
+Multi-profile (April 2026):
+  Each profile picks a `extractor_prompt_key` (`physio`, `aerzte`,
+  `sportverein`); this module dispatches to the right prompt builder.
+  All prompts produce the SAME JSON shape so downstream mapping code
+  doesn't have to branch — only the field semantics shift (an "owner"
+  on a Sportverein is the Vereins-Vorstand, on an Arztpraxis the
+  Praxis-Inhaber:in).
 """
 import json
 import os
@@ -22,8 +28,12 @@ _MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
 _FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
-def extract_structured_data(text: str, practice_name: str,
-                            emails_found: list[str] | None = None) -> dict:
+def extract_structured_data(
+    text: str,
+    practice_name: str,
+    emails_found: list[str] | None = None,
+    prompt_key: str = "physio",
+) -> dict:
     """
     Extract owner / lead therapist / staff / specialization data.
 
@@ -57,7 +67,42 @@ def extract_structured_data(text: str, practice_name: str,
             + "\n".join(f"  - {e}" for e in emails_found[:30])
         )
 
-    prompt = f"""\
+    builder = _PROMPT_BUILDERS.get(prompt_key, _build_prompt_physio)
+    prompt = builder(practice_name=practice_name, text=text, emails_block=emails_block)
+    return _call_claude_and_parse(prompt)
+
+
+def _call_claude_and_parse(prompt: str) -> dict:
+    """Single Claude round-trip + JSON parse with fence-fallback."""
+    client = anthropic.Anthropic()
+    message = client.messages.create(
+        model=_MODEL,
+        max_tokens=2800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    raw = "".join(
+        block.text for block in message.content if hasattr(block, "text")
+    ).strip()
+
+    candidates: list[str] = []
+    fence_match = _FENCE_RE.search(raw)
+    if fence_match:
+        candidates.append(fence_match.group(1))
+    candidates.append(raw)
+
+    for cand in candidates:
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            continue
+
+    print(f"    extractor: konnte JSON nicht parsen, raw[:120]={raw[:120]!r}")
+    return {}
+
+
+def _build_prompt_physio(*, practice_name: str, text: str, emails_block: str) -> str:
+    return f"""\
 Du bist Sales-Researcher und analysierst die Website der Schweizer \
 Physiotherapie-Praxis "{practice_name}". Extrahiere Personen, Kontaktdaten, \
 Praxis-Profil UND Sales-relevante Zusatzdaten. Antworte NUR mit einem \
@@ -161,28 +206,186 @@ Website-Text (Homepage + Impressum/Team/Über-uns/Kontakt-Seiten):
 {text[:12000]}
 """
 
-    client = anthropic.Anthropic()
-    message = client.messages.create(
-        model=_MODEL,
-        max_tokens=2800,  # raised — extended schema (training/insurance/socials/team-linkedin)
-        messages=[{"role": "user", "content": prompt}],
-    )
 
-    raw = "".join(
-        block.text for block in message.content if hasattr(block, "text")
-    ).strip()
+def _build_prompt_aerzte(*, practice_name: str, text: str, emails_block: str) -> str:
+    """Ärzte-Prompt: dieselbe JSON-Struktur, andere Semantik.
 
-    candidates = []
-    fence_match = _FENCE_RE.search(raw)
-    if fence_match:
-        candidates.append(fence_match.group(1))
-    candidates.append(raw)
+    `owner_name` = Praxis-Inhaber:in (Dr. med. …), `lead_therapist_name`
+    bleibt das Feld für leitende Ärzt:innen wenn nicht identisch zum
+    Inhaber. `team_members` listet alle Ärzt:innen + MPAs. Specialties
+    sind die medizinischen Fachgebiete.
+    """
+    return f"""\
+Du bist Sales-Researcher und analysierst die Website der Schweizer \
+Arztpraxis "{practice_name}". Extrahiere Personen, Kontaktdaten, \
+Praxisprofil UND Sales-relevante Zusatzdaten. Antworte NUR mit einem \
+JSON-Objekt, KEIN Markdown, KEINE Erklärung.
 
-    for cand in candidates:
-        try:
-            return json.loads(cand)
-        except json.JSONDecodeError:
-            continue
+Schema (gleich wie Physio — die semantische Auslegung folgt unten):
+{{
+  "owner_name": "Vor- und Nachname der/des Praxis-Inhaber:in (Dr. med. …) \
+oder null. PRIO 1: Impressum (Schweizer Recht). Akademische Titel wie \
+'Dr. med.' oder 'PD' werden in 'owner_title' gespeichert, NICHT in \
+'owner_name'.",
+  "owner_source": "Wo extrahiert? 'impressum'|'team'|'about'|'kontakt'|'andere' oder null",
+  "owner_email": "MUSS aus den gefundenen E-Mails stammen — persönliche \
+Adresse oder null",
+  "owner_phone": "Direktnummer wenn explizit zugeordnet, NICHT die \
+Praxis-Hauptnummer; sonst null",
+  "owner_linkedin": "https://www.linkedin.com/in/<slug>/-URL oder null",
+  "owner_title": "Akademischer Grad/Titel: 'Dr. med.', 'Dr. med. PhD', \
+'PD', 'Prof. Dr.' usw. Das ist KEIN Berufstitel wie 'Praxisinhaber'.",
+  "lead_therapist_name": "Vor- und Nachname leitende:r Ärzt:in (Praxis-/ \
+Zentrumsleitung, Chefarzt) — nur wenn unterschiedlich zum Inhaber, sonst null",
+  "lead_therapist_email": "MUSS aus den gefundenen E-Mails stammen oder null",
+  "lead_therapist_phone": "Direktnummer wenn explizit zugeordnet, sonst null",
+  "team_members": [
+    {{
+      "name": "Vorname Nachname",
+      "role": "z.B. Fachärztin Orthopädie, Allgemeinmedizin, MPA",
+      "email": "persönliche Email aus der Liste oder null",
+      "specializations": ["medizinische Fachgebiete dieser Person"],
+      "linkedin": "LinkedIn-URL falls auf Website verlinkt, sonst null"
+    }}
+  ],
+  "general_email": "Praxis-Hauptmail (info@/kontakt@/praxis@) aus der Liste oder null",
+  "employee_count_physio": "Gesamtanzahl Ärzt:innen + Fachpersonal als Integer (oder null) — \
+das Feld heisst aus historischen Gründen 'physio', meint hier aber das gesamte Team",
+  "languages": ["Sprachen der Praxis als ISO-Codes (de, fr, it, en …)"],
+  "specializations": ["Medizinische Fachgebiete der Praxis: 'Orthopädie', \
+'Sportmedizin', 'Allgemeinmedizin', 'Innere Medizin', 'Kardiologie', \
+'Manuelle Medizin', 'Stosswellen', 'Ganganalyse', …"],
+  "training_offered": ["Spezielle Diagnostik-/Therapie-Angebote: 'MRI', \
+'Ultraschall', 'Sonographie', 'EKG', 'Belastungs-EKG', 'Infusionstherapie', \
+'Akupunktur', usw. (oder leere Liste)"],
+  "insurance_accepted": "Krankenkassen-Status: 'krankenkassen-anerkannt' \
+(Standard CH), 'nur-zusatzversicherung', 'selbstzahler', null wenn nicht erwähnt",
+  "year_founded": "Gründungsjahr als Integer (oder null)",
+  "locations": "Anzahl Standorte als Integer (1 wenn nur eine Praxis); null wenn unklar",
+  "opening_hours_summary": "Kurze Klartext-Zusammenfassung der Sprechzeiten oder null",
+  "accepts_emergency_appointments": true|false|null,
+  "has_online_booking": true|false,
+  "online_booking_url": "Direkt-Link zum Buchungs-Widget oder null",
+  "practice_size": "klein|mittel|gross",
+  "social_handles": {{
+    "linkedin_company": "Praxis-LinkedIn-URL oder null",
+    "instagram":         "Instagram-URL oder null",
+    "facebook":          "Facebook-URL oder null",
+    "youtube":           "URL oder null",
+    "tiktok":            "URL oder null"
+  }}
+}}
 
-    print(f"    extractor: konnte JSON nicht parsen, raw[:120]={raw[:120]!r}")
-    return {}
+Wichtige Regeln:
+- owner_name = natürliche Person (Vor- und Nachname). NIEMALS eine Firma. \
+Akademische Titel wie 'Dr. med.' gehen in owner_title, NICHT in owner_name.
+- owner_source NUR ausfüllen wenn owner_name nicht null ist.
+- team_members: ALLE im Team genannten Ärzt:innen (Fachärzt:innen, \
+Assistenzärzt:innen) UND nicht-ärztliches Fachpersonal (MPA, MTRA) auflisten. \
+Wenn keine Team-Liste sichtbar: leeres Array [].
+- Email-Zuordnung: Vor-/Nachname mit Email-Local-Part matchen, sonst null.
+- Telefon-Zuordnung: NUR wenn explizit zugeordnet — nie die Praxis-Hauptnummer.
+- specializations: medizinische Fachgebiete (Facharzttitel, Schwerpunkte). \
+Keine generischen Floskeln wie 'ganzheitlich' oder 'modern'.
+- has_online_booking: true wenn ein erkennbares Buchungs-Widget eingebunden ist.
+- LinkedIn/Social-URLs nur wenn WIRKLICH im Website-Text vorhanden — niemals raten.
+- year_founded: konservativ. Bei Phrasen wie 'seit über 20 Jahren': null statt zu raten.
+
+{emails_block}
+
+Website-Text (Homepage + Impressum/Team/Über-uns/Kontakt-Seiten):
+{text[:12000]}
+"""
+
+
+def _build_prompt_sportverein(*, practice_name: str, text: str, emails_block: str) -> str:
+    """Sportverein-Prompt: Vorstand statt Inhaber, Trainer statt Therapeuten.
+
+    JSON-Struktur bleibt identisch zur Physio-/Ärzte-Variante, damit das
+    Mapping in `crm/mapper.py` einheitlich bleibt — `owner_name` enthält
+    den/die Präsident:in, `lead_therapist_name` ggf. die Vereinsleitung
+    wenn separat (selten).
+    """
+    return f"""\
+Du bist Sales-Researcher und analysierst die Website des Schweizer \
+Sportvereins "{practice_name}". Extrahiere Vorstand, Trainer:innen, \
+Kontaktdaten UND Sales-relevante Zusatzdaten. Antworte NUR mit einem \
+JSON-Objekt, KEIN Markdown, KEINE Erklärung.
+
+Schema (kompatibel zu Physio/Ärzte — die Auslegung der Felder folgt unten):
+{{
+  "owner_name": "Vor- und Nachname der/des Präsident:in (PRIO 1) oder \
+Geschäftsführer:in. Suchorte: 'Vorstand', 'Präsident', 'Präsidium', \
+'Kontakt', 'Über uns'. NIEMALS eine Firma oder ein Verein selbst.",
+  "owner_source": "Wo extrahiert? 'vorstand'|'kontakt'|'about'|'andere' oder null",
+  "owner_email": "MUSS aus den gefundenen E-Mails stammen — persönliche \
+Adresse der/des Präsident:in oder null",
+  "owner_phone": "Direkt-/Mobilnummer wenn explizit zugeordnet, sonst null",
+  "owner_linkedin": "LinkedIn-URL der/des Präsident:in oder null",
+  "owner_title": "Funktion im Vorstand: 'Präsident', 'Präsidentin', \
+'Geschäftsführer:in', 'Vereinspräsident:in' oder null",
+  "lead_therapist_name": "Vor- und Nachname Sportlicher Leitung / \
+Cheftrainer:in / Vereinsleitung WENN unterschiedlich zur/zum Präsident:in \
+— sonst null",
+  "lead_therapist_email": "Persönliche Email aus der Liste oder null",
+  "lead_therapist_phone": "Direkt-/Mobilnummer wenn explizit, sonst null",
+  "team_members": [
+    {{
+      "name": "Vorname Nachname",
+      "role": "z.B. Trainer:in U17, Vorstand Finanzen, Jugendkoordinator:in",
+      "email": "persönliche Email aus der Liste oder null",
+      "specializations": ["Disziplinen / Mannschaften / Aufgabenbereiche"],
+      "linkedin": "LinkedIn-URL falls auf Website verlinkt, sonst null"
+    }}
+  ],
+  "general_email": "Vereins-Hauptmail (info@/kontakt@/sekretariat@) aus der Liste oder null",
+  "employee_count_physio": "Anzahl aktive Mitglieder als Integer (oder null) — \
+das Feld heisst aus historischen Gründen 'physio', meint hier die Mitgliederzahl",
+  "languages": ["Sprachen der Vereinsdokumentation als ISO-Codes (de, fr, en …)"],
+  "specializations": ["Disziplinen / Sportarten des Vereins: 'Fussball', \
+'Handball', 'Volleyball', 'Leichtathletik', 'Turnen', 'Schwimmen', \
+'Unihockey', …"],
+  "training_offered": ["Angebotene Trainingsgruppen: 'Aktive Herren', \
+'Senior:innen', 'Jugend U10-U17', 'Kindersport', 'Plauschturnen', usw."],
+  "insurance_accepted": null,
+  "year_founded": "Gründungsjahr als Integer (oder null) — Vereine nennen \
+das fast immer im 'Über uns'-Bereich",
+  "locations": "Anzahl Trainingsstätten/Anlagen als Integer; null wenn unklar",
+  "opening_hours_summary": "Kurze Trainingszeit-Übersicht oder null",
+  "accepts_emergency_appointments": null,
+  "has_online_booking": false,
+  "online_booking_url": null,
+  "practice_size": "klein (<50 Mitglieder)|mittel (50-200)|gross (>200)",
+  "social_handles": {{
+    "linkedin_company": "Vereins-LinkedIn-URL oder null",
+    "instagram":         "Instagram-URL oder null",
+    "facebook":          "Facebook-URL oder null",
+    "youtube":           "URL oder null",
+    "tiktok":            "URL oder null"
+  }}
+}}
+
+Wichtige Regeln:
+- owner_name = die/der Vereins-Präsident:in (oder Geschäftsführer:in). \
+Echter Mensch mit Vor- und Nachname. NIEMALS eine Firma oder der Verein selbst.
+- Vereine haben fast nie 'Online-Booking' im Sinne eines Termin-Widgets — \
+has_online_booking = false setzen, online_booking_url = null.
+- specializations = Sportarten / Disziplinen, NICHT 'Fitness' oder 'Wellness'.
+- training_offered = strukturierte Trainingsgruppen / Angebote.
+- LinkedIn/Social-URLs nur wenn WIRKLICH im Text — niemals raten.
+- year_founded ist bei Vereinen ein wichtiger Glaubwürdigkeits-Marker. Bei \
+unklaren Phrasen ('seit langem'): null statt zu raten.
+
+{emails_block}
+
+Website-Text (Homepage + Über-uns/Vorstand/Kontakt-Seiten):
+{text[:12000]}
+"""
+
+
+# Dispatch table — keys must match `Profile.extractor_prompt_key`.
+_PROMPT_BUILDERS = {
+    "physio": _build_prompt_physio,
+    "aerzte": _build_prompt_aerzte,
+    "sportverein": _build_prompt_sportverein,
+}

@@ -38,11 +38,30 @@ import {
   AlertCircle,
   CheckCircle2,
   X,
-  Megaphone,
   RefreshCcw,
   FileUp,
+  Filter as FilterIcon,
+  Check,
+  Square,
+  CheckSquare as CheckSquareIcon,
+  CalendarClock,
+  LayoutDashboard,
+  Tag,
+  UserCheck,
+  ChevronDown,
+  Send,
+  Bookmark,
+  BookmarkPlus,
+  Flame,
+  Snowflake,
+  Thermometer,
+  Megaphone,
+  Pencil,
+  Columns3,
 } from "lucide-react";
+import { scoreLead, scoreTier, scoreLabel } from "@/lib/crm/scoring";
 import { ImportCrmModal } from "./ImportCrmModal";
+import { OpportunityKanban } from "./opportunity-kanban";
 import {
   ThreePaneLayout,
   PaneHeader,
@@ -56,6 +75,7 @@ import {
 import { Avatar } from "@/components/ui/Avatar";
 import { StatusPill, toneForState } from "@/components/ui/Pills";
 import { groupByDate, shortTime } from "@/components/ui/datetime";
+import { useSearchParams } from "next/navigation";
 import { clickToCallUrl } from "@/lib/calls/click-to-call";
 import { useT } from "@/components/LocaleProvider";
 import type { WorkspaceId } from "@/lib/workspaces";
@@ -68,7 +88,66 @@ import type {
   TaskSummary,
 } from "@/lib/crm/types";
 
+const CRM_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type Tab = "activity" | "people" | "deals" | "details";
+
+/**
+ * Client-side filter facets applied on top of the server-side `q` search.
+ * Sets are used for the multi-pick facets (lead source, city) so we can
+ * `.has()` in O(1) during the per-row render.
+ */
+type CrmFilters = {
+  leadSources: Set<string>;
+  cities: Set<string>;
+  hasPhone: "any" | "yes" | "no";
+  hasEmail: "any" | "yes" | "no";
+  hasOwner: "any" | "yes" | "no";
+  hasBooking: "any" | "yes" | "no";
+};
+
+function emptyFilters(): CrmFilters {
+  return {
+    leadSources: new Set(),
+    cities: new Set(),
+    hasPhone: "any",
+    hasEmail: "any",
+    hasOwner: "any",
+    hasBooking: "any",
+  };
+}
+
+/** Apply CrmFilters to a list — pure, easy to unit-test if we ever want to. */
+function applyFilters(
+  list: CompanySummary[],
+  f: CrmFilters,
+): CompanySummary[] {
+  const matchTriState = (
+    state: "any" | "yes" | "no",
+    has: boolean,
+  ): boolean => (state === "any" ? true : state === "yes" ? has : !has);
+  return list.filter((c) => {
+    if (f.leadSources.size && !f.leadSources.has(c.leadSource ?? "")) return false;
+    if (f.cities.size && !f.cities.has(c.city ?? "")) return false;
+    if (!matchTriState(f.hasPhone, !!c.phone)) return false;
+    if (!matchTriState(f.hasEmail, !!c.generalEmail)) return false;
+    if (!matchTriState(f.hasOwner, !!c.ownerName)) return false;
+    if (!matchTriState(f.hasBooking, !!c.bookingSystem)) return false;
+    return true;
+  });
+}
+
+function activeFilterCount(f: CrmFilters): number {
+  let n = 0;
+  n += f.leadSources.size;
+  n += f.cities.size;
+  if (f.hasPhone !== "any") n += 1;
+  if (f.hasEmail !== "any") n += 1;
+  if (f.hasOwner !== "any") n += 1;
+  if (f.hasBooking !== "any") n += 1;
+  return n;
+}
 
 function relativeTime(iso: string): string {
   const t = new Date(iso).getTime();
@@ -115,6 +194,7 @@ export function CrmClient({
   scraperAvailable?: boolean;
 }) {
   const t = useT();
+  const searchParams = useSearchParams();
   const [companies, setCompanies] = useState<CompanySummary[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(true);
   const [companiesCursor, setCompaniesCursor] = useState<string | null>(null);
@@ -139,6 +219,38 @@ export function CrmClient({
   const [tabLoading, setTabLoading] = useState(false);
 
   const [showQuickNote, setShowQuickNote] = useState(false);
+
+  // Multi-select state — backed by a Set to keep toggle/has cheap. The
+  // bulk-action bar only mounts once anything is selected.
+  const [selectedSet, setSelectedSet] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  /** Cmd+K `?person=uuid` — highlightiert die Kontaktkarte in „Personen“ */
+  const [highlightPersonId, setHighlightPersonId] = useState<string | null>(
+    null,
+  );
+  /** Cmd+K `?deal=uuid` — Tab Deals + Karten-Highlight */
+  const [highlightOpportunityId, setHighlightOpportunityId] = useState<
+    string | null
+  >(null);
+
+  const selectCompany = useCallback((id: string | null) => {
+    setHighlightPersonId(null);
+    setHighlightOpportunityId(null);
+    setSelectedId(id);
+  }, []);
+
+  // Client-side filter facets. Server still does substring search by name; the
+  // facets here are purely additive so the user can drill down without us
+  // taking another GraphQL round-trip per click.
+  const [filters, setFilters] = useState<CrmFilters>(() => ({
+    leadSources: new Set(),
+    cities: new Set(),
+    hasPhone: "any",
+    hasEmail: "any",
+    hasOwner: "any",
+    hasBooking: "any",
+  }));
+  const [filterOpen, setFilterOpen] = useState(false);
 
   /* ── Data loaders ───────────────────────────────────────────── */
 
@@ -230,6 +342,116 @@ export function CrmClient({
     void loadCompanies();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Deep-link: /crm?company=<uuid> opens that company in the detail pane
+  useEffect(() => {
+    const raw = searchParams.get("company")?.trim() ?? "";
+    if (!raw || !CRM_UUID_RE.test(raw)) return;
+    setHighlightPersonId(null);
+    const deal = searchParams.get("deal")?.trim() ?? "";
+    if (!CRM_UUID_RE.test(deal)) setHighlightOpportunityId(null);
+    setSelectedId((prev) => (prev === raw ? prev : raw));
+  }, [searchParams]);
+
+  // Deep-Link: Kontakt öffnen (Cmd+K) → gleiche Firma, Tab „Personen“.
+  useEffect(() => {
+    const raw = searchParams.get("person")?.trim() ?? "";
+    if (!raw || !CRM_UUID_RE.test(raw)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(apiUrl("/api/crm/people", { id: raw }), {
+          cache: "no-store",
+        });
+        const j = await r.json();
+        if (!r.ok || cancelled) return;
+        const cid = j.person?.companyId as string | null | undefined;
+        if (!cid) return;
+        setSelectedId(cid);
+        setHighlightOpportunityId(null);
+        setHighlightPersonId(raw);
+        setTab("people");
+        if (typeof window === "undefined") return;
+        const url = new URL(window.location.href);
+        url.searchParams.delete("person");
+        const qs = url.searchParams.toString();
+        window.history.replaceState(
+          {},
+          "",
+          url.pathname + (qs ? "?" + qs : ""),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, apiUrl]);
+
+  // Deep-Link: Deal öffnen (Cmd+K) → Firma + Tab „Deals“ + Karte hervorheben.
+  useEffect(() => {
+    const raw = searchParams.get("deal")?.trim() ?? "";
+    if (!raw || !CRM_UUID_RE.test(raw)) return;
+
+    const companyFromUrl = searchParams.get("company")?.trim() ?? "";
+    if (companyFromUrl && CRM_UUID_RE.test(companyFromUrl)) {
+      setTab("deals");
+      setHighlightOpportunityId(raw);
+      if (typeof window === "undefined") return;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("deal");
+      const qs = url.searchParams.toString();
+      window.history.replaceState(
+        {},
+        "",
+        url.pathname + (qs ? "?" + qs : ""),
+      );
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/api/crm/opportunities/${encodeURIComponent(raw)}?ws=${encodeURIComponent(workspaceId)}`,
+          { cache: "no-store" },
+        );
+        const j = (await r.json()) as {
+          opportunity?: { companyId?: string | null };
+          error?: string;
+        };
+        if (!r.ok || cancelled) return;
+        const cid = j.opportunity?.companyId?.trim() ?? "";
+        if (!cid) {
+          if (typeof window !== "undefined") {
+            window.location.replace(
+              `/${workspaceId}/crm/pipeline?deal=${encodeURIComponent(raw)}`,
+            );
+          }
+          return;
+        }
+        setSelectedId(cid);
+        setTab("deals");
+        setHighlightOpportunityId(raw);
+        if (typeof window === "undefined") return;
+        const url = new URL(window.location.href);
+        url.searchParams.delete("deal");
+        url.searchParams.set("company", cid);
+        const qs = url.searchParams.toString();
+        window.history.replaceState(
+          {},
+          "",
+          url.pathname + (qs ? "?" + qs : ""),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, workspaceId]);
+
   // Debounced search
   useEffect(() => {
     const t = setTimeout(() => {
@@ -267,11 +489,56 @@ export function CrmClient({
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       await loadCompanies(search);
-      setSelectedId(j.company.id);
+      selectCompany(j.company.id);
     } catch (e) {
       alert(`Anlegen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
     }
   };
+
+  const onListPatchCompany = useCallback(
+    async (id: string, patch: Record<string, unknown>) => {
+      try {
+        const r = await fetch(apiUrl("/api/crm/companies", { id }), {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        const co = j.company;
+        setCompanies((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  name: co.name,
+                  phone: co.phone ?? null,
+                  generalEmail: co.generalEmail ?? null,
+                  city: co.address?.addressCity ?? c.city,
+                  country: co.address?.addressCountry ?? c.country,
+                  updatedAt: co.updatedAt,
+                }
+              : c,
+          ),
+        );
+        setDetail((d) =>
+          d && d.id === id
+            ? {
+                ...d,
+                name: co.name,
+                phone: co.phone ?? null,
+                generalEmail: co.generalEmail ?? null,
+                address: co.address ?? d.address,
+                updatedAt: co.updatedAt,
+              }
+            : d,
+        );
+      } catch (e) {
+        alert(`Speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      }
+    },
+    [apiUrl],
+  );
 
   const onPatchCompany = useCallback(
     async (patch: Record<string, unknown>) => {
@@ -318,13 +585,12 @@ export function CrmClient({
         const j = await r.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${r.status}`);
       }
-      setSelectedId(null);
-      setDetail(null);
+      selectCompany(null);
       await loadCompanies(search);
     } catch (e) {
       alert(`Löschen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
     }
-  }, [detail, loadCompanies, search, apiUrl]);
+  }, [detail, loadCompanies, search, apiUrl, selectCompany]);
 
   const addNote = useCallback(
     async (title: string, body: string) => {
@@ -341,7 +607,373 @@ export function CrmClient({
     [detail, apiUrl],
   );
 
-  const filtered = companies;
+  const filtered = useMemo(
+    () => applyFilters(companies, filters),
+    [companies, filters],
+  );
+
+  // Available facets for the dropdown — re-derived from whatever's currently
+  // loaded. This keeps the UI honest: a filter chip you can pick will always
+  // produce ≥1 result (vs. hard-coding the canonical 3 lead sources).
+  const facets = useMemo(() => {
+    const leadSources = new Set<string>();
+    const cities = new Set<string>();
+    for (const c of companies) {
+      if (c.leadSource) leadSources.add(c.leadSource);
+      if (c.city) cities.add(c.city);
+    }
+    return {
+      leadSources: [...leadSources].sort(),
+      cities: [...cities].sort(),
+    };
+  }, [companies]);
+
+  // Auto-select the first visible company *once* on initial load so the
+  // right pane isn't empty when the user opens CRM. We use a ref instead
+  // of just checking `selectedId == null` because the user may want to
+  // clear their selection later (e.g. mobile back button) without us
+  // immediately re-selecting them — that would feel like the UI is
+  // fighting the user. After the first hop, subsequent selection is
+  // entirely user-driven.
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current) return;
+    const pDeep = searchParams.get("person")?.trim() ?? "";
+    if (CRM_UUID_RE.test(pDeep)) return;
+    const dDeep = searchParams.get("deal")?.trim() ?? "";
+    if (CRM_UUID_RE.test(dDeep)) return;
+    if (selectedId) {
+      autoSelectedRef.current = true;
+      return;
+    }
+    if (companiesLoading) return;
+    const first = filtered[0];
+    if (first) {
+      autoSelectedRef.current = true;
+      selectCompany(first.id);
+    }
+  }, [filtered, companiesLoading, selectedId, searchParams, selectCompany]);
+
+  // Trim selection when a deletion / filter shrinks the list.
+  useEffect(() => {
+    if (selectedSet.size === 0) return;
+    const visibleIds = new Set(filtered.map((c) => c.id));
+    let changed = false;
+    const next = new Set<string>();
+    selectedSet.forEach((id) => {
+      if (visibleIds.has(id)) next.add(id);
+      else changed = true;
+    });
+    if (changed) setSelectedSet(next);
+  }, [filtered, selectedSet]);
+
+  /* ── Multi-select handlers ──────────────────────────────────── */
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelectedSet(new Set(filtered.map((c) => c.id)));
+  }, [filtered]);
+
+  const clearSelection = useCallback(() => setSelectedSet(new Set()), []);
+
+  const bulkDelete = useCallback(async () => {
+    if (selectedSet.size === 0) return;
+    if (
+      !confirm(
+        `${selectedSet.size} ${selectedSet.size === 1 ? "Firma" : "Firmen"} wirklich löschen?`,
+      )
+    )
+      return;
+    setBulkBusy(true);
+    try {
+      const ids = [...selectedSet];
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          fetch(apiUrl("/api/crm/companies", { id }), { method: "DELETE" }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) {
+        alert(`${failed} von ${ids.length} Löschungen schlugen fehl.`);
+      }
+      // Refresh and drop the selection regardless — partial successes still
+      // mutated server state.
+      await loadCompanies(search);
+      clearSelection();
+      if (selectedId && selectedSet.has(selectedId)) {
+        selectCompany(null);
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [
+    selectedSet,
+    apiUrl,
+    loadCompanies,
+    search,
+    clearSelection,
+    selectedId,
+    selectCompany,
+  ]);
+
+  const bulkSetLeadSource = useCallback(
+    async (value: string) => {
+      if (selectedSet.size === 0) return;
+      const trimmed = value.trim();
+      const patch = trimmed === "" ? { leadSource: null } : { leadSource: trimmed };
+      setBulkBusy(true);
+      try {
+        const ids = [...selectedSet];
+        await Promise.allSettled(
+          ids.map((id) =>
+            fetch(apiUrl("/api/crm/companies", { id }), {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(patch),
+            }),
+          ),
+        );
+        await loadCompanies(search);
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [selectedSet, apiUrl, loadCompanies, search],
+  );
+
+  /**
+   * Bulk-set the owner-name string for the selected companies. Twenty
+   * stores this as a free-text custom field (set via the scraper +
+   * post-processing), so we PATCH it the same way as `leadSource`. An
+   * empty string clears the field.
+   */
+  const bulkSetOwner = useCallback(
+    async (value: string) => {
+      if (selectedSet.size === 0) return;
+      const trimmed = value.trim();
+      const patch = trimmed === "" ? { ownerName: null } : { ownerName: trimmed };
+      setBulkBusy(true);
+      try {
+        const ids = [...selectedSet];
+        await Promise.allSettled(
+          ids.map((id) =>
+            fetch(apiUrl("/api/crm/companies", { id }), {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(patch),
+            }),
+          ),
+        );
+        await loadCompanies(search);
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [selectedSet, apiUrl, loadCompanies, search],
+  );
+
+  /* ── Mautic-Push (Welle 1: One-Click "in den Funnel") ─────────── */
+
+  type MauticSegmentLite = {
+    id: number;
+    name: string;
+    contactCount: number;
+  };
+  const [segments, setSegments] = useState<MauticSegmentLite[] | null>(null);
+  const [segmentsError, setSegmentsError] = useState<string | null>(null);
+  // Mautic-Push status banner. We surface the result inline on the
+  // bulk-action bar so the operator sees the success/skip/error counts
+  // without losing their selection.
+  const [pushResult, setPushResult] = useState<
+    | { pushed: number; skipped: number; errors: number; segmentName?: string | null }
+    | null
+  >(null);
+
+  // Lazy-load segments only when needed — this hits the marketing API,
+  // which the user might not have configured yet on every workspace.
+  // We only show MedTheris segments anyway, since that's the only
+  // workspace that pushes leads into Mautic today.
+  useEffect(() => {
+    if (workspaceId !== "medtheris") return;
+    let alive = true;
+    void (async () => {
+      try {
+        const r = await fetch("/api/marketing/segments?ws=medtheris", {
+          cache: "no-store",
+        });
+        if (!alive) return;
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          setSegmentsError(j?.error ?? `HTTP ${r.status}`);
+          return;
+        }
+        const j = await r.json();
+        const list = (j.segments ?? []) as MauticSegmentLite[];
+        setSegments(list);
+      } catch (e) {
+        setSegmentsError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [workspaceId]);
+
+  /* ── Mautic-Status (Welle 1.10: "im Funnel"-Chip) ─────────────── */
+
+  // {domain → contactCount} so we can show "im Funnel" on company
+  // cards without N Mautic round-trips. Re-fetched whenever the user
+  // refreshes the company list or successfully pushes a new batch.
+  const [mauticBuckets, setMauticBuckets] = useState<Record<string, number>>(
+    {},
+  );
+  const [mauticDomainDetails, setMauticDomainDetails] = useState<
+    Record<string, { count: number; segments: string[]; stages: string[] }>
+  >({});
+  const refreshMauticStatus = useCallback(async () => {
+    if (workspaceId !== "medtheris") return;
+    try {
+      const r = await fetch(apiUrl("/api/crm/companies/mautic-status"), {
+        cache: "no-store",
+      });
+      if (!r.ok) return;
+      const j = await r.json();
+      setMauticBuckets(j.buckets ?? {});
+      setMauticDomainDetails(j.details ?? {});
+    } catch {
+      // Silent — the chip is purely informational, no value in
+      // surfacing failures to the operator.
+    }
+  }, [workspaceId, apiUrl]);
+  useEffect(() => {
+    void refreshMauticStatus();
+  }, [refreshMauticStatus]);
+
+  const bulkPushToMautic = useCallback(
+    async (segmentId: number | null, segmentName: string | null) => {
+      if (selectedSet.size === 0) return;
+      setBulkBusy(true);
+      setPushResult(null);
+      try {
+        const ids = [...selectedSet];
+        const r = await fetch(
+          apiUrl("/api/crm/companies/push-to-mautic"),
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              companyIds: ids,
+              segmentId: segmentId ?? undefined,
+            }),
+          },
+        );
+        const j = await r.json();
+        if (!r.ok) {
+          alert(`Push fehlgeschlagen: ${j.error ?? `HTTP ${r.status}`}`);
+          return;
+        }
+        const summary = j.summary ?? { pushed: 0, skipped: 0, errors: 0 };
+        setPushResult({
+          pushed: summary.pushed,
+          skipped: summary.skipped,
+          errors: summary.errors,
+          segmentName,
+        });
+        if (summary.pushed > 0) {
+          // Refresh the in-funnel chip so the just-pushed company shows
+          // green immediately, without forcing a manual reload.
+          void refreshMauticStatus();
+        }
+      } catch (e) {
+        alert(`Push fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [selectedSet, apiUrl, refreshMauticStatus],
+  );
+
+  /* ── Saved Views (Filter-Presets) ─────────────────────────────── */
+
+  type SavedView = {
+    id: string;
+    name: string;
+    leadSources: string[];
+    cities: string[];
+    hasPhone: "any" | "yes" | "no";
+    hasEmail: "any" | "yes" | "no";
+    hasOwner: "any" | "yes" | "no";
+    hasBooking: "any" | "yes" | "no";
+    search: string;
+  };
+  // Per-workspace key so MedTheris views don't leak into Corehub. We
+  // store as JSON in localStorage — small enough that we don't bother
+  // with IndexedDB and the operator only needs it on their own browser.
+  const VIEWS_LS_KEY = `crm.savedViews.${workspaceId}`;
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(VIEWS_LS_KEY);
+      if (raw) setSavedViews(JSON.parse(raw) as SavedView[]);
+    } catch {
+      // Corrupted JSON / blocked storage → ignore, start clean.
+    }
+  }, [VIEWS_LS_KEY]);
+  const persistViews = useCallback(
+    (next: SavedView[]) => {
+      setSavedViews(next);
+      try {
+        window.localStorage.setItem(VIEWS_LS_KEY, JSON.stringify(next));
+      } catch {
+        // Quota or private-mode browsing — UI still reflects the change.
+      }
+    },
+    [VIEWS_LS_KEY],
+  );
+
+  const saveCurrentView = useCallback(() => {
+    const name = prompt("Name für diese Ansicht:", "");
+    if (!name || !name.trim()) return;
+    const view: SavedView = {
+      id: `view_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: name.trim(),
+      leadSources: [...filters.leadSources],
+      cities: [...filters.cities],
+      hasPhone: filters.hasPhone,
+      hasEmail: filters.hasEmail,
+      hasOwner: filters.hasOwner,
+      hasBooking: filters.hasBooking,
+      search,
+    };
+    persistViews([...savedViews, view]);
+  }, [filters, savedViews, persistViews, search]);
+
+  const applySavedView = useCallback((v: SavedView) => {
+    setFilters({
+      leadSources: new Set(v.leadSources),
+      cities: new Set(v.cities),
+      hasPhone: v.hasPhone,
+      hasEmail: v.hasEmail,
+      hasOwner: v.hasOwner,
+      hasBooking: v.hasBooking,
+    });
+    setSearch(v.search);
+  }, []);
+
+  const deleteSavedView = useCallback(
+    (id: string) => {
+      persistViews(savedViews.filter((v) => v.id !== id));
+    },
+    [savedViews, persistViews],
+  );
 
   /* ── Derived: company-list activity score ───────────────────── */
 
@@ -376,6 +1008,13 @@ export function CrmClient({
             >
               <RefreshCw size={13} />
             </button>
+            <Link
+              href={`/${workspaceId}/crm/pipeline`}
+              className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+              title="Pipeline (alle Deals)"
+            >
+              <Columns3 size={13} />
+            </Link>
             <Link
               href={`/${workspaceId}/crm/settings`}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
@@ -420,20 +1059,83 @@ export function CrmClient({
           </>
         }
       >
-        <div className="relative">
-          <Search
-            size={12}
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-text-quaternary"
-          />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Firma suchen…"
-            className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
-          />
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <Search
+              size={12}
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-text-quaternary"
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Firma suchen…"
+              className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setFilterOpen((v) => !v)}
+            className={`shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-[11px] ${
+              activeFilterCount(filters) > 0 || filterOpen
+                ? "border-stroke-2 bg-bg-overlay text-text-primary"
+                : "border-stroke-1 text-text-tertiary hover:text-text-primary"
+            }`}
+            title="Filter"
+            aria-expanded={filterOpen}
+          >
+            <FilterIcon size={11} />
+            Filter
+            {activeFilterCount(filters) > 0 && (
+              <span
+                className="ml-0.5 inline-flex items-center justify-center rounded-full bg-[var(--accent,#5b5fc7)] text-white text-[9.5px] font-semibold w-4 h-4"
+                style={{ background: accent }}
+              >
+                {activeFilterCount(filters)}
+              </span>
+            )}
+          </button>
         </div>
       </PaneHeader>
+
+      {filterOpen && (
+        <FilterPanel
+          accent={accent}
+          filters={filters}
+          facets={facets}
+          onChange={setFilters}
+          onClose={() => setFilterOpen(false)}
+          onReset={() => setFilters(emptyFilters())}
+          savedViews={savedViews.map((v) => ({ id: v.id, name: v.name }))}
+          onSaveView={saveCurrentView}
+          onApplyView={(id) => {
+            const v = savedViews.find((sv) => sv.id === id);
+            if (v) applySavedView(v);
+          }}
+          onDeleteView={deleteSavedView}
+        />
+      )}
+
+      {selectedSet.size > 0 && (
+        <BulkActionBar
+          accent={accent}
+          count={selectedSet.size}
+          totalVisible={filtered.length}
+          busy={bulkBusy}
+          onSelectAll={selectAllVisible}
+          onClear={clearSelection}
+          onDelete={bulkDelete}
+          onSetLeadSource={bulkSetLeadSource}
+          onSetOwner={bulkSetOwner}
+          onPushToMautic={
+            workspaceId === "medtheris" ? bulkPushToMautic : undefined
+          }
+          segments={segments}
+          segmentsError={segmentsError}
+          pushResult={pushResult}
+          onDismissPushResult={() => setPushResult(null)}
+        />
+      )}
 
       {showNew && (
         <div className="px-3 py-2 border-b border-stroke-1 bg-bg-elevated flex items-center gap-2">
@@ -480,9 +1182,20 @@ export function CrmClient({
         companies={filtered}
         loading={companiesLoading && filtered.length === 0}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={selectCompany}
         meta={companyMeta}
-        emptyHint={search ? t("common.noResults") : t("crm.empty.companies")}
+        emptyHint={
+          search || activeFilterCount(filters) > 0
+            ? "Keine Treffer mit diesen Filtern"
+            : t("crm.empty.companies")
+        }
+        selectedSet={selectedSet}
+        onToggleSelect={toggleSelected}
+        mauticBuckets={mauticBuckets}
+        mauticDomainDetails={
+          workspaceId === "medtheris" ? mauticDomainDetails : undefined
+        }
+        onPatchRow={onListPatchCompany}
       />
 
       {companiesCursor && (
@@ -585,13 +1298,20 @@ export function CrmClient({
       />
     );
   } else if (tab === "people") {
-    secondaryBody = <PeopleGrid people={people} accent={accent} />;
+    secondaryBody = (
+      <PeopleGrid
+        people={people}
+        accent={accent}
+        highlightPersonId={highlightPersonId}
+      />
+    );
   } else if (tab === "deals") {
     secondaryBody = (
-      <DealList
+      <OpportunityKanban
         deals={opportunities}
         accent={accent}
         workspaceId={workspaceId}
+        highlightDealId={highlightOpportunityId}
         onMoved={(id, stage) => {
           setOpportunities((prev) =>
             prev.map((o) => (o.id === id ? { ...o, stage } : o)),
@@ -708,7 +1428,7 @@ export function CrmClient({
         detail={detailWithHeader}
         storageKey={`crm:${workspaceId}`}
         hasSelection={!!selectedId}
-        onMobileBack={() => setSelectedId(null)}
+        onMobileBack={() => selectCompany(null)}
       />
       {showImport && (
         <ImportCrmModal
@@ -723,6 +1443,637 @@ export function CrmClient({
 }
 
 /* ----------------------------------------------------------------- */
+/*                       Filter dropdown + bulk-action bar             */
+/* ----------------------------------------------------------------- */
+
+/**
+ * Inline filter panel that drops down between the search header and the
+ * company list. Kept inside the same scrolling pane (rather than as a
+ * floating popover) so it works on narrow CRM columns and on touch
+ * devices without z-index gymnastics.
+ */
+function FilterPanel({
+  accent,
+  filters,
+  facets,
+  onChange,
+  onClose,
+  onReset,
+  savedViews,
+  onSaveView,
+  onApplyView,
+  onDeleteView,
+}: {
+  accent: string;
+  filters: CrmFilters;
+  facets: { leadSources: string[]; cities: string[] };
+  onChange: (f: CrmFilters) => void;
+  onClose: () => void;
+  onReset: () => void;
+  savedViews?: { id: string; name: string }[];
+  onSaveView?: () => void;
+  onApplyView?: (id: string) => void;
+  onDeleteView?: (id: string) => void;
+}) {
+  const toggleSetItem = (key: "leadSources" | "cities", value: string) => {
+    const next = new Set(filters[key]);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    onChange({ ...filters, [key]: next });
+  };
+  const setTri = (
+    key: "hasPhone" | "hasEmail" | "hasOwner" | "hasBooking",
+    value: "any" | "yes" | "no",
+  ) => onChange({ ...filters, [key]: value });
+
+  return (
+    <div className="border-b border-stroke-1 bg-bg-elevated px-3 py-2.5 space-y-2.5">
+      <div className="flex items-center justify-between text-[11px] text-text-tertiary">
+        <span className="uppercase tracking-wider font-semibold">Filter</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-text-tertiary hover:text-text-primary"
+          >
+            Zurücksetzen
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-0.5 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+            title="Filter schließen"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+
+      <TriStateRow
+        label="Telefon"
+        icon={<Phone size={10} />}
+        value={filters.hasPhone}
+        onChange={(v) => setTri("hasPhone", v)}
+      />
+      <TriStateRow
+        label="Email"
+        icon={<Mail size={10} />}
+        value={filters.hasEmail}
+        onChange={(v) => setTri("hasEmail", v)}
+      />
+      <TriStateRow
+        label="Inhaber"
+        icon={<UserCheck size={10} />}
+        value={filters.hasOwner}
+        onChange={(v) => setTri("hasOwner", v)}
+      />
+      <TriStateRow
+        label="Booking"
+        icon={<CalendarClock size={10} />}
+        value={filters.hasBooking}
+        onChange={(v) => setTri("hasBooking", v)}
+      />
+
+      {facets.leadSources.length > 0 && (
+        <FacetChips
+          label="Lead-Quelle"
+          values={facets.leadSources}
+          selected={filters.leadSources}
+          accent={accent}
+          onToggle={(v) => toggleSetItem("leadSources", v)}
+        />
+      )}
+      {facets.cities.length > 0 && (
+        <FacetChips
+          label="Stadt"
+          values={facets.cities}
+          selected={filters.cities}
+          accent={accent}
+          onToggle={(v) => toggleSetItem("cities", v)}
+          maxVisible={12}
+        />
+      )}
+
+      {(savedViews && savedViews.length > 0) || onSaveView ? (
+        <div className="pt-2 border-t border-stroke-1 space-y-1.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="uppercase tracking-wider font-semibold text-text-tertiary inline-flex items-center gap-1">
+              <Bookmark size={10} />
+              Gespeicherte Ansichten
+            </span>
+            {onSaveView && (
+              <button
+                type="button"
+                onClick={onSaveView}
+                className="inline-flex items-center gap-1 text-text-tertiary hover:text-text-primary"
+                title="Aktuelle Filter als neue Ansicht speichern"
+              >
+                <BookmarkPlus size={10} />
+                Speichern
+              </button>
+            )}
+          </div>
+          {savedViews && savedViews.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {savedViews.map((v) => (
+                <span
+                  key={v.id}
+                  className="inline-flex items-center gap-1 rounded-full border border-stroke-1 bg-bg-overlay text-[10.5px] text-text-secondary"
+                >
+                  <button
+                    type="button"
+                    onClick={() => onApplyView?.(v.id)}
+                    className="pl-2 pr-1 py-0.5 hover:text-text-primary"
+                    title="Ansicht anwenden"
+                  >
+                    {v.name}
+                  </button>
+                  {onDeleteView && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Ansicht „${v.name}“ löschen?`))
+                          onDeleteView(v.id);
+                      }}
+                      className="px-1 py-0.5 text-text-quaternary hover:text-red-300"
+                      title="Ansicht löschen"
+                    >
+                      <X size={9} />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Three-way segmented toggle (Beliebig / Ja / Nein). We use this for the
+ * "feature presence" filters because a plain checkbox can't express
+ * "explicitly missing" — and "missing phone" is the most common operator
+ * query for lead triage.
+ */
+function TriStateRow({
+  label,
+  icon,
+  value,
+  onChange,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  value: "any" | "yes" | "no";
+  onChange: (v: "any" | "yes" | "no") => void;
+}) {
+  const opts: { id: "any" | "yes" | "no"; label: string }[] = [
+    { id: "any", label: "Beliebig" },
+    { id: "yes", label: "Ja" },
+    { id: "no", label: "Fehlt" },
+  ];
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="inline-flex items-center gap-1.5 w-20 text-text-tertiary">
+        {icon}
+        {label}
+      </span>
+      <div className="inline-flex rounded-md border border-stroke-1 overflow-hidden">
+        {opts.map((o, i) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            className={`px-2 py-1 ${
+              i > 0 ? "border-l border-stroke-1" : ""
+            } ${
+              value === o.id
+                ? "bg-bg-overlay text-text-primary"
+                : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Wrapping chip cloud for facets like lead source / city. Shows up to
+ * `maxVisible` chips and exposes a "+N mehr" expander only if the user
+ * really needs the long tail. Selected chips get the workspace accent
+ * border so the active filter set is glanceable.
+ */
+function FacetChips({
+  label,
+  values,
+  selected,
+  accent,
+  onToggle,
+  maxVisible = 6,
+}: {
+  label: string;
+  values: string[];
+  selected: Set<string>;
+  accent: string;
+  onToggle: (v: string) => void;
+  maxVisible?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? values : values.slice(0, maxVisible);
+  const hasMore = values.length > maxVisible;
+  return (
+    <div className="space-y-1">
+      <p className="text-[10.5px] uppercase tracking-wider font-semibold text-text-tertiary">
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-1">
+        {visible.map((v) => {
+          const on = selected.has(v);
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => onToggle(v)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] ${
+                on
+                  ? "text-text-primary"
+                  : "border-stroke-1 text-text-tertiary hover:text-text-primary"
+              }`}
+              style={
+                on
+                  ? { borderColor: accent, background: `${accent}22` }
+                  : undefined
+              }
+            >
+              {on && <Check size={9} />}
+              {v}
+            </button>
+          );
+        })}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-[10.5px] text-text-tertiary hover:text-text-primary px-1.5"
+          >
+            {expanded ? "weniger" : `+${values.length - maxVisible} mehr`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sticky-feeling bar that takes over the top of the list while a multi-
+ * select is active. Provides bulk Lead-source set + bulk delete; we keep
+ * the surface intentionally minimal so single-select day-to-day usage
+ * stays uncluttered.
+ */
+function BulkActionBar({
+  accent,
+  count,
+  totalVisible,
+  busy,
+  onSelectAll,
+  onClear,
+  onDelete,
+  onSetLeadSource,
+  onSetOwner,
+  onPushToMautic,
+  segments,
+  segmentsError,
+  pushResult,
+  onDismissPushResult,
+}: {
+  accent: string;
+  count: number;
+  totalVisible: number;
+  busy: boolean;
+  onSelectAll: () => void;
+  onClear: () => void;
+  onDelete: () => void;
+  onSetLeadSource: (v: string) => Promise<void> | void;
+  onSetOwner: (v: string) => Promise<void> | void;
+  onPushToMautic?: (
+    segmentId: number | null,
+    segmentName: string | null,
+  ) => Promise<void> | void;
+  segments?: { id: number; name: string; contactCount: number }[] | null;
+  segmentsError?: string | null;
+  pushResult?: {
+    pushed: number;
+    skipped: number;
+    errors: number;
+    segmentName?: string | null;
+  } | null;
+  onDismissPushResult?: () => void;
+}) {
+  // `editing` can be "leadSource" | "owner" — single state because the
+  // two bulk-edit fields share the inline form pattern and we only ever
+  // edit one at a time.
+  const [editing, setEditing] = useState<"leadSource" | "owner" | null>(null);
+  const [draft, setDraft] = useState("");
+  // Push-to-Mautic dropdown state.
+  const [pushOpen, setPushOpen] = useState(false);
+
+  const allSelected = count >= totalVisible && totalVisible > 0;
+  const showPushButton = Boolean(onPushToMautic);
+
+  return (
+    <div
+      className="border-b border-stroke-1"
+      style={{ background: `${accent}12` }}
+    >
+      <div className="px-3 py-2 flex items-center gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={allSelected ? onClear : onSelectAll}
+          className="inline-flex items-center gap-1 text-[11px] text-text-secondary hover:text-text-primary"
+          title={allSelected ? "Auswahl aufheben" : "Alle sichtbaren auswählen"}
+        >
+          {allSelected ? (
+            <CheckSquareIcon size={12} className="text-[#5b5fc7]" />
+          ) : (
+            <Square size={12} />
+          )}
+          {count} ausgewählt
+        </button>
+        <span className="text-text-quaternary text-[11px]">
+          / {totalVisible} sichtbar
+        </span>
+        <div className="ml-auto flex items-center gap-1 flex-wrap">
+          {editing ? (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (editing === "leadSource") await onSetLeadSource(draft);
+                else await onSetOwner(draft);
+                setEditing(null);
+                setDraft("");
+              }}
+              className="inline-flex items-center gap-1"
+            >
+              <input
+                autoFocus
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={editing === "leadSource" ? "Lead-Quelle…" : "Inhaber:in…"}
+                className="bg-bg-elevated border border-stroke-1 rounded px-2 py-1 text-[11px] outline-none focus:border-stroke-2 w-32"
+              />
+              <button
+                type="submit"
+                disabled={busy}
+                className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-40"
+                title="Speichern"
+              >
+                <Check size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(null);
+                  setDraft("");
+                }}
+                className="p-1 rounded text-text-tertiary hover:text-text-primary"
+                title="Abbrechen"
+              >
+                <X size={12} />
+              </button>
+            </form>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setEditing("leadSource")}
+                disabled={busy}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-stroke-1 text-[11px] text-text-secondary hover:text-text-primary disabled:opacity-40"
+                title="Lead-Quelle für Auswahl setzen"
+              >
+                <Tag size={11} />
+                Lead-Quelle
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing("owner")}
+                disabled={busy}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-stroke-1 text-[11px] text-text-secondary hover:text-text-primary disabled:opacity-40"
+                title="Inhaber:in für Auswahl setzen"
+              >
+                <UserCheck size={11} />
+                Inhaber:in
+              </button>
+            </>
+          )}
+          {showPushButton && (
+            <PushToMauticButton
+              busy={busy}
+              segments={segments ?? null}
+              segmentsError={segmentsError ?? null}
+              onPush={async (segId, segName) => {
+                setPushOpen(false);
+                if (onPushToMautic) await onPushToMautic(segId, segName);
+              }}
+              open={pushOpen}
+              setOpen={setPushOpen}
+              accent={accent}
+            />
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={busy}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-red-500/40 text-[11px] text-red-300 hover:bg-red-500/10 disabled:opacity-40"
+            title="Auswahl löschen"
+          >
+            {busy ? <Loader2 size={11} className="spin" /> : <Trash2 size={11} />}
+            Löschen
+          </button>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={busy}
+            className="p-1 rounded text-text-tertiary hover:text-text-primary disabled:opacity-40"
+            title="Auswahl aufheben"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+      {pushResult && (
+        <div className="px-3 pb-2 -mt-1 flex items-center gap-2 text-[11px]">
+          <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+          <span className="text-text-secondary">
+            {pushResult.pushed} an Mautic gepusht
+            {pushResult.segmentName ? ` → "${pushResult.segmentName}"` : ""}
+            {pushResult.skipped > 0 && (
+              <>
+                {", "}
+                <span className="text-amber-300">
+                  {pushResult.skipped} übersprungen (keine E-Mail)
+                </span>
+              </>
+            )}
+            {pushResult.errors > 0 && (
+              <>
+                {", "}
+                <span className="text-red-300">{pushResult.errors} Fehler</span>
+              </>
+            )}
+          </span>
+          {onDismissPushResult && (
+            <button
+              type="button"
+              onClick={onDismissPushResult}
+              className="ml-auto p-0.5 rounded text-text-tertiary hover:text-text-primary"
+              title="Schließen"
+            >
+              <X size={11} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Push-to-Mautic split-button: the main click triggers the default push
+ * (no segment), the chevron opens a popover where the operator can pick
+ * a target segment. Designed so the common case ("just upsert these
+ * contacts") is one click, while the segment-targeted case is two.
+ */
+function PushToMauticButton({
+  busy,
+  segments,
+  segmentsError,
+  onPush,
+  open,
+  setOpen,
+  accent,
+}: {
+  busy: boolean;
+  segments: { id: number; name: string; contactCount: number }[] | null;
+  segmentsError: string | null;
+  onPush: (segId: number | null, segName: string | null) => Promise<void> | void;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  accent: string;
+}) {
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onPush(null, null)}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-l border border-stroke-1 text-[11px] font-medium text-text-primary hover:bg-bg-overlay disabled:opacity-40"
+        title="Auswahl in Mautic upserten (ohne Segment-Bindung)"
+        style={{
+          background: `${accent}22`,
+        }}
+      >
+        {busy ? <Loader2 size={11} className="spin" /> : <Send size={11} />}
+        In Funnel
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center px-1 py-1 rounded-r border border-stroke-1 border-l-0 text-text-secondary hover:text-text-primary hover:bg-bg-overlay disabled:opacity-40"
+        title="Segment wählen"
+        style={{
+          background: `${accent}22`,
+        }}
+      >
+        <ChevronDown size={11} />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 w-72 max-h-80 overflow-auto bg-bg-elevated border border-stroke-1 rounded-md shadow-xl z-50">
+          <div className="px-3 py-2 border-b border-stroke-1 text-[10px] uppercase tracking-wide text-text-tertiary">
+            Segment auswählen
+          </div>
+          {segmentsError && (
+            <div className="px-3 py-2 text-[11px] text-red-300">
+              {segmentsError}
+            </div>
+          )}
+          {segments == null ? (
+            <div className="px-3 py-2 text-[11px] text-text-tertiary">
+              Lade Segmente…
+            </div>
+          ) : segments.length === 0 ? (
+            <div className="px-3 py-2 text-[11px] text-text-tertiary">
+              Keine Segmente in Mautic angelegt.
+            </div>
+          ) : (
+            <ul className="py-1">
+              {segments.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPush(s.id, s.name)}
+                    className="w-full text-left px-3 py-1.5 text-[11.5px] hover:bg-bg-overlay flex items-center justify-between gap-2"
+                  >
+                    <span className="truncate">{s.name}</span>
+                    <span className="text-[10px] text-text-quaternary shrink-0">
+                      {s.contactCount}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="border-t border-stroke-1 px-3 py-1.5 text-[10px] text-text-quaternary">
+            Tipp: Klick außerhalb der Liste = abbrechen
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/*                          Lead-Score chip                            */
+/* ----------------------------------------------------------------- */
+
+/**
+ * Compact triage signal in the company card. Three tiers (cold / warm /
+ * hot) are colour-coded so the operator can scan a long list and
+ * immediately spot which leads are ready for the funnel.
+ *
+ * The score itself is computed client-side from the loaded summary —
+ * see `scoreLead()` for the heuristic. We deliberately surface it in
+ * every render path (list + bulk-bar) rather than caching, because the
+ * heuristic is cheap (≪1µs) and a stale score after an inline-edit
+ * would mislead Triage decisions.
+ */
+function LeadScoreChip({ company }: { company: CompanySummary }) {
+  const score = scoreLead(company);
+  const tier = scoreTier(score);
+  const Icon = tier === "hot" ? Flame : tier === "warm" ? Thermometer : Snowflake;
+  const palette =
+    tier === "hot"
+      ? { bg: "bg-emerald-500/15", text: "text-emerald-300", iconColor: "text-emerald-400" }
+      : tier === "warm"
+        ? { bg: "bg-amber-500/15", text: "text-amber-300", iconColor: "text-amber-400" }
+        : { bg: "bg-slate-500/15", text: "text-slate-300", iconColor: "text-slate-400" };
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9.5px] font-semibold shrink-0 ${palette.bg} ${palette.text}`}
+      title={`Lead-Score: ${score} — ${scoreLabel(score)}`}
+    >
+      <Icon size={9} className={palette.iconColor} />
+      {score}
+    </span>
+  );
+}
+
+/* ----------------------------------------------------------------- */
 /*                       Company list (rich cards)                     */
 /* ----------------------------------------------------------------- */
 
@@ -733,6 +2084,11 @@ function CompanyList({
   onSelect,
   meta,
   emptyHint,
+  selectedSet,
+  onToggleSelect,
+  mauticBuckets,
+  mauticDomainDetails,
+  onPatchRow,
 }: {
   companies: CompanySummary[];
   loading: boolean;
@@ -740,7 +2096,17 @@ function CompanyList({
   onSelect: (id: string) => void;
   meta: Map<string, { tone: "fresh" | "warm" | "stale" }>;
   emptyHint: string;
+  selectedSet: Set<string>;
+  onToggleSelect: (id: string) => void;
+  mauticBuckets?: Record<string, number>;
+  mauticDomainDetails?: Record<
+    string,
+    { count: number; segments: string[]; stages: string[] }
+  >;
+  onPatchRow?: (id: string, patch: Record<string, unknown>) => void;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ name: "", phone: "", email: "" });
   if (loading) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center text-[12px] text-text-tertiary">
@@ -755,10 +2121,26 @@ function CompanyList({
       </div>
     );
   }
+  const anyChecked = selectedSet.size > 0;
+
+  function saveRowEdit(c: CompanySummary) {
+    if (!onPatchRow) return;
+    const patch: Record<string, unknown> = {};
+    const n = draft.name.trim();
+    const p = draft.phone.trim();
+    const em = draft.email.trim();
+    if (n && n !== c.name) patch.name = n;
+    if (p !== (c.phone ?? "")) patch.phone = p || null;
+    if (em !== (c.generalEmail ?? "")) patch.generalEmail = em || null;
+    if (Object.keys(patch).length) onPatchRow(c.id, patch);
+    setEditingId(null);
+  }
+
   return (
     <ul className="flex-1 min-h-0 overflow-auto">
       {companies.map((c) => {
         const isSel = c.id === selectedId;
+        const isChecked = selectedSet.has(c.id);
         const tone = meta.get(c.id)?.tone ?? "warm";
         const dot =
           tone === "fresh"
@@ -768,73 +2150,264 @@ function CompanyList({
               : "#64748b";
         return (
           <li key={c.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(c.id)}
+            <div
               className={`group w-full text-left border-b border-stroke-1/60 px-3 py-2.5 flex items-start gap-2.5 ${
                 isSel ? "bg-bg-overlay" : "hover:bg-bg-elevated"
               }`}
             >
-              <Avatar name={c.name} size={32} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="text-[12.5px] font-semibold text-text-primary truncate flex-1">
-                    {c.name || "(ohne Name)"}
-                  </p>
-                  <span
-                    aria-hidden
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ background: dot }}
-                    title={
-                      tone === "fresh"
-                        ? "Aktiv (< 7 Tage)"
-                        : tone === "warm"
-                          ? "Warm (< 30 Tage)"
-                          : "Kalt (> 30 Tage)"
-                    }
-                  />
-                  <span className="text-[10px] text-text-quaternary shrink-0">
-                    {relativeTime(c.updatedAt)}
-                  </span>
-                </div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-text-tertiary min-w-0">
-                  {c.city || c.country ? (
-                    <span className="inline-flex items-center gap-1 truncate">
-                      <MapPin size={10} />
-                      {[c.city, c.country].filter(Boolean).join(", ")}
-                    </span>
-                  ) : (
-                    <span className="text-text-quaternary">—</span>
-                  )}
-                  {c.googleRating && (
-                    <span className="inline-flex items-center gap-1 ml-auto">
-                      <Star
-                        size={10}
-                        className="text-amber-400"
-                        fill="currentColor"
+              {/* Selection toggle. Visible when any row is checked, or on
+                  hover/focus; otherwise stays out of the way to keep the
+                  default rest-state visually clean. */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(c.id);
+                }}
+                aria-pressed={isChecked}
+                title={isChecked ? "Auswahl entfernen" : "Auswählen"}
+                className={`relative z-[1] mt-0.5 shrink-0 p-0.5 rounded text-text-tertiary hover:text-text-primary transition-opacity ${
+                  isChecked || anyChecked
+                    ? "opacity-100"
+                    : "opacity-[0.52] group-hover:opacity-100 focus-visible:opacity-100"
+                }`}
+              >
+                {isChecked ? (
+                  <CheckSquareIcon size={14} className="text-[#5b5fc7]" />
+                ) : (
+                  <Square size={14} />
+                )}
+              </button>
+              <div className="flex-1 min-w-0 flex items-start gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingId === c.id) return;
+                  onSelect(c.id);
+                }}
+                className="min-w-0 flex-1 flex items-start gap-2.5 text-left"
+              >
+                <Avatar name={c.name} size={32} />
+                <div className="min-w-0 flex-1">
+                  {editingId === c.id ? (
+                    <div
+                      className="space-y-1.5"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <input
+                        value={draft.name}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, name: e.target.value }))
+                        }
+                        className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1 text-[12px] text-text-primary"
+                        placeholder="Name"
                       />
-                      {c.googleRating.toFixed(1)}
+                      <input
+                        value={draft.phone}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, phone: e.target.value }))
+                        }
+                        className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1 text-[11px] text-text-primary"
+                        placeholder="Telefon"
+                      />
+                      <input
+                        value={draft.email}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, email: e.target.value }))
+                        }
+                        className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1 text-[11px] text-text-primary"
+                        placeholder="Allgemeine E-Mail"
+                      />
+                      <div className="flex gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => saveRowEdit(c)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-accent text-white"
+                        >
+                          Speichern
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          className="text-[10px] px-2 py-0.5 rounded border border-stroke-1 text-text-tertiary"
+                        >
+                          Abbrechen
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                  <>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className="text-[12.5px] font-semibold text-text-primary truncate flex-1">
+                      {c.name || "(ohne Name)"}
+                    </p>
+                    <LeadScoreChip company={c} />
+                    {(() => {
+                      const dom = (c.domain ?? "")
+                        .toLowerCase()
+                        .replace(/^https?:\/\//, "")
+                        .replace(/^www\./, "")
+                        .replace(/\/.*$/, "");
+                      const hits =
+                        dom && mauticBuckets ? mauticBuckets[dom] : undefined;
+                      if (!hits || hits <= 0) return null;
+                      const det =
+                        dom && mauticDomainDetails
+                          ? mauticDomainDetails[dom]
+                          : undefined;
+                      const segHint = det?.segments?.length
+                        ? det.segments.slice(0, 3).join(", ") +
+                          (det.segments.length > 3 ? "…" : "")
+                        : "";
+                      const stageHint = det?.stages?.length
+                        ? det.stages.join(", ")
+                        : "";
+                      return (
+                        <span
+                          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9.5px] font-semibold shrink-0 bg-fuchsia-500/15 text-fuchsia-300"
+                          title={
+                            det
+                              ? `Mautic @${dom}: ${det.count} Kontakt(e). Segmente: ${segHint || "—"}. Stage: ${stageHint || "—"}`
+                              : `In Mautic: ${hits} Kontakt${hits === 1 ? "" : "e"} @${dom}`
+                          }
+                        >
+                          <Megaphone size={9} className="text-fuchsia-400" />
+                          {hits}
+                        </span>
+                      );
+                    })()}
+                    <span
+                      aria-hidden
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: dot }}
+                      title={
+                        tone === "fresh"
+                          ? "Aktiv (< 7 Tage)"
+                          : tone === "warm"
+                            ? "Warm (< 30 Tage)"
+                            : "Kalt (> 30 Tage)"
+                      }
+                    />
+                    <span className="text-[10px] text-text-quaternary shrink-0">
+                      {relativeTime(c.updatedAt)}
                     </span>
-                  )}
-                </div>
-                {(c.phone || c.generalEmail) && (
-                  <div className="mt-1 flex items-center gap-2 text-[10.5px] text-text-quaternary">
-                    {c.phone && (
-                      <span className="inline-flex items-center gap-1">
-                        <Phone size={10} />
-                        {c.phone}
-                      </span>
-                    )}
-                    {c.generalEmail && (
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-text-tertiary min-w-0">
+                    {c.city || c.country ? (
                       <span className="inline-flex items-center gap-1 truncate">
-                        <Mail size={10} />
-                        <span className="truncate">{c.generalEmail}</span>
+                        <MapPin size={10} />
+                        {[c.city, c.country].filter(Boolean).join(", ")}
+                      </span>
+                    ) : (
+                      <span className="text-text-quaternary">—</span>
+                    )}
+                    {c.googleRating && (
+                      <span className="inline-flex items-center gap-1 ml-auto">
+                        <Star
+                          size={10}
+                          className="text-amber-400"
+                          fill="currentColor"
+                        />
+                        {c.googleRating.toFixed(1)}
                       </span>
                     )}
                   </div>
+                  {(c.phone || c.generalEmail) && (
+                    <div className="mt-1 flex items-center gap-2 text-[10.5px] text-text-quaternary">
+                      {c.phone && (
+                        <span className="inline-flex items-center gap-1">
+                          <Phone size={10} />
+                          {c.phone}
+                        </span>
+                      )}
+                      {c.generalEmail && (
+                        <span className="inline-flex items-center gap-1 truncate">
+                          <Mail size={10} />
+                          <span className="truncate">{c.generalEmail}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Scraper-derived stamps: keeps the list cards informative
+                      so the user can scan for "where's the data missing?" */}
+                  {(c.ownerName ||
+                    c.bookingSystem ||
+                    c.leadSource ||
+                    c.employeeCountPhysio != null) && (
+                    <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[10px]">
+                      {c.ownerName && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-bg-overlay text-text-secondary"
+                          title={`Inhaber: ${c.ownerName}`}
+                        >
+                          <UserCheck size={9} className="text-emerald-400" />
+                          {c.ownerName}
+                        </span>
+                      )}
+                      {c.employeeCountPhysio != null && c.employeeCountPhysio > 0 && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-bg-overlay text-text-secondary"
+                          title="Therapeut:innen / Mitarbeitende"
+                        >
+                          <UsersIcon size={9} />
+                          {c.employeeCountPhysio}
+                        </span>
+                      )}
+                      {c.bookingSystem && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300"
+                          title={`Booking: ${c.bookingSystem}`}
+                        >
+                          <CalendarClock size={9} />
+                          {c.bookingSystem}
+                        </span>
+                      )}
+                      {c.leadSource && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-bg-overlay text-text-tertiary"
+                          title={`Lead-Quelle: ${c.leadSource}`}
+                        >
+                          <Tag size={9} />
+                          {c.leadSource}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
                 )}
-              </div>
-            </button>
+                </div>
+              </button>
+              {onPatchRow ? (
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    if (editingId === c.id) saveRowEdit(c);
+                    else {
+                      setEditingId(c.id);
+                      setDraft({
+                        name: c.name,
+                        phone: c.phone ?? "",
+                        email: c.generalEmail ?? "",
+                      });
+                    }
+                  }}
+                  className="shrink-0 mt-0.5 p-1 rounded text-text-quaternary hover:text-text-primary hover:bg-bg-overlay"
+                  title={
+                    editingId === c.id
+                      ? "Änderungen speichern"
+                      : "Name · Telefon · E-Mail bearbeiten"
+                  }
+                >
+                  {editingId === c.id ? (
+                    <Check size={13} className="text-emerald-400" />
+                  ) : (
+                    <Pencil size={13} />
+                  )}
+                </button>
+              ) : null}
+            </div>
+            </div>
           </li>
         );
       })}
@@ -994,7 +2567,14 @@ function CompanyDetailHero({
               accent={accent}
               disabled={!company.generalEmail}
               href={
-                company.generalEmail ? `mailto:${company.generalEmail}` : undefined
+                company.generalEmail
+                  ? `/${workspaceId}/mail?compose=1&to=${encodeURIComponent(company.generalEmail)}`
+                  : undefined
+              }
+              title={
+                company.generalEmail
+                  ? `Mail an ${company.generalEmail} (im Portal)`
+                  : "Keine E-Mail hinterlegt"
               }
             />
             <QuickAction
@@ -1002,6 +2582,30 @@ function CompanyDetailHero({
               label="Notiz"
               accent={accent}
               onClick={onAddNote}
+            />
+            <AiClassifyQuickAction
+              accent={accent}
+              workspaceId={workspaceId}
+              companyId={company.id}
+            />
+            <AiPitchTailorAction
+              accent={accent}
+              workspaceId={workspaceId}
+              companyId={company.id}
+              companyDomain={company.domain ?? null}
+            />
+            <AiSalesBriefAction
+              accent={accent}
+              workspaceId={workspaceId}
+              companyId={company.id}
+              companyDomain={company.domain ?? null}
+            />
+            <QuickAction
+              icon={<LayoutDashboard size={11} />}
+              label="Company Hub"
+              accent={accent}
+              href={`/${workspaceId}/crm/company/${company.id}`}
+              title="Cross-App Übersicht · Mail, Tickets, Files, Projekte"
             />
             <QuickAction
               icon={<CheckSquare size={11} />}
@@ -1500,6 +3104,554 @@ function Stat({
   );
 }
 
+/**
+ * "AI-Klassifizieren" QuickAction. Calls /api/ai/lead-classify for the
+ * current company, opens a small popover with the model's verdict
+ * (hot/warm/cold + reasoning + suggested next step). Designed as a
+ * single-click triage helper — the operator gets a 3-second sanity
+ * check on whether this lead is worth pushing into the funnel right now.
+ *
+ * Result is held purely in local state (we don't persist it back to
+ * Twenty yet — that would require a custom field). When the company
+ * selection changes, the result is cleared.
+ */
+function AiClassifyQuickAction({
+  accent,
+  workspaceId,
+  companyId,
+}: {
+  accent: string;
+  workspaceId: WorkspaceId;
+  companyId: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{
+    tier: "hot" | "warm" | "cold";
+    reasoning: string;
+    nextStep: string;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  // Reset when the user selects a different company.
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+    setOpen(false);
+  }, [companyId]);
+
+  const onClick = async () => {
+    if (busy) return;
+    if (result) {
+      setOpen((v) => !v);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/ai/lead-classify?ws=${workspaceId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ companyId }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setError(j.error ?? `HTTP ${r.status}`);
+        setOpen(true);
+        return;
+      }
+      setResult(j);
+      setOpen(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tierPalette = {
+    hot: { bg: "bg-emerald-500/15", text: "text-emerald-300", border: "border-emerald-500/40" },
+    warm: { bg: "bg-amber-500/15", text: "text-amber-300", border: "border-amber-500/40" },
+    cold: { bg: "bg-slate-500/15", text: "text-slate-300", border: "border-slate-500/40" },
+  };
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        title="AI-Klassifizieren (Claude)"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary disabled:opacity-40"
+        style={{ borderColor: accent + "30" }}
+      >
+        {busy ? (
+          <Loader2 size={11} className="spin text-fuchsia-400" />
+        ) : (
+          <Sparkles size={11} className="text-fuchsia-400" />
+        )}
+        AI-Lead
+        {result && (
+          <span
+            className={`ml-1 px-1 py-0.5 rounded text-[9px] font-bold uppercase ${tierPalette[result.tier].bg} ${tierPalette[result.tier].text}`}
+          >
+            {result.tier}
+          </span>
+        )}
+      </button>
+      {open && (result || error) && (
+        <div
+          className={`absolute top-full left-0 mt-1 w-80 bg-bg-elevated border rounded-md shadow-xl z-50 p-3 text-[11.5px] ${
+            error
+              ? "border-red-500/40"
+              : tierPalette[result!.tier].border
+          }`}
+        >
+          {error ? (
+            <div className="text-red-300">
+              <div className="font-semibold mb-1">Klassifizierung fehlgeschlagen</div>
+              <div className="text-text-tertiary">{error}</div>
+            </div>
+          ) : result ? (
+            <>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${tierPalette[result.tier].bg} ${tierPalette[result.tier].text}`}
+                >
+                  {result.tier}
+                </span>
+                <span className="text-text-tertiary text-[10px]">
+                  Claude-Einschätzung
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="ml-auto text-text-quaternary hover:text-text-primary"
+                  title="Schließen"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+              <p className="text-text-secondary leading-relaxed mb-2">
+                {result.reasoning}
+              </p>
+              {result.nextStep && (
+                <div
+                  className="rounded px-2 py-1.5 text-[11px]"
+                  style={{ background: `${accent}15` }}
+                >
+                  <span className="text-text-tertiary text-[9.5px] uppercase tracking-wide">
+                    Next-Step
+                  </span>
+                  <p className="mt-0.5 text-text-primary">{result.nextStep}</p>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * "AI-Sales-Brief" QuickAction.
+ *
+ * Generates a 1-pager Lead-Recherche-Brief by combining CRM facts with
+ * a fresh website scrape and Workspace-Knowledge from the AI knowledge
+ * editor.  Output is rendered inline as Markdown (basic formatting via
+ * minimal regex; we deliberately don't pull in a full md-to-html
+ * library here — the LLM output is well-formed and the brief is short).
+ *
+ * The brief lives in component-state only — copy-to-clipboard offers a
+ * fast persistence path until we wire it back into Twenty as a note.
+ */
+function AiSalesBriefAction({
+  accent,
+  workspaceId,
+  companyId,
+  companyDomain,
+}: {
+  accent: string;
+  workspaceId: WorkspaceId;
+  companyId: string;
+  companyDomain: string | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    brief: string;
+    websiteFetched: boolean;
+    websiteUrl: string | null;
+    usedKnowledge: boolean;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+    setOpen(false);
+  }, [companyId]);
+
+  const onClick = async () => {
+    if (busy) return;
+    if (result || error) {
+      setOpen((v) => !v);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/ai/lead-brief?ws=${workspaceId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          websiteOverride: companyDomain ?? undefined,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setError(j.error ?? `HTTP ${r.status}`);
+        setOpen(true);
+        return;
+      }
+      setResult(j);
+      setOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setOpen(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(result.brief);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        title="AI-Sales-Brief erstellen (Website + News + Workspace-Knowledge)"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary disabled:opacity-40"
+        style={{ borderColor: accent + "30" }}
+      >
+        {busy ? (
+          <Loader2 size={11} className="spin text-cyan-300" />
+        ) : (
+          <Sparkles size={11} className="text-cyan-300" />
+        )}
+        Sales-Brief
+      </button>
+      {open && (result || error) && (
+        <div
+          className="absolute top-full right-0 mt-1 w-[420px] max-h-[560px] bg-bg-elevated border border-stroke-1 rounded-md shadow-xl z-50 p-3 text-[11.5px] flex flex-col"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles size={12} className="text-cyan-300" />
+            <span className="text-text-primary font-medium text-[12px]">
+              AI-Sales-Brief
+            </span>
+            {result?.websiteFetched && (
+              <span
+                className="text-[9.5px] uppercase tracking-wide px-1 py-0.5 rounded"
+                style={{ background: `${accent}20`, color: accent }}
+                title={result.websiteUrl ?? undefined}
+              >
+                Website OK
+              </span>
+            )}
+            {result?.usedKnowledge && (
+              <span className="text-[9.5px] uppercase tracking-wide px-1 py-0.5 rounded bg-info/15 text-info">
+                Knowledge
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="ml-auto text-text-quaternary hover:text-text-primary"
+            >
+              <X size={11} />
+            </button>
+          </div>
+          {error ? (
+            <div className="text-red-300">
+              <div className="font-semibold mb-1">Brief fehlgeschlagen</div>
+              <div className="text-text-tertiary">{error}</div>
+            </div>
+          ) : result ? (
+            <>
+              <div className="overflow-y-auto flex-1 prose prose-invert prose-sm max-w-none">
+                <div
+                  className="text-text-secondary leading-relaxed"
+                  dangerouslySetInnerHTML={{
+                    __html: renderMinimalMarkdown(result.brief),
+                  }}
+                />
+              </div>
+              <div className="mt-2 pt-2 border-t border-stroke-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copy()}
+                  className="text-[11px] text-text-tertiary hover:text-text-primary"
+                >
+                  {copied ? "✓ kopiert" : "In Zwischenablage"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResult(null);
+                    void onClick();
+                  }}
+                  className="ml-auto text-[11px] text-text-tertiary hover:text-text-primary"
+                >
+                  Neu generieren
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      )}
+    </span>
+  );
+}
+
+type PitchChannel = "cold_email" | "linkedin" | "followup" | "call_opener";
+
+const PITCH_LABELS: Record<PitchChannel, string> = {
+  cold_email: "Erst-Mail",
+  linkedin: "LinkedIn",
+  followup: "Nachfass",
+  call_opener: "Anruf",
+};
+
+/**
+ * Kanal-spezifischer Verkaufstext — kürzer als der volle Sales-Brief,
+ * copy-paste-ready (E-Mail, LinkedIn, Nachfass, Call-Hook).
+ */
+function AiPitchTailorAction({
+  accent,
+  workspaceId,
+  companyId,
+  companyDomain,
+}: {
+  accent: string;
+  workspaceId: WorkspaceId;
+  companyId: string;
+  companyDomain: string | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [channel, setChannel] = useState<PitchChannel>("cold_email");
+  const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setError(null);
+    setText(null);
+    setOpen(false);
+  }, [companyId]);
+
+  const run = async () => {
+    setOpen(true);
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/ai/pitch-tailor?ws=${workspaceId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          channel,
+          websiteOverride: companyDomain ?? undefined,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setError(j.error ?? `HTTP ${r.status}`);
+        setOpen(true);
+        return;
+      }
+      setText((j.text as string) ?? "");
+      setOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setOpen(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={busy}
+        title="AI: Pitch-Text passend zum Kanal (E-Mail · LinkedIn · …)"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary disabled:opacity-40"
+        style={{ borderColor: accent + "30" }}
+      >
+        {busy ? (
+          <Loader2 size={11} className="spin text-violet-300" />
+        ) : (
+          <Megaphone size={11} className="text-violet-300" />
+        )}
+        Pitch-Text
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 w-[380px] max-h-[480px] bg-bg-elevated border border-stroke-1 rounded-md shadow-xl z-50 p-3 text-[11.5px] flex flex-col gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Megaphone size={12} className="text-violet-300" />
+            <span className="text-text-primary font-medium text-[12px]">
+              Kanal
+            </span>
+            {(Object.keys(PITCH_LABELS) as PitchChannel[]).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setChannel(c)}
+                className={`px-1.5 py-0.5 rounded text-[10px] border ${
+                  channel === c
+                    ? "border-violet-500/50 bg-violet-500/10 text-text-primary"
+                    : "border-stroke-1 text-text-tertiary hover:border-stroke-2"
+                }`}
+              >
+                {PITCH_LABELS[c]}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="ml-auto text-text-quaternary hover:text-text-primary p-0.5"
+            >
+              <X size={11} />
+            </button>
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run()}
+            className="text-[11px] self-start px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary"
+            style={{ borderColor: accent + "35" }}
+          >
+            Neu generieren
+          </button>
+          {error ? (
+            <div className="text-red-300 text-[11px]">{error}</div>
+          ) : text ? (
+            <>
+              <div
+                className="overflow-y-auto flex-1 text-text-secondary leading-relaxed max-h-[320px]"
+                dangerouslySetInnerHTML={{
+                  __html: renderMinimalMarkdown(text),
+                }}
+              />
+              <div className="pt-2 border-t border-stroke-1 flex">
+                <button
+                  type="button"
+                  onClick={() => void copy()}
+                  className="text-[11px] text-text-tertiary hover:text-text-primary"
+                >
+                  {copied ? "✓ kopiert" : "In Zwischenablage"}
+                </button>
+              </div>
+            </>
+          ) : busy ? (
+            <div className="text-text-tertiary text-[11px] py-4 text-center">
+              <Loader2 className="inline spin w-5 h-5" />
+            </div>
+          ) : (
+            <div className="text-text-tertiary text-[11px]">
+              Kanal wählen und nochmal auf „Pitch-Text“ klicken oder
+              „Neu generieren“ nutzen.
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Tiny Markdown-to-HTML for AI-generated briefs. Handles the subset
+ * Claude actually emits in this prompt: H2-H4, bold, bullet lists,
+ * paragraphs.  No third-party dep needed.
+ */
+function renderMinimalMarkdown(md: string): string {
+  const escape = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  const lines = md.split(/\r?\n/);
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    const h = /^(#{2,4})\s+(.+)$/.exec(line);
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      const text = inlineMd(escape(h[2]));
+      out.push(`<h${level}>${text}</h${level}>`);
+      continue;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      if (!inList) {
+        out.push("<ul>");
+        inList = true;
+      }
+      const text = inlineMd(escape(line.replace(/^[-*]\s+/, "")));
+      out.push(`<li>${text}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p>${inlineMd(escape(line))}</p>`);
+  }
+  closeList();
+  return out.join("");
+}
+
+function inlineMd(s: string): string {
+  return s
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
 function QuickAction({
   icon,
   label,
@@ -1772,9 +3924,11 @@ function FeedDot({ icon, color }: { icon: ReactNode; color: string }) {
 function PeopleGrid({
   people,
   accent: _accent,
+  highlightPersonId,
 }: {
   people: PersonSummary[];
   accent: string;
+  highlightPersonId?: string | null;
 }) {
   const t = useT();
   if (people.length === 0) {
@@ -1786,9 +3940,13 @@ function PeopleGrid({
   }
   return (
     <ul className="flex-1 min-h-0 overflow-auto p-3 grid grid-cols-1 gap-2">
-      {people.map((p) => (
-        <li key={p.id}>
-          <article className="flex items-start gap-2.5 rounded-md border border-stroke-1 bg-bg-elevated p-2.5 hover:border-stroke-2">
+      {people.map((p) => {
+        const hilite = !!highlightPersonId && p.id === highlightPersonId;
+        return (
+          <li key={p.id}>
+            <article
+              className={`flex items-start gap-2.5 rounded-md border p-2.5 hover:border-stroke-2 ${hilite ? "ring-2 ring-offset-2 ring-offset-bg-chrome ring-sky-500/60 border-sky-500/40" : "border-stroke-1 bg-bg-elevated"}`}
+            >
             <Avatar
               name={`${p.firstName} ${p.lastName}`}
               email={p.email}
@@ -1826,225 +3984,9 @@ function PeopleGrid({
             </div>
           </article>
         </li>
-      ))}
+        );
+      })}
     </ul>
-  );
-}
-
-/**
- * Twenty's `OpportunityStage` enum, repeated here as the canonical column
- * order for the kanban. Empty values land in a synthetic "(unset)" column
- * so admins can drag them into a real stage.
- *
- * Twenty's API only accepts these exact strings via OpportunityUpdateInput,
- * which means dragging a card to e.g. "PROPOSAL" sends `stage: "PROPOSAL"`.
- */
-const KANBAN_STAGES: { id: string; label: string }[] = [
-  { id: "NEW", label: "Neu" },
-  { id: "SCREENING", label: "Screening" },
-  { id: "MEETING", label: "Termin" },
-  { id: "PROPOSAL", label: "Angebot" },
-  { id: "CUSTOMER", label: "Kunde" },
-];
-
-function DealList({
-  deals,
-  accent,
-  workspaceId,
-  onMoved,
-}: {
-  deals: OpportunitySummary[];
-  accent: string;
-  workspaceId: WorkspaceId;
-  onMoved: (id: string, stage: string) => void;
-}) {
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  if (deals.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary px-6 text-center">
-        Keine Deals.
-      </div>
-    );
-  }
-
-  // Compose the column set: standard Twenty stages + any extra stages the
-  // backend currently has (custom stages, legacy values). This way moving
-  // is always possible to a known stage even when the data is messy.
-  const stageMap = new Map<string, { id: string; label: string }>();
-  KANBAN_STAGES.forEach((s) => stageMap.set(s.id, s));
-  for (const d of deals) {
-    const key = d.stage || "(unset)";
-    if (!stageMap.has(key)) {
-      stageMap.set(key, { id: key, label: key === "(unset)" ? "Ohne Stage" : key });
-    }
-  }
-  const columns = [...stageMap.values()];
-
-  const byStage = new Map<string, OpportunitySummary[]>();
-  for (const d of deals) {
-    const key = d.stage || "(unset)";
-    const list = byStage.get(key) ?? [];
-    list.push(d);
-    byStage.set(key, list);
-  }
-
-  const moveDeal = async (dealId: string, toStage: string) => {
-    const deal = deals.find((d) => d.id === dealId);
-    if (!deal) return;
-    const fromStage = deal.stage || "(unset)";
-    if (fromStage === toStage) return;
-    if (toStage === "(unset)") {
-      setError("In »Ohne Stage« kann nichts gezogen werden — wähle eine echte Stage.");
-      return;
-    }
-    setError(null);
-    onMoved(dealId, toStage);
-    try {
-      const r = await fetch(
-        `/api/crm/opportunities/${dealId}?ws=${workspaceId}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ stage: toStage }),
-        },
-      );
-      if (!r.ok) {
-        const j = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `HTTP ${r.status}`);
-      }
-    } catch (e) {
-      onMoved(dealId, fromStage);
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {error && (
-        <div className="mx-3 mt-2 rounded-md border border-red-500/30 bg-red-500/10 text-red-300 text-[11px] p-2">
-          {error}
-        </div>
-      )}
-      <div className="flex-1 min-h-0 overflow-auto p-3">
-        <div className="flex gap-3 min-w-max">
-          {columns.map((col) => {
-            const list = byStage.get(col.id) ?? [];
-            const total = list.reduce(
-              (sum, d) => sum + (d.amount?.amountMicros ?? 0),
-              0,
-            );
-            const isHover = dropTarget === col.id;
-            return (
-              <section
-                key={col.id}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dropTarget !== col.id) setDropTarget(col.id);
-                }}
-                onDragLeave={(e) => {
-                  if (
-                    e.currentTarget.contains(e.relatedTarget as Node) === false
-                  ) {
-                    setDropTarget((cur) => (cur === col.id ? null : cur));
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const id = e.dataTransfer.getData("text/plain");
-                  setDropTarget(null);
-                  setDraggingId(null);
-                  if (id) void moveDeal(id, col.id);
-                }}
-                className={`w-[240px] shrink-0 rounded-md border ${
-                  isHover
-                    ? "border-current bg-bg-elevated"
-                    : "border-stroke-1 bg-bg-base"
-                } flex flex-col`}
-                style={isHover ? { color: accent } : undefined}
-              >
-                <header className="flex items-center gap-2 px-2.5 py-2 border-b border-stroke-1 sticky top-0 bg-inherit">
-                  <StatusPill label={col.label} tone={toneForState(col.id)} />
-                  <span className="text-[10.5px] text-text-tertiary">
-                    {list.length}
-                  </span>
-                  {total > 0 && (
-                    <span className="ml-auto text-[10.5px] font-semibold text-text-primary">
-                      {formatCurrency(total, list[0]?.amount?.currencyCode)}
-                    </span>
-                  )}
-                </header>
-                <ul className="flex-1 min-h-[60px] p-1.5 space-y-1.5">
-                  {list.map((d) => {
-                    const isDrag = draggingId === d.id;
-                    return (
-                      <li key={d.id}>
-                        <article
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData("text/plain", d.id);
-                            e.dataTransfer.effectAllowed = "move";
-                            setDraggingId(d.id);
-                          }}
-                          onDragEnd={() => {
-                            setDraggingId(null);
-                            setDropTarget(null);
-                          }}
-                          className={`group rounded-md border border-stroke-1 bg-bg-elevated px-2.5 py-2 cursor-grab active:cursor-grabbing transition-opacity ${
-                            isDrag ? "opacity-40" : "opacity-100"
-                          }`}
-                          title="Ziehen, um die Stage zu ändern."
-                        >
-                          <div className="flex items-start gap-2">
-                            <TrendingUp
-                              size={12}
-                              className="text-text-tertiary shrink-0 mt-0.5"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[12px] font-medium text-text-primary leading-snug break-words">
-                                {d.name || "(ohne Name)"}
-                              </p>
-                              {d.companyName && (
-                                <p className="text-[10.5px] text-text-tertiary truncate">
-                                  {d.companyName}
-                                </p>
-                              )}
-                              <div className="flex items-center justify-between mt-1 text-[10.5px]">
-                                <span className="text-text-tertiary">
-                                  {d.closeDate
-                                    ? new Date(d.closeDate).toLocaleDateString(
-                                        "de-DE",
-                                      )
-                                    : "—"}
-                                </span>
-                                <span className="font-semibold text-text-primary">
-                                  {formatCurrency(
-                                    d.amount?.amountMicros,
-                                    d.amount?.currencyCode,
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </article>
-                      </li>
-                    );
-                  })}
-                  {list.length === 0 && (
-                    <li className="text-[10.5px] text-text-quaternary text-center py-4">
-                      hier reinziehen
-                    </li>
-                  )}
-                </ul>
-              </section>
-            );
-          })}
-        </div>
-      </div>
-    </div>
   );
 }
 

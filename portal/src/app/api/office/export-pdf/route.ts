@@ -4,8 +4,9 @@ import { detectKind } from "@/lib/office/types";
 import {
   htmlToDocxBuffer,
   libreofficeConvert,
-  univerToXlsx,
+  simpleToXlsx,
 } from "@/lib/office/converter";
+import type { SimpleWorkbook } from "@/lib/office/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     kind?: "word" | "excel";
     html?: string;
     text?: string;
-    workbook?: unknown;
+    workbook?: SimpleWorkbook;
   };
   let body: Body;
   try {
@@ -47,13 +48,13 @@ export async function POST(req: NextRequest) {
       intermediate = await htmlToDocxBuffer(body.html ?? "");
       intermediateName = "tmp.docx";
     } else if (kind === "excel" || body.kind === "excel") {
-      if (!body.workbook) {
+      if (!body.workbook || !Array.isArray(body.workbook.sheets)) {
         return NextResponse.json(
           { error: "missing workbook" },
           { status: 400 },
         );
       }
-      intermediate = univerToXlsx(body.workbook);
+      intermediate = simpleToXlsx(body.workbook);
       intermediateName = "tmp.xlsx";
     } else {
       return NextResponse.json(

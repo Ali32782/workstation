@@ -58,6 +58,7 @@ export function IssueDrawer({
   onClose,
   onSelectIssue,
   apiUrl,
+  onIssuesRefresh,
 }: {
   issue: IssueSummary;
   states: IssueState[];
@@ -77,6 +78,8 @@ export function IssueDrawer({
   onClose: () => void;
   onSelectIssue: (id: string) => void;
   apiUrl: (path: string) => string;
+  /** Nach Sub-Task-Erstellung Issues neu laden (Parent-Kinderliste). */
+  onIssuesRefresh?: () => void;
 }) {
   const [titleDraft, setTitleDraft] = useState(issue.name);
   const [descDraft, setDescDraft] = useState(htmlToPlain(issue.descriptionHtml));
@@ -209,7 +212,7 @@ export function IssueDrawer({
               projectId={projectId}
               accent={accent}
               onCreated={() => {
-                /* parent will refresh its list */
+                onIssuesRefresh?.();
               }}
             />
 
@@ -685,21 +688,14 @@ function SubTasks({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({
+            name,
+            parent: parent.id,
+            assignToMe: true,
+          }),
         },
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { issue?: IssueSummary };
-      if (j.issue) {
-        await fetch(
-          `/api/projects/issue/${j.issue.id}?ws=${workspaceId}&project=${projectId}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ parent: parent.id }),
-          },
-        );
-      }
       setText("");
       setAdding(false);
       onCreated();

@@ -24,6 +24,13 @@ export type MailListItem = {
   flags: string[]; // \\Seen, \\Flagged, \\Answered, …
   hasAttachments: boolean;
   size: number;
+  /**
+   * Message-ID header, normalised (no brackets, lowercase) — used only for threading.
+   * May be null on very old parsers / missing header.
+   */
+  messageId: string | null;
+  /** In-Reply-To, normalised; null if absent. */
+  inReplyTo: string | null;
 };
 
 export type MailAttachment = {

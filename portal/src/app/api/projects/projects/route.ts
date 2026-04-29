@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createProject, listProjects } from "@/lib/projects/plane";
+import { createProject, deleteProject, listProjects } from "@/lib/projects/plane";
 import { resolveProjectsSession } from "@/lib/projects/session";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +58,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ project });
   } catch (e) {
     console.error("[/api/projects/projects POST] failed:", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 502 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const ws = req.nextUrl.searchParams.get("ws");
+  const projectId = req.nextUrl.searchParams.get("project")?.trim() ?? "";
+  if (!projectId) {
+    return NextResponse.json({ error: "project required" }, { status: 400 });
+  }
+
+  const r = await resolveProjectsSession(ws);
+  if (r.kind === "unauthenticated") {
+    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  }
+  if (r.kind === "forbidden") {
+    return NextResponse.json({ error: r.message }, { status: 403 });
+  }
+
+  try {
+    await deleteProject(r.session.workspaceSlug, projectId);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("[/api/projects/projects DELETE] failed:", e);
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 502 });
   }

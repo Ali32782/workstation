@@ -408,6 +408,10 @@ export function CalendarClient({
     }
     const end = new Date(start);
     end.setHours(start.getHours() + 1);
+    openComposeRange(start, end);
+  };
+
+  const openComposeRange = (start: Date, end: Date) => {
     const writable =
       calendars.find((c) => c.owner)?.id ?? calendars[0]?.id ?? "personal";
     setCompose({
@@ -698,19 +702,21 @@ export function CalendarClient({
             />
           )}
           {view === "week" && (
-            <WeekOrDayList
+            <CalendarWeekTimeGrid
               days={Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i))}
               eventsByDay={eventsByDay}
               accent={accent}
               onSelectEvent={setActiveEvent}
+              onCreateRange={(a, b) => openComposeRange(a, b)}
             />
           )}
           {view === "day" && (
-            <WeekOrDayList
+            <CalendarWeekTimeGrid
               days={[anchor]}
               eventsByDay={eventsByDay}
               accent={accent}
               onSelectEvent={setActiveEvent}
+              onCreateRange={(a, b) => openComposeRange(a, b)}
             />
           )}
           {view === "scheduling" && (
@@ -874,84 +880,358 @@ function MonthGrid({
   );
 }
 
-/* ============================ Week / Day list =========================== */
+/* ===================== Week / day time grid (drag-to-create) ============ */
 
-function WeekOrDayList({
+const WEEK_GRID_MIN_H = 6;
+const WEEK_GRID_MAX_H = 22;
+const WEEK_PX_PER_HOUR = 44;
+const WEEK_SNAP_MIN = 15;
+
+function totalWeekGridMinutes(): number {
+  return (WEEK_GRID_MAX_H - WEEK_GRID_MIN_H) * 60;
+}
+
+function snapToGridMinutes(mins: number): number {
+  const snapped = Math.round(mins / WEEK_SNAP_MIN) * WEEK_SNAP_MIN;
+  return Math.max(0, Math.min(totalWeekGridMinutes(), snapped));
+}
+
+function eventTimedLayout(
+  day: Date,
+  e: CalendarEvent,
+): { topPct: number; hPct: number } | null {
+  if (e.allDay) return null;
+  if (dayKey(new Date(e.start)) !== dayKey(day)) return null;
+  const s = new Date(e.start);
+  const en = new Date(e.end);
+  const gridStartMin = WEEK_GRID_MIN_H * 60;
+  const gridEndMin = WEEK_GRID_MAX_H * 60;
+  let startMin = s.getHours() * 60 + s.getMinutes();
+  let endMin =
+    en.getTime() <= s.getTime()
+      ? startMin + 30
+      : en.getHours() * 60 + en.getMinutes();
+  if (dayKey(en) !== dayKey(s)) endMin = gridEndMin;
+  startMin = Math.max(gridStartMin, Math.min(gridEndMin, startMin));
+  endMin = Math.max(gridStartMin, Math.min(gridEndMin, endMin));
+  if (endMin <= startMin) return null;
+  const total = totalWeekGridMinutes();
+  return {
+    topPct: ((startMin - gridStartMin) / total) * 100,
+    hPct: ((endMin - startMin) / total) * 100,
+  };
+}
+
+function dateFromDayGridRel(day: Date, relMinFromGridTop: number): Date {
+  const d = new Date(day);
+  d.setHours(0, 0, 0, 0);
+  const absolute = WEEK_GRID_MIN_H * 60 + relMinFromGridTop;
+  d.setHours(Math.floor(absolute / 60), absolute % 60, 0, 0);
+  return d;
+}
+
+/** Platz paralleler Termine in Spalten (Outlook-ählich). */
+function assignOverlapLanes(
+  rects: Array<{ topPct: number; hPct: number }>,
+): Array<{ lane: number; laneCount: number }> {
+  const n = rects.length;
+  if (n === 0) return [];
+  type E = { topPct: number; end: number; idx: number };
+  const es: E[] = rects.map((r, idx) => ({
+    topPct: r.topPct,
+    end: r.topPct + r.hPct,
+    idx,
+  }));
+  es.sort((a, b) => a.topPct - b.topPct || a.end - b.end);
+  const laneEnd: number[] = [];
+  const laneForIndex: number[] = new Array(n);
+  for (const e of es) {
+    let assigned = -1;
+    for (let L = 0; L < laneEnd.length; L++) {
+      if (laneEnd[L]! <= e.topPct) {
+        assigned = L;
+        break;
+      }
+    }
+    if (assigned === -1) {
+      assigned = laneEnd.length;
+      laneEnd.push(e.end);
+    } else {
+      laneEnd[assigned] = e.end;
+    }
+    laneForIndex[e.idx] = assigned;
+  }
+  const laneCount = Math.max(1, laneEnd.length);
+  return laneForIndex.map((lane) => ({ lane, laneCount }));
+}
+
+function CalendarWeekTimeGrid({
   days,
   eventsByDay,
   accent,
   onSelectEvent,
+  onCreateRange,
 }: {
   days: Date[];
   eventsByDay: Map<string, CalendarEvent[]>;
   accent: string;
   onSelectEvent: (e: CalendarEvent) => void;
+  onCreateRange: (start: Date, end: Date) => void;
 }) {
   const todayKey = dayKey(new Date());
+  const hoursCount = WEEK_GRID_MAX_H - WEEK_GRID_MIN_H;
+  const bodyPx = hoursCount * WEEK_PX_PER_HOUR;
+  const dragRef = useRef<{
+    pointerId: number;
+    day: Date;
+    colEl: HTMLDivElement;
+    startRel: number;
+  } | null>(null);
+  const [dragCurRel, setDragCurRel] = useState<number | null>(null);
+
+  const endDrag = useCallback(
+    (ev: PointerEvent, colEl: HTMLDivElement, day: Date, startRel: number) => {
+      const rect = colEl.getBoundingClientRect();
+      const raw =
+        ((ev.clientY - rect.top) / rect.height) * totalWeekGridMinutes();
+      const endRel = snapToGridMinutes(raw);
+      let lo = Math.min(startRel, endRel);
+      let hi = Math.max(startRel, endRel);
+      if (hi - lo < WEEK_SNAP_MIN) hi = lo + WEEK_SNAP_MIN;
+      const start = dateFromDayGridRel(day, lo);
+      const end = dateFromDayGridRel(day, hi);
+      if (end.getTime() <= start.getTime()) {
+        end.setMinutes(start.getMinutes() + WEEK_SNAP_MIN);
+      }
+      onCreateRange(start, end);
+    },
+    [onCreateRange],
+  );
+
+  const onColPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>, day: Date) => {
+      if ((e.target as HTMLElement).closest("[data-cal-event]")) return;
+      const colEl = e.currentTarget;
+      const rect = colEl.getBoundingClientRect();
+      const raw =
+        ((e.clientY - rect.top) / rect.height) * totalWeekGridMinutes();
+      const startRel = snapToGridMinutes(raw);
+      const pid = e.pointerId;
+      dragRef.current = { pointerId: pid, day, colEl, startRel };
+      setDragCurRel(startRel);
+
+      const move = (ev: PointerEvent) => {
+        if (ev.pointerId !== pid) return;
+        const r = colEl.getBoundingClientRect();
+        const rr =
+          ((ev.clientY - r.top) / r.height) * totalWeekGridMinutes();
+        setDragCurRel(snapToGridMinutes(rr));
+      };
+      const up = (ev: PointerEvent) => {
+        if (ev.pointerId !== pid) return;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        const anchor = dragRef.current;
+        dragRef.current = null;
+        setDragCurRel(null);
+        if (!anchor) return;
+        endDrag(ev, colEl, anchor.day, anchor.startRel);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    },
+    [endDrag],
+  );
+
+  const colsClass =
+    days.length === 1 ? "grid grid-cols-1 flex-1 min-w-0" : "grid grid-cols-7 flex-1 min-w-0";
+
   return (
-    <div className="divide-y divide-stroke-1">
-      {days.map((d) => {
-        const k = dayKey(d);
-        const isToday = k === todayKey;
-        const dayEvents = eventsByDay.get(k) ?? [];
-        return (
-          <div key={k} className="px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className={`inline-flex items-center justify-center text-xs h-6 w-6 rounded-full ${isToday ? "text-white font-semibold" : "text-text-primary"}`}
-                style={isToday ? { background: accent } : undefined}
+    <div className="flex flex-col h-full min-h-0 flex-1">
+      {/* All-day row */}
+      <div className="flex border-b border-stroke-1 bg-bg-chrome shrink-0">
+        <div className="w-12 shrink-0 p-1.5 text-[10px] text-text-quaternary border-r border-stroke-1">
+          ganztg.
+        </div>
+        <div className={colsClass}>
+          {days.map((d) => {
+            const k = dayKey(d);
+            const dayEvents = eventsByDay.get(k) ?? [];
+            const allDays = dayEvents.filter((ev) => ev.allDay);
+            const isToday = k === todayKey;
+            return (
+              <div
+                key={`ad-${k}`}
+                className="border-r border-stroke-1 last:border-r-0 p-1 min-h-[3rem] min-w-0"
               >
-                {d.getDate()}
-              </span>
-              <span className="text-sm font-medium text-text-primary">
-                {WEEKDAYS_DE[(d.getDay() + 6) % 7]}, {d.getDate()}.{" "}
-                {MONTHS_DE[d.getMonth()]}
-              </span>
-              <span className="text-xs text-text-tertiary">
-                {dayEvents.length} Termin{dayEvents.length === 1 ? "" : "e"}
-              </span>
-            </div>
-            {dayEvents.length === 0 && (
-              <div className="text-xs text-text-tertiary pl-8">
-                Keine Termine.
+                <div className="flex items-center gap-1 mb-0.5">
+                  <span
+                    className={`inline-flex items-center justify-center text-[11px] h-6 w-6 rounded-full shrink-0 ${
+                      isToday ? "text-white font-semibold" : "text-text-primary"
+                    }`}
+                    style={isToday ? { background: accent } : undefined}
+                  >
+                    {d.getDate()}
+                  </span>
+                  <span className="text-[10px] font-medium text-text-secondary truncate">
+                    {WEEKDAYS_DE[(d.getDay() + 6) % 7]}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  {allDays.map((ev) => (
+                    <button
+                      key={ev.id + ev.start}
+                      type="button"
+                      data-cal-event
+                      onClick={() => onSelectEvent(ev)}
+                      className="w-full text-left text-[10px] px-1 py-0.5 rounded truncate hover:opacity-90"
+                      style={{
+                        background: `${ev.color}33`,
+                        color: ev.color,
+                        borderLeft: `2px solid ${ev.color}`,
+                      }}
+                      title={ev.title}
+                    >
+                      {ev.title}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-            <div className="space-y-1 pl-8">
-              {dayEvents.map((e) => (
-                <button
-                  key={e.id + e.start}
-                  onClick={() => onSelectEvent(e)}
-                  className="w-full text-left flex items-center gap-3 px-2 py-2 rounded border border-stroke-1 hover:bg-bg-elevated"
-                  style={{ borderLeft: `3px solid ${e.color}` }}
-                >
-                  <span className="text-xs font-mono text-text-tertiary w-24 shrink-0">
-                    {fmtRange(e.start, e.end, e.allDay)}
-                  </span>
-                  <span className="text-sm text-text-primary flex-1 truncate flex items-center gap-1.5">
-                    {e.title}
-                    {e.recurring && <Repeat size={11} className="opacity-60" />}
-                    {e.reminders.length > 0 && <Bell size={11} className="opacity-60" />}
-                    {e.tzid && e.tzid !== browserTz && (
-                      <span
-                        className="text-[10px] text-text-quaternary px-1 py-px rounded bg-bg-overlay"
-                        title={`Termin-TZ: ${e.tzid}`}
-                      >
-                        {shortTz(e.tzid)}
-                      </span>
-                    )}
-                  </span>
-                  {e.location && (
-                    <span className="text-xs text-text-tertiary truncate max-w-[200px]">
-                      <MapPin size={11} className="inline mr-1" />
-                      {e.location}
-                    </span>
-                  )}
-                </button>
-              ))}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Time grid */}
+      <div className="flex flex-1 min-h-0 overflow-auto">
+        <div className="w-12 shrink-0 border-r border-stroke-1 bg-bg-chrome sticky left-0 z-10">
+          {Array.from({ length: hoursCount }, (_, i) => (
+            <div
+              key={i}
+              style={{ height: WEEK_PX_PER_HOUR }}
+              className="text-[10px] text-text-tertiary pr-1 text-right leading-none pt-0.5"
+            >
+              {WEEK_GRID_MIN_H + i}:00
             </div>
-          </div>
-        );
-      })}
+          ))}
+        </div>
+        <div className={colsClass}>
+          {days.map((d) => {
+            const k = dayKey(d);
+            const dayEvents = eventsByDay.get(k) ?? [];
+            const timed = dayEvents.filter((ev) => !ev.allDay);
+            const isToday = k === todayKey;
+            const dragPreview =
+              dragCurRel != null &&
+              dragRef.current &&
+              dayKey(dragRef.current.day) === k
+                ? (() => {
+                    const a = dragRef.current!;
+                    const lo = Math.min(a.startRel, dragCurRel);
+                    const hi = Math.max(a.startRel, dragCurRel);
+                    const total = totalWeekGridMinutes();
+                    return {
+                      top: (lo / total) * 100,
+                      h: Math.max(((hi - lo) / total) * 100, 0.8),
+                    };
+                  })()
+                : null;
+            return (
+              <div
+                key={`tg-${k}`}
+                className={`relative border-r border-stroke-1 last:border-r-0 ${
+                  isToday ? "bg-bg-elevated/30" : ""
+                }`}
+              >
+                <div
+                  role="presentation"
+                  className="relative cursor-crosshair select-none touch-none"
+                  style={{ height: bodyPx }}
+                  onPointerDown={(e) => onColPointerDown(e, d)}
+                >
+                  {/* hour lines */}
+                  {Array.from({ length: hoursCount }, (_, i) => (
+                    <div
+                      key={i}
+                      className="absolute left-0 right-0 border-t border-stroke-1/80 pointer-events-none"
+                      style={{ top: i * WEEK_PX_PER_HOUR, height: 0 }}
+                    />
+                  ))}
+
+                  {/* timed events */}
+                  {(() => {
+                    const layouts = timed
+                      .map((ev) => {
+                        const lay = eventTimedLayout(d, ev);
+                        return lay ? { ev, lay } : null;
+                      })
+                      .filter(
+                        (x): x is { ev: CalendarEvent; lay: { topPct: number; hPct: number } } =>
+                          x != null,
+                      );
+                    const lanes = assignOverlapLanes(layouts.map((x) => x.lay));
+                    return layouts.map((item, ii) => {
+                      const { ev, lay } = item;
+                      const { lane, laneCount } = lanes[ii]!;
+                      const wPct = 100 / laneCount;
+                      const leftPct = (lane / laneCount) * 100;
+                      return (
+                        <button
+                          key={ev.id + ev.start}
+                          type="button"
+                          data-cal-event
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectEvent(ev);
+                          }}
+                          className="absolute rounded px-0.5 py-0.5 text-left text-[10px] leading-tight overflow-hidden z-[1] hover:brightness-105 shadow-sm border border-black/10 box-border"
+                          style={{
+                            top: `${lay.topPct}%`,
+                            height: `${lay.hPct}%`,
+                            left:
+                              laneCount > 1
+                                ? `calc(${leftPct}% + 1px)`
+                                : "2px",
+                            width:
+                              laneCount > 1
+                                ? `calc(${wPct}% - 3px)`
+                                : "calc(100% - 4px)",
+                            background: `${ev.color}44`,
+                            color: "var(--text-primary)",
+                            borderLeft: `3px solid ${ev.color}`,
+                          }}
+                          title={`${ev.title} · ${fmtRange(ev.start, ev.end, false)}`}
+                        >
+                          <span className="font-medium text-[10px] text-text-primary truncate block">
+                            {ev.title}
+                          </span>
+                          <span className="text-[9px] text-text-tertiary font-mono">
+                            {fmtTime(ev.start)}–{fmtTime(ev.end)}
+                          </span>
+                        </button>
+                      );
+                    });
+                  })()}
+
+                  {dragPreview && (
+                    <div
+                      className="absolute left-1 right-1 rounded border-2 pointer-events-none z-[2]"
+                      style={{
+                        top: `${dragPreview.top}%`,
+                        height: `${dragPreview.h}%`,
+                        borderColor: accent,
+                        background: `${accent}22`,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1559,7 +1839,7 @@ function ComposeModal({
               onChange={(e) =>
                 onChange({ ...state, attendees: e.target.value })
               }
-              placeholder="diana@corehub.kineo360.work, …"
+              placeholder="diana.matushkina@corehub.kineo360.work, …"
             />
             {state.attendees.trim() && (
               <p className="text-[11px] text-text-quaternary mt-1">
@@ -1996,7 +2276,7 @@ function SchedulingAssistant({
             <UsersIcon size={12} className="text-text-tertiary" />
             <input
               className="input flex-1 text-[12px]"
-              placeholder="Personen kommagetrennt (z.B. mara, diana@kineo360.work)"
+              placeholder="Personen kommagetrennt (z.B. mara, diana.matushkina@corehub.kineo360.work)"
               value={participants}
               onChange={(e) => setParticipants(e.target.value)}
               spellCheck={false}

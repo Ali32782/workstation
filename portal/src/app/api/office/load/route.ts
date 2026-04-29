@@ -10,7 +10,7 @@ import {
   docxToHtml,
   emptyXlsxBuffer,
   libreofficeConvert,
-  xlsxToUniver,
+  xlsxToSimple,
 } from "@/lib/office/converter";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export const runtime = "nodejs";
  * Load an Office file from Nextcloud and convert it into the editor's
  * canonical model:
  *   word  → { html, text }
- *   excel → { workbook: IWorkbookData }
+ *   excel → { workbook: SimpleWorkbook }
  * Legacy formats (.doc, .xls, .odt, .ods) are upcasted via LibreOffice.
  */
 export async function GET(req: NextRequest) {
@@ -106,7 +106,7 @@ export async function GET(req: NextRequest) {
       if (buf.length === 0) {
         buf = emptyXlsxBuffer();
       }
-      const workbook = xlsxToUniver(buf);
+      const workbook = xlsxToSimple(buf);
       const doc: OfficeDocument = { kind: "excel", workbook, meta };
       return NextResponse.json(doc);
     }

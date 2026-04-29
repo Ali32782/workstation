@@ -86,7 +86,8 @@ einfließen (spätestens vor Onboarding erster externer Praxis).
   - Vorher: 3 separate Realms, jeder User mehrfach angelegt, jede App nur SSO mit ihrem Realm → drei Logins.
   - Jetzt: 1 Realm `main`, Top-Level-Groups `/corehub`, `/medtheris`, `/kineo` (+ je 4-7 Sub-Groups laut `keycloak-setup-task.md`), 1 User-Identität pro Person, Multi-Group-Membership für cross-team Sichtbarkeit, ein einziger Login öffnet alle Apps.
   - 8 OIDC-Clients (portal, nextcloud-corehub, nextcloud-medtheris, rocketchat-corehub, rocketchat-medtheris, gitea, zammad-medtheris, twenty-corehub) im Realm `main` mit `groups`-Protocol-Mapper.
-  - 4 User migriert (ali, johannes, diana, richard) mit korrekten Group-Memberships.
+  - Kern-Accounts migriert inkl. `ali`, `johannes` und Contractor-Konten
+    (`diana.matushkina`, `richard.bilous`, …) mit Group-Memberships.
   - Migration-Skript: `scripts/migrate-to-main-realm.sh` (idempotent).
   - **Rollback-Fähig**: alte Realms (`corehub`, `medtheris-internal`, `kineo`) bleiben enabled bis Smoke-Tests erfolgreich, danach disabled (nicht deleted) als Rollback-Option.
 - [x] **Nextcloud `TokenPasswordExpiredException` / "CSRF check failed"** (2026-04-26)

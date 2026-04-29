@@ -9,7 +9,6 @@ import {
   Mail,
   AtSign,
   RefreshCw,
-  ExternalLink,
   AlertCircle,
   CheckCircle2,
   Loader2,
@@ -18,6 +17,8 @@ import {
   X,
   Plus,
   Trash2,
+  Server,
+  ShieldCheck,
 } from "lucide-react";
 
 type GroupSetting = {
@@ -59,16 +60,18 @@ export function HelpdeskSettingsClient({
   workspaceId,
   workspaceName,
   accent,
-  zammadUrl,
 }: {
   workspaceId: string;
   workspaceName: string;
   accent: string;
-  zammadUrl: string;
+  /** @deprecated Kept for backwards compat with the page wrapper. */
+  zammadUrl?: string;
 }) {
   const [data, setData] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [emailAddDialog, setEmailAddDialog] = useState(false);
+  const [channelAddDialog, setChannelAddDialog] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,9 +95,6 @@ export function HelpdeskSettingsClient({
   useEffect(() => {
     void load();
   }, [load]);
-
-  const adminBase = zammadUrl.replace(/\/$/, "");
-  const emailById = new Map(data?.emailAddresses.map((e) => [e.id, e]) ?? []);
 
   const updateGroupLocal = useCallback(
     (next: GroupSetting) => {
@@ -194,27 +194,16 @@ export function HelpdeskSettingsClient({
               <p className="text-[12px] text-text-tertiary leading-relaxed">
                 Konfiguration für{" "}
                 <strong className="text-text-secondary">{workspaceName}</strong>.
-                Gruppen, Mitglieder und Absender-Adressen kannst du direkt hier
-                bearbeiten — die Aktionen schreiben live in Zammad zurück.
-                E-Mail-Kanäle (IMAP/SMTP) bleiben aus Sicherheitsgründen im
-                Zammad-Admin (Deep-Link rechts).
+                Gruppen, Mitglieder, Absender-Adressen und E-Mail-Kanäle
+                (IMAP/SMTP) werden direkt hier verwaltet — die Aktionen
+                schreiben live in den Helpdesk-Kern zurück. Verbindungs-Tests
+                vor dem Speichern verhindern fehlerhafte Postfach-Konfiguration.
               </p>
 
               <Section
                 icon={<Users size={14} style={{ color: accent }} />}
                 title="Gruppen"
                 accent={accent}
-                action={
-                  <a
-                    href={`${adminBase}${data.adminLinks.groups}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
-                  >
-                    <Pencil size={12} /> in Zammad bearbeiten
-                    <ExternalLink size={10} />
-                  </a>
-                }
               >
                 {data.groups.length === 0 ? (
                   <Empty>
@@ -246,19 +235,21 @@ export function HelpdeskSettingsClient({
                 title="Absender-Adressen"
                 accent={accent}
                 action={
-                  <a
-                    href={`${adminBase}${data.adminLinks.emailAddresses}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
+                  <button
+                    type="button"
+                    onClick={() => setEmailAddDialog(true)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-info/10 hover:bg-info/15 text-info border border-info/20 text-[11.5px]"
                   >
-                    <Pencil size={12} /> in Zammad bearbeiten
-                    <ExternalLink size={10} />
-                  </a>
+                    <Plus size={11} /> Adresse hinzufügen
+                  </button>
                 }
               >
                 {data.emailAddresses.length === 0 ? (
-                  <Empty>Keine Absender-Adressen konfiguriert.</Empty>
+                  <Empty>
+                    Keine Absender-Adressen konfiguriert. Lege oben eine
+                    Adresse an, um Tickets von dieser Adresse aus beantworten
+                    zu können.
+                  </Empty>
                 ) : (
                   <div className="space-y-2">
                     {data.emailAddresses.map((e) => (
@@ -269,6 +260,7 @@ export function HelpdeskSettingsClient({
                         email={e}
                         accent={accent}
                         onChange={updateEmailLocal}
+                        onDelete={() => void load()}
                       />
                     ))}
                   </div>
@@ -280,23 +272,38 @@ export function HelpdeskSettingsClient({
                 title="E-Mail-Kanäle (Inbox / Outbound)"
                 accent={accent}
                 action={
-                  <a
-                    href={`${adminBase}${data.adminLinks.channels}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
+                  <button
+                    type="button"
+                    onClick={() => setChannelAddDialog(true)}
+                    disabled={data.groups.length === 0}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-info/10 hover:bg-info/15 text-info border border-info/20 text-[11.5px] disabled:opacity-50"
+                    title={
+                      data.groups.length === 0
+                        ? "Mindestens eine Gruppe erforderlich"
+                        : "Neuen IMAP/SMTP-Kanal einrichten"
+                    }
                   >
-                    <Pencil size={12} /> in Zammad bearbeiten
-                    <ExternalLink size={10} />
-                  </a>
+                    <Plus size={11} /> Kanal hinzufügen
+                  </button>
                 }
               >
                 {data.channels.length === 0 ? (
-                  <Empty>Keine E-Mail-Kanäle eingerichtet.</Empty>
+                  <Empty>
+                    Keine E-Mail-Kanäle eingerichtet. Klick „Kanal hinzufügen"
+                    oben, um IMAP/SMTP-Zugang einzurichten.
+                  </Empty>
                 ) : (
                   <div className="space-y-2">
                     {data.channels.map((c) => (
-                      <ChannelCard key={c.id} channel={c} />
+                      <ChannelCard
+                        key={c.id}
+                        workspaceId={workspaceId}
+                        channel={c}
+                        groups={data.groups}
+                        accent={accent}
+                        onDelete={() => void load()}
+                        onUpdate={() => void load()}
+                      />
                     ))}
                   </div>
                 )}
@@ -348,6 +355,30 @@ export function HelpdeskSettingsClient({
           )}
         </div>
       </div>
+      {emailAddDialog && (
+        <EmailAddressAddDialog
+          workspaceId={workspaceId}
+          channels={data?.channels ?? []}
+          accent={accent}
+          onClose={() => setEmailAddDialog(false)}
+          onCreated={() => {
+            setEmailAddDialog(false);
+            void load();
+          }}
+        />
+      )}
+      {channelAddDialog && data && (
+        <ChannelAddDialog
+          workspaceId={workspaceId}
+          groups={data.groups}
+          accent={accent}
+          onClose={() => setChannelAddDialog(false)}
+          onCreated={() => {
+            setChannelAddDialog(false);
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -382,7 +413,21 @@ function Section({
   );
 }
 
-function ChannelCard({ channel }: { channel: ChannelSetting }) {
+function ChannelCard({
+  workspaceId,
+  channel,
+  groups,
+  accent,
+  onDelete,
+  onUpdate,
+}: {
+  workspaceId: string;
+  channel: ChannelSetting;
+  groups: GroupSetting[];
+  accent: string;
+  onDelete: () => void;
+  onUpdate: () => void;
+}) {
   const inbound = (channel.options as { inbound?: Record<string, unknown> })
     ?.inbound;
   const outbound = (channel.options as { outbound?: Record<string, unknown> })
@@ -391,11 +436,61 @@ function ChannelCard({ channel }: { channel: ChannelSetting }) {
     ?.options;
   const outboundOpts = (outbound as { options?: Record<string, unknown> })
     ?.options;
+  const [editOpen, setEditOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onConfirmDelete = useCallback(async () => {
+    if (
+      !window.confirm(
+        `Kanal #${channel.id} wirklich löschen? Eingehende Mails werden nicht mehr abgeholt.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/channel/${channel.id}?ws=${encodeURIComponent(workspaceId)}`,
+        { method: "DELETE" },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      onDelete();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [channel.id, workspaceId, onDelete]);
+
+  const onToggleActive = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/channel/${channel.id}?ws=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ active: !channel.active }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      onUpdate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [channel.id, channel.active, workspaceId, onUpdate]);
 
   return (
     <div className="rounded-md border border-stroke-1 bg-bg-base p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
+          <Server size={12} className="text-text-tertiary" />
           <span className="text-[12.5px] font-semibold">
             Kanal #{channel.id}
           </span>
@@ -403,26 +498,81 @@ function ChannelCard({ channel }: { channel: ChannelSetting }) {
             {channel.area}
           </span>
         </div>
-        {channel.active ? (
-          <Pill tone="success">aktiv</Pill>
-        ) : (
-          <Pill tone="muted">inaktiv</Pill>
-        )}
+        <div className="flex items-center gap-1.5">
+          {channel.active ? (
+            <Pill tone="success">aktiv</Pill>
+          ) : (
+            <Pill tone="muted">inaktiv</Pill>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setEditOpen((v) => !v);
+            }}
+            disabled={busy}
+            className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-50"
+            title="Bearbeiten"
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            type="button"
+            onClick={onToggleActive}
+            disabled={busy}
+            className="px-1.5 py-0.5 rounded-md text-[10.5px] text-text-tertiary hover:text-text-primary hover:bg-bg-overlay disabled:opacity-50"
+            title={channel.active ? "Deaktivieren" : "Aktivieren"}
+          >
+            {channel.active ? "Pausieren" : "Aktivieren"}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirmDelete}
+            disabled={busy}
+            className="p-1 rounded-md text-text-tertiary hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            title="Löschen"
+          >
+            {busy ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <Trash2 size={11} />
+            )}
+          </button>
+        </div>
       </div>
+      {error && (
+        <div className="mb-2 rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11px] p-1.5 flex items-start gap-1.5">
+          <AlertCircle size={11} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <div className="text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
-            Inbound
+            Inbound (IMAP/POP3)
           </div>
           <KvList opts={inboundOpts} />
         </div>
         <div>
           <div className="text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
-            Outbound
+            Outbound (SMTP)
           </div>
           <KvList opts={outboundOpts} />
         </div>
       </div>
+      {editOpen && (
+        <ChannelEditPanel
+          workspaceId={workspaceId}
+          channel={channel}
+          groups={groups}
+          accent={accent}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false);
+            onUpdate();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -902,17 +1052,20 @@ function EmailAddressCard({
   email,
   accent,
   onChange,
+  onDelete,
 }: {
   workspaceId: string;
   workspaceName: string;
   email: EmailAddressSetting;
   accent: string;
   onChange: (e: EmailAddressSetting) => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draftName, setDraftName] = useState(email.name);
   const [draftActive, setDraftActive] = useState(email.active);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const startEdit = useCallback(() => {
@@ -950,6 +1103,30 @@ function EmailAddressCard({
     }
   }, [email.id, workspaceId, draftName, draftActive, onChange]);
 
+  const onConfirmDelete = useCallback(async () => {
+    if (
+      !window.confirm(
+        `Absender-Adresse "${email.email}" wirklich löschen? Tickets behalten ihre Historie, aber neue Mails können von dieser Adresse nicht mehr versendet werden.`,
+      )
+    )
+      return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/email-address/${email.id}?ws=${encodeURIComponent(workspaceId)}`,
+        { method: "DELETE" },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      onDelete();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }, [email.email, email.id, workspaceId, onDelete]);
+
   const editable = email.inUseByTenant;
 
   return (
@@ -977,13 +1154,28 @@ function EmailAddressCard({
           </div>
         </div>
         {editable && !open && (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary text-[11.5px]"
-          >
-            <Pencil size={11} /> Bearbeiten
-          </button>
+          <div className="shrink-0 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={startEdit}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary text-[11.5px]"
+            >
+              <Pencil size={11} /> Bearbeiten
+            </button>
+            <button
+              type="button"
+              onClick={onConfirmDelete}
+              disabled={deleting}
+              className="p-1 rounded-md text-text-tertiary hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              title="Löschen"
+            >
+              {deleting ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <Trash2 size={11} />
+              )}
+            </button>
+          </div>
         )}
         {!editable && (
           <span className="shrink-0 text-[10.5px] text-text-quaternary uppercase tracking-wide">
@@ -1063,6 +1255,887 @@ function Field({
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+/*                            Add-Dialogs (modal)                          */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+function ModalShell({
+  title,
+  subtitle,
+  accent,
+  onClose,
+  children,
+  footer,
+  wide = false,
+}: {
+  title: string;
+  subtitle?: string;
+  accent: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer: React.ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className={`bg-bg-chrome rounded-lg border border-stroke-1 shadow-2xl w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] flex flex-col`}
+      >
+        <header
+          className="px-4 py-3 border-b border-stroke-1 flex items-center justify-between shrink-0"
+          style={{ background: `${accent}10` }}
+        >
+          <div>
+            <h3 className="text-[13px] font-semibold">{title}</h3>
+            {subtitle && (
+              <p className="text-[11px] text-text-tertiary mt-0.5">{subtitle}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary"
+          >
+            <X size={14} />
+          </button>
+        </header>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
+          {children}
+        </div>
+        <footer className="px-4 py-2.5 border-t border-stroke-1 flex items-center justify-end gap-2 shrink-0 bg-bg-base/30">
+          {footer}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function EmailAddressAddDialog({
+  workspaceId,
+  channels,
+  accent,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  channels: ChannelSetting[];
+  accent: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [channelId, setChannelId] = useState<number | "">("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/email-address?ws=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim().toLowerCase(),
+            channelId: channelId === "" ? null : Number(channelId),
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [workspaceId, name, email, channelId, onCreated]);
+
+  const valid =
+    name.trim().length > 0 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  return (
+    <ModalShell
+      title="Absender-Adresse hinzufügen"
+      subtitle="E-Mail-Adresse, von der Tickets beantwortet werden."
+      accent={accent}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-overlay text-[11.5px]"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !valid}
+            style={{ background: accent }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[11.5px] font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <Save size={11} />
+            )}
+            Anlegen
+          </button>
+        </>
+      }
+    >
+      {error && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11.5px] p-2 flex items-start gap-1.5">
+          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      <Field label="Anzeigename">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="z.B. Medtheris Support"
+          className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+        />
+      </Field>
+      <Field label="E-Mail-Adresse">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="support@medtheris.ch"
+          className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+        />
+      </Field>
+      <Field label="Kanal-Bindung (optional)">
+        <select
+          value={channelId}
+          onChange={(e) =>
+            setChannelId(e.target.value ? Number(e.target.value) : "")
+          }
+          className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+        >
+          <option value="">— ohne Kanal (nur Versand via globalem SMTP) —</option>
+          {channels.map((c) => (
+            <option key={c.id} value={c.id}>
+              Kanal #{c.id} ({c.area})
+            </option>
+          ))}
+        </select>
+        <p className="text-[10.5px] text-text-quaternary mt-1">
+          Ein Kanal definiert IMAP-Inbox + SMTP-Outbound. Ohne Kanal kann nur
+          versendet werden – eingehende Mails an diese Adresse werden nicht
+          zu Tickets.
+        </p>
+      </Field>
+    </ModalShell>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
+type ChannelDraft = {
+  groupId: number | "";
+  inbound: {
+    adapter: "imap" | "pop3";
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    ssl: "off" | "ssl" | "starttls";
+    folder: string;
+    keepOnServer: boolean;
+  };
+  outbound: {
+    adapter: "smtp" | "sendmail";
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    ssl: "off" | "ssl" | "starttls";
+  };
+  sender: { name: string; email: string };
+};
+
+function emptyChannelDraft(groupId: number | ""): ChannelDraft {
+  return {
+    groupId,
+    inbound: {
+      adapter: "imap",
+      host: "",
+      port: 993,
+      user: "",
+      password: "",
+      ssl: "ssl",
+      folder: "INBOX",
+      keepOnServer: false,
+    },
+    outbound: {
+      adapter: "smtp",
+      host: "",
+      port: 587,
+      user: "",
+      password: "",
+      ssl: "starttls",
+    },
+    sender: { name: "", email: "" },
+  };
+}
+
+function ChannelEditor({
+  draft,
+  setDraft,
+  showSender = true,
+}: {
+  draft: ChannelDraft;
+  setDraft: (next: ChannelDraft) => void;
+  showSender?: boolean;
+}) {
+  const updateInbound = (patch: Partial<ChannelDraft["inbound"]>) =>
+    setDraft({ ...draft, inbound: { ...draft.inbound, ...patch } });
+  const updateOutbound = (patch: Partial<ChannelDraft["outbound"]>) =>
+    setDraft({ ...draft, outbound: { ...draft.outbound, ...patch } });
+  const updateSender = (patch: Partial<ChannelDraft["sender"]>) =>
+    setDraft({ ...draft, sender: { ...draft.sender, ...patch } });
+
+  return (
+    <div className="space-y-4">
+      <section className="space-y-2">
+        <div className="text-[11.5px] font-semibold flex items-center gap-1.5">
+          <Server size={12} className="text-info" />
+          Inbound (Posteingang)
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <Field label="Protokoll">
+            <select
+              value={draft.inbound.adapter}
+              onChange={(e) =>
+                updateInbound({
+                  adapter: e.target.value as "imap" | "pop3",
+                })
+              }
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+            >
+              <option value="imap">IMAP</option>
+              <option value="pop3">POP3</option>
+            </select>
+          </Field>
+          <Field label="Verschlüsselung">
+            <select
+              value={draft.inbound.ssl}
+              onChange={(e) =>
+                updateInbound({
+                  ssl: e.target.value as ChannelDraft["inbound"]["ssl"],
+                })
+              }
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+            >
+              <option value="ssl">SSL/TLS (993)</option>
+              <option value="starttls">STARTTLS (143)</option>
+              <option value="off">Keine</option>
+            </select>
+          </Field>
+          <Field label="Host">
+            <input
+              type="text"
+              value={draft.inbound.host}
+              onChange={(e) => updateInbound({ host: e.target.value })}
+              placeholder="imap.migadu.com"
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+            />
+          </Field>
+          <Field label="Port">
+            <input
+              type="number"
+              value={draft.inbound.port}
+              onChange={(e) =>
+                updateInbound({ port: Number(e.target.value) || 0 })
+              }
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+            />
+          </Field>
+          <Field label="Benutzer">
+            <input
+              type="text"
+              autoComplete="off"
+              value={draft.inbound.user}
+              onChange={(e) => updateInbound({ user: e.target.value })}
+              placeholder="support@medtheris.ch"
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+            />
+          </Field>
+          <Field label="Passwort">
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={draft.inbound.password}
+              onChange={(e) => updateInbound({ password: e.target.value })}
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+            />
+          </Field>
+          <Field label="Ordner">
+            <input
+              type="text"
+              value={draft.inbound.folder}
+              onChange={(e) => updateInbound({ folder: e.target.value })}
+              placeholder="INBOX"
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+            />
+          </Field>
+          <Field label="Verhalten">
+            <label className="inline-flex items-center gap-2 text-[12px] text-text-secondary">
+              <input
+                type="checkbox"
+                checked={draft.inbound.keepOnServer}
+                onChange={(e) =>
+                  updateInbound({ keepOnServer: e.target.checked })
+                }
+                className="accent-info"
+              />
+              Mails auf Server behalten
+            </label>
+          </Field>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="text-[11.5px] font-semibold flex items-center gap-1.5">
+          <Server size={12} className="text-info" />
+          Outbound (Postausgang)
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <Field label="Protokoll">
+            <select
+              value={draft.outbound.adapter}
+              onChange={(e) =>
+                updateOutbound({
+                  adapter: e.target.value as "smtp" | "sendmail",
+                })
+              }
+              className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+            >
+              <option value="smtp">SMTP (extern)</option>
+              <option value="sendmail">Sendmail (lokal)</option>
+            </select>
+          </Field>
+          {draft.outbound.adapter === "smtp" && (
+            <>
+              <Field label="Verschlüsselung">
+                <select
+                  value={draft.outbound.ssl}
+                  onChange={(e) =>
+                    updateOutbound({
+                      ssl: e.target.value as ChannelDraft["outbound"]["ssl"],
+                    })
+                  }
+                  className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+                >
+                  <option value="starttls">STARTTLS (587)</option>
+                  <option value="ssl">SSL/TLS (465)</option>
+                  <option value="off">Keine</option>
+                </select>
+              </Field>
+              <Field label="Host">
+                <input
+                  type="text"
+                  value={draft.outbound.host}
+                  onChange={(e) => updateOutbound({ host: e.target.value })}
+                  placeholder="smtp.migadu.com"
+                  className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+                />
+              </Field>
+              <Field label="Port">
+                <input
+                  type="number"
+                  value={draft.outbound.port}
+                  onChange={(e) =>
+                    updateOutbound({ port: Number(e.target.value) || 0 })
+                  }
+                  className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+                />
+              </Field>
+              <Field label="Benutzer">
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={draft.outbound.user}
+                  onChange={(e) => updateOutbound({ user: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+                />
+              </Field>
+              <Field label="Passwort">
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={draft.outbound.password}
+                  onChange={(e) => updateOutbound({ password: e.target.value })}
+                  className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      </section>
+
+      {showSender && (
+        <section className="space-y-2">
+          <div className="text-[11.5px] font-semibold flex items-center gap-1.5">
+            <AtSign size={12} className="text-info" />
+            Absender-Adresse (wird auch als Sender angelegt)
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <Field label="Anzeigename">
+              <input
+                type="text"
+                value={draft.sender.name}
+                onChange={(e) => updateSender({ name: e.target.value })}
+                placeholder="Medtheris Support"
+                className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+              />
+            </Field>
+            <Field label="E-Mail">
+              <input
+                type="email"
+                value={draft.sender.email}
+                onChange={(e) => updateSender({ email: e.target.value })}
+                placeholder="support@medtheris.ch"
+                className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none font-mono"
+              />
+            </Field>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ChannelAddDialog({
+  workspaceId,
+  groups,
+  accent,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  groups: GroupSetting[];
+  accent: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [draft, setDraft] = useState<ChannelDraft>(() =>
+    emptyChannelDraft(groups[0]?.id ?? ""),
+  );
+  const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    inbound?: { ok: boolean; message?: string };
+    outbound?: { ok: boolean; message?: string };
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const valid =
+    draft.groupId !== "" &&
+    draft.inbound.host.trim() !== "" &&
+    draft.inbound.user.trim() !== "" &&
+    draft.inbound.password.length > 0 &&
+    draft.inbound.port > 0 &&
+    (draft.outbound.adapter === "sendmail" ||
+      (draft.outbound.host.trim() !== "" &&
+        draft.outbound.user.trim() !== "" &&
+        draft.outbound.password.length > 0 &&
+        draft.outbound.port > 0));
+
+  const test = useCallback(async () => {
+    setTesting(true);
+    setError(null);
+    setTestResult(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/channel/test?ws=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            inbound: draft.inbound,
+            outbound: draft.outbound,
+            fromEmail: draft.sender.email || draft.inbound.user,
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      setTestResult(j);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTesting(false);
+    }
+  }, [workspaceId, draft]);
+
+  const submit = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/channel?ws=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            groupId: draft.groupId,
+            inbound: draft.inbound,
+            outbound: draft.outbound,
+            sender:
+              draft.sender.name.trim() && draft.sender.email.trim()
+                ? draft.sender
+                : undefined,
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [workspaceId, draft, onCreated]);
+
+  return (
+    <ModalShell
+      wide
+      title="E-Mail-Kanal einrichten"
+      subtitle="Inbox via IMAP/POP3 + Outbound via SMTP. Verbindung wird vor dem Speichern geprüft."
+      accent={accent}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={test}
+            disabled={testing || busy || !valid}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:bg-bg-overlay text-text-secondary text-[11.5px] disabled:opacity-50"
+          >
+            {testing ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <ShieldCheck size={11} />
+            )}
+            Verbindung testen
+          </button>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-overlay text-[11.5px]"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !valid}
+            style={{ background: accent }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[11.5px] font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <Save size={11} />
+            )}
+            Anlegen
+          </button>
+        </>
+      }
+    >
+      {error && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11.5px] p-2 flex items-start gap-1.5">
+          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {testResult && (
+        <div className="rounded-md border border-stroke-1 bg-bg-base p-2.5 text-[11.5px] space-y-1">
+          <div className="flex items-center gap-2">
+            {testResult.inbound?.ok ? (
+              <CheckCircle2 size={12} className="text-success" />
+            ) : (
+              <AlertCircle size={12} className="text-red-400" />
+            )}
+            <span className="font-medium">Inbound</span>
+            <span
+              className={
+                testResult.inbound?.ok ? "text-success" : "text-red-400"
+              }
+            >
+              {testResult.inbound?.ok ? "OK" : testResult.inbound?.message ?? "—"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {testResult.outbound?.ok ? (
+              <CheckCircle2 size={12} className="text-success" />
+            ) : (
+              <AlertCircle size={12} className="text-red-400" />
+            )}
+            <span className="font-medium">Outbound</span>
+            <span
+              className={
+                testResult.outbound?.ok ? "text-success" : "text-red-400"
+              }
+            >
+              {testResult.outbound?.ok
+                ? "OK"
+                : testResult.outbound?.message ?? "—"}
+            </span>
+          </div>
+        </div>
+      )}
+      <Field label="Gruppe (eingehende Tickets landen hier)">
+        <select
+          value={draft.groupId}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              groupId: e.target.value ? Number(e.target.value) : "",
+            })
+          }
+          className="w-full px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
+        >
+          {groups.length === 0 && (
+            <option value="">— keine Gruppen verfügbar —</option>
+          )}
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <ChannelEditor draft={draft} setDraft={setDraft} />
+    </ModalShell>
+  );
+}
+
+function ChannelEditPanel({
+  workspaceId,
+  channel,
+  groups,
+  accent,
+  onClose,
+  onSaved,
+}: {
+  workspaceId: string;
+  channel: ChannelSetting;
+  groups: GroupSetting[];
+  accent: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [draft, setDraft] = useState<ChannelDraft>(() => {
+    const inbound =
+      ((channel.options as { inbound?: { adapter?: string; options?: Record<string, unknown> } })
+        ?.inbound) ?? {};
+    const outbound =
+      ((channel.options as { outbound?: { adapter?: string; options?: Record<string, unknown> } })
+        ?.outbound) ?? {};
+    const inOpts = (inbound.options ?? {}) as Record<string, unknown>;
+    const outOpts = (outbound.options ?? {}) as Record<string, unknown>;
+    return {
+      groupId: groups[0]?.id ?? "",
+      inbound: {
+        adapter: (inbound.adapter === "pop3" ? "pop3" : "imap"),
+        host: String(inOpts.host ?? ""),
+        port: Number(inOpts.port ?? 993),
+        user: String(inOpts.user ?? ""),
+        password: "",
+        ssl: inOpts.ssl ? "ssl" : "starttls",
+        folder: String(inOpts.folder ?? "INBOX"),
+        keepOnServer: !!inOpts.keep_on_server,
+      },
+      outbound: {
+        adapter: outbound.adapter === "sendmail" ? "sendmail" : "smtp",
+        host: String(outOpts.host ?? ""),
+        port: Number(outOpts.port ?? 587),
+        user: String(outOpts.user ?? ""),
+        password: "",
+        ssl: outOpts.ssl
+          ? "ssl"
+          : outOpts.start_tls
+            ? "starttls"
+            : "off",
+      },
+      sender: { name: "", email: "" },
+    };
+  });
+  const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    inbound?: { ok: boolean; message?: string };
+    outbound?: { ok: boolean; message?: string };
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [updatePasswords, setUpdatePasswords] = useState(false);
+
+  const test = useCallback(async () => {
+    setTesting(true);
+    setError(null);
+    setTestResult(null);
+    try {
+      const r = await fetch(
+        `/api/helpdesk/settings/channel/test?ws=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            inbound: draft.inbound,
+            outbound: draft.outbound,
+            fromEmail: draft.inbound.user,
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      setTestResult(j);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTesting(false);
+    }
+  }, [workspaceId, draft]);
+
+  const save = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const inboundPatch: ChannelDraft["inbound"] = {
+        ...draft.inbound,
+        password: updatePasswords ? draft.inbound.password : "",
+      };
+      const outboundPatch: ChannelDraft["outbound"] = {
+        ...draft.outbound,
+        password: updatePasswords ? draft.outbound.password : "",
+      };
+      const r = await fetch(
+        `/api/helpdesk/settings/channel/${channel.id}?ws=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            inbound: inboundPatch,
+            outbound: outboundPatch,
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [channel.id, workspaceId, draft, updatePasswords, onSaved]);
+
+  return (
+    <div className="mt-3 border-t border-stroke-1 pt-3 space-y-3">
+      {error && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11.5px] p-2 flex items-start gap-1.5">
+          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {testResult && (
+        <div className="rounded-md border border-stroke-1 bg-bg-chrome p-2 text-[11px] grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-1.5">
+            {testResult.inbound?.ok ? (
+              <CheckCircle2 size={11} className="text-success" />
+            ) : (
+              <AlertCircle size={11} className="text-red-400" />
+            )}
+            <span>
+              Inbound:{" "}
+              {testResult.inbound?.ok
+                ? "OK"
+                : testResult.inbound?.message ?? "—"}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {testResult.outbound?.ok ? (
+              <CheckCircle2 size={11} className="text-success" />
+            ) : (
+              <AlertCircle size={11} className="text-red-400" />
+            )}
+            <span>
+              Outbound:{" "}
+              {testResult.outbound?.ok
+                ? "OK"
+                : testResult.outbound?.message ?? "—"}
+            </span>
+          </div>
+        </div>
+      )}
+      <label className="inline-flex items-center gap-2 text-[11px] text-text-secondary">
+        <input
+          type="checkbox"
+          checked={updatePasswords}
+          onChange={(e) => setUpdatePasswords(e.target.checked)}
+          className="accent-info"
+        />
+        Passwörter überschreiben (sonst werden bestehende behalten)
+      </label>
+      <ChannelEditor draft={draft} setDraft={setDraft} showSender={false} />
+      <div className="flex items-center gap-2 justify-end pt-1">
+        <button
+          type="button"
+          onClick={test}
+          disabled={testing || busy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:bg-bg-overlay text-text-secondary text-[11.5px] disabled:opacity-50"
+        >
+          {testing ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <ShieldCheck size={11} />
+          )}
+          Testen
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-overlay text-[11.5px]"
+        >
+          Abbrechen
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy}
+          style={{ background: accent }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[11.5px] font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Save size={11} />
+          )}
+          Speichern
+        </button>
+      </div>
     </div>
   );
 }

@@ -10,6 +10,12 @@ Two-step pipeline (cost-optimized):
                                down the list, so we only pay for places we
                                actually process.
 
+Multi-profile (April 2026):
+  Discovery accepts a `Profile` and uses it for query lists, place-type
+  filters, and name-keyword matching. The legacy physio-specific
+  `_looks_like_physio` is now expressed as data on `PROFILE_PHYSIO`,
+  preserving exact behaviour for the Medtheris run.
+
 This avoids the previous behaviour where 20 Detail calls were made even with
 --limit 3, costing ~$0.74 instead of ~$0.11.
 """
@@ -17,20 +23,8 @@ import time
 
 import googlemaps
 
-from config import SEARCH_QUERIES, SWISS_PLZ_CITIES
-
-
-_PHYSIO_TYPE_HINTS = {"physiotherapist", "health", "medical_health"}
-_PHYSIO_NAME_HINTS = ("physio", "therapie", "rehabilitation", "rehab")
-
-
-def _looks_like_physio(name: str | None, types: list[str] | None) -> bool:
-    name_lower = (name or "").lower()
-    types = types or []
-    return (
-        any(t in _PHYSIO_TYPE_HINTS for t in types)
-        or any(kw in name_lower for kw in _PHYSIO_NAME_HINTS)
-    )
+from config import SWISS_PLZ_CITIES
+from scraper.profiles import Profile
 
 
 def _normalize(value: str | None) -> str:
@@ -39,6 +33,7 @@ def _normalize(value: str | None) -> str:
 
 def discover_practices(
     api_key: str,
+    profile: Profile,
     canton_filter: str | None = None,
     max_plz: int | None = None,
     max_queries: int | None = None,
@@ -47,9 +42,11 @@ def discover_practices(
     city_filter: str | None = None,
     plz_filter: str | None = None,
     extra_terms: list[str] | None = None,
+    selected_specialties: list[str] | None = None,
 ) -> list[dict]:
     """
-    Discover unique physiotherapy practices via Google Maps Text Search.
+    Discover unique candidates for the given vertical (`profile`) via
+    Google Maps Text Search.
 
     Returns "candidates" with only the cheap Text Search fields. Phone +
     website are NOT included here — call fetch_place_details(gmaps, place_id)
@@ -57,25 +54,32 @@ def discover_practices(
 
     Args:
         api_key: Google Maps API key (Places API enabled).
-        canton_filter: Restrict to a Swiss canton (or German Bundesland — same
-            field; the discovery pipeline doesn't distinguish CH/DE here).
+        profile: which vertical we're scraping (`physio`, `aerzte`,
+            `sportvereine`). Drives query list, candidate filter, and
+            seed-canton restriction.
+        canton_filter: Restrict to a Swiss canton (or DE Bundesland).
+            Stacks ON TOP of `profile.seed_locations_filter` — Sportvereine
+            for example is ZH-only, and a CLI `--canton BE` would
+            simply yield zero seeds (we leave that explicit so the
+            operator notices the mismatch).
         max_plz: Limit to first N PLZ entries from the curated list.
-        max_queries: Limit to first N SEARCH_QUERIES.
+        max_queries: Limit to first N effective queries.
         max_pages: Max result pages per (PLZ, query) combination.
         country_filter: Two-letter region code passed to Google Maps
             (defaults to "ch"). Use "de", "at", … for cross-border runs.
         city_filter: Restrict to a city name (case-insensitive substring match
             against `SWISS_PLZ_CITIES[*].city`). If the city isn't in the
             curated list it is added on-the-fly as a single ad-hoc target.
-        plz_filter: Restrict to one PLZ. If the PLZ isn't curated it is added
-            ad-hoc with `city`/`canton` set to whatever the caller provided
-            (or empty strings).
+        plz_filter: Restrict to one PLZ. Ad-hoc-friendly.
         extra_terms: Additional discovery search terms appended to the
-            standard `SEARCH_QUERIES` list (de-duped, case-insensitive).
+            profile's queries (de-duped, case-insensitive).
+        selected_specialties: For profiles with sub-verticals (Ärzte:
+            Hausarzt / Orthopädie / …) the list of specialty keys
+            currently active. None / empty → profile defaults.
 
     Returns:
         List of dicts with keys: place_id, name, address, rating,
-        review_count, status, city, plz, canton.
+        review_count, status, city, plz, canton, profile.
 
     Cost (New Places API, 2026):
         cities * queries * pages * $0.032   (Text Search only)
@@ -86,6 +90,11 @@ def discover_practices(
 
     region = (country_filter or "ch").lower()
     cities = list(SWISS_PLZ_CITIES)
+
+    # Profile-level seed restriction (e.g. Sportvereine = ZH only).
+    if profile.seed_locations_filter:
+        wanted = {c.casefold() for c in profile.seed_locations_filter}
+        cities = [c for c in cities if c["canton"].casefold() in wanted]
 
     if canton_filter:
         cities = [c for c in cities if _normalize(c["canton"]) == _normalize(canton_filter)]
@@ -114,24 +123,37 @@ def discover_practices(
     if not cities:
         print(
             f"  WARN: keine PLZ/City-Treffer für Filter "
-            f"(country={country_filter}, canton={canton_filter}, "
-            f"city={city_filter}, plz={plz_filter})"
+            f"(profile={profile.key}, country={country_filter}, "
+            f"canton={canton_filter}, city={city_filter}, plz={plz_filter})"
         )
         return []
 
     if max_plz:
         cities = cities[:max_plz]
 
-    base_queries = list(SEARCH_QUERIES)
+    base_queries = profile.queries_for(selected_specialties)
     if extra_terms:
         for term in extra_terms:
             t = term.strip()
             if t and t.casefold() not in {q.casefold() for q in base_queries}:
                 base_queries.append(t)
+    if not base_queries:
+        # Defensive: a profile with empty base_queries AND no specialty
+        # selection would burn zero API calls but also produce no rows;
+        # surface the misconfiguration loudly instead of silently
+        # returning an empty list.
+        print(
+            f"  WARN: profile={profile.key} hat keine effektive Such-Queries — "
+            "wähle mindestens ein Fachgebiet oder setze --terms."
+        )
+        return []
     queries = base_queries[:max_queries] if max_queries else base_queries
 
     expected_calls = len(cities) * len(queries) * max_pages
-    print(f"Discovery: {len(cities)} PLZ × {len(queries)} Queries × max {max_pages} Pages")
+    print(
+        f"Discovery [profile={profile.key}]: {len(cities)} PLZ × "
+        f"{len(queries)} Queries × max {max_pages} Pages"
+    )
     print(f"  → höchstens {expected_calls} Text Search Calls "
           f"(~${expected_calls * 0.032:.2f}). Detail-Calls erst nach Cache+Limit.")
 
@@ -159,7 +181,7 @@ def discover_practices(
                             continue
                         seen_place_ids.add(pid)
 
-                        if not _looks_like_physio(
+                        if not profile.matches_candidate(
                             place.get("name"), place.get("types")
                         ):
                             continue
@@ -174,6 +196,7 @@ def discover_practices(
                             "city": city,
                             "plz": plz,
                             "canton": canton,
+                            "profile": profile.key,
                         })
 
                     next_token = response.get("next_page_token")
@@ -194,7 +217,7 @@ def discover_practices(
             time.sleep(0.5)
 
     print(f"Discovery fertig: {len(results)} Kandidaten "
-          f"(noch ohne Telefon/Website — Detail-Calls erfolgen je verarbeiteter Praxis)")
+          f"(noch ohne Telefon/Website — Detail-Calls erfolgen je verarbeitetem Eintrag)")
     return results
 
 

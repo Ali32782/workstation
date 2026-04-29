@@ -95,20 +95,21 @@ ergibt sich aus Group-Mitgliedschaften:
 |-------------------------------|----------------------------------|---------------------------------------------------------|--------------------------|
 | **ali** (Johannes Ali Peters) | `ali.peters@kineo.swiss`         | `/kineo/executives`, `/corehub/dev-ops`, `/medtheris/sales` | Kineo · Corehub · MedTheris |
 | **johannes** (Johannes Ali Peters) | `johannes@corehub.kineo360.work` | `/corehub/product-owner`, `/kineo/leadership`           | Corehub · Kineo          |
-| **diana**                     | `diana@corehub.kineo360.work`    | `/corehub/full-stack`                                   | Corehub                  |
-| **richard**                   | `richard@corehub.kineo360.work`  | `/corehub/back-end`                                     | Corehub                  |
+| **diana.matushkina** (PO)       | `diana.matushkina@corehub.kineo360.work` | `/corehub/product-owner` · Top-Level `/corehub`, `/medtheris` | Corehub · MedTheris |
+| **richard.bilous** (Backend)    | `richard.bilous@corehub.kineo360.work`   | `/corehub/back-end` · Top-Level `/corehub`, `/medtheris`       | Corehub · MedTheris |
+| **daria.kyrychenko** (UI/UX)     | `daria.kyrychenko@corehub.kineo360.work` | `/corehub/ui-ux` · Top-Level `/corehub`, `/medtheris`         | Corehub · MedTheris |
 
 **Provisionierung**: Erstpasswort wird in Keycloak temporär gesetzt mit
 `force-reset` Flag → User muss bei erstem Login ändern und kriegt direkt eine
 Aufforderung zur TOTP-Einrichtung. Mailboxes werden parallel in Migadu
-angelegt (`<vorname>@<workspace>.kineo360.work`) und benutzen denselben
+angelegt (`<vorname.nachname>@<workspace>.kineo360.work` mit Onboarding-Tool) und benutzen denselben
 Authenticator/SSO via Keycloak NICHT (Migadu ist eigenständiges Auth — siehe
 `docs/migadu-dns.md`).
 
 **Wo werden User angelegt?** Im Onboarding-Tool unter
 `https://app.kineo360.work/admin/onboarding/members` (nur für Admin-Allowlist:
 `ali`, `johannes`). Das Tool legt einen User in `main` an, fügt ihn den gewählten
-Top-Level-Groups hinzu und provisioniert pro Workspace eine Migadu-Mailbox.
+Top-Level-Groups hinzu und provisioniert pro Workspace eine Migadu-Mailbox (`vorname.nachname@<workspace>.kineo360.work` als Zielmuster; siehe Playbook).
 
 ## Three Phases
 
@@ -165,6 +166,65 @@ Das ist kein „nebenbei" mehr — das ist ein zweites Geschäft.
 - Validierter Product-Market-Fit: 5+ Praxen wollen das System
 - Finanzierung dafür steht
 - Mindestens ein/e Senior Frontend Engineer ist eingestellt
+
+## Produkt-Roadmap — Reihenfolge & Abhängigkeiten
+
+> Leitplan für **Wellen 2–7** und angrenzende Themen. Ziel: weniger
+> Rework, klarere Gates, realistische Parallelität.
+
+### Gate: Deploy + Smoke
+
+Nach **jedem Batch** vor der nächsten Welle: **Deploy** und **Smoke-Tests**
+(Sanity-Check der betroffenen Flächen). Das ist kein optionales Nice-to-have,
+sondern der feste Übergang zwischen Arbeitspaketen — verhindert, dass sich
+Fehler über Wellen stapeln.
+
+**Operativer Auftrag & Checkboxen:** [`WELLEN-AUFTRAG.md`](./WELLEN-AUFTRAG.md)  
+Die **verbindliche Reihenfolge der nächsten Pakete** steht dort unter **„Aktiver Fokus (vereinbart)“**.
+
+### Welle 2 — Office / Word / Verträge
+
+- **Proposal-Generator**, **Word-Mail-Merge**, **Merge-Variablen** und die
+  **Excel-Conditional-Basis** im Portal gelten für den aktuellen Scope als
+  umgesetzt (Details: [`WELLEN-AUFTRAG.md`](./WELLEN-AUFTRAG.md)).
+- **Charts/Pivot**, **eSignature E2E (Sales-Contracts)** und KI-Erweiterungen
+  bleiben **Backlog** — E2E braucht einen durchgängigen **Contract-Lifecycle**:
+  Entwurf → Freigabe → Signatur → Archiv/Revision.
+
+### Welle 3 — Marketing
+
+**UTM-Attribution** und **öffentlicher Lead-Capture** (embeddable API,
+CRM-Anlage, Quelle in der Lead-Inbox) bilden das **abgeschlossene
+Marketing-Fundament** im Repo. **CMS**, **Landing-Page-Builder**, weitere
+**Forms** und Kanal-Tools sind **Growth-Backlog**: sie bauen auf derselben
+Attribution-Schicht auf, sind aber kein Blocker für den aktuellen Welle-3-Core.
+
+### Welle 4 — CRM / Pipeline
+
+**Deal-Stages Kanban** und verwandte Sales-Views profitieren, wenn
+**Deal-Stages** im CRM (Twenty) bereits **konsistent** und teamweit abgestimmt
+sind — sonst wird das Board täglich neu erfunden.
+
+### Welle 5 — Global Cmd+K
+
+**Globale Suche** lohnt sich, wenn bewusst definiert ist, **welche Quellen**
+wirklich indexiert/durchsucht werden sollen (Mail, Files, CRM, Tickets, …)
+und mit welcher Priorität. Ohne diese Liste wird Cmd+K entweder dünn oder
+unendlich scope-creep.
+
+### Welle 6 — Files / Content-Skalierung
+
+Asset-Library und mehrsprachige Varianten bauen auf stabiler
+**Files-/Metadaten-** und **Publishing-**Logik auf — nach Marketing-Basis
+(Welle 3) oft sinnvoll einzuplanen.
+
+### Welle 7 — Security / Compliance
+
+**2FA-Enforcement**, **WebAuthn/Passkeys**, **DSG-Self-Service**
+(Export/Löschung) sind **technisch oft Vorbedingungen** für größere Kunden
+und Audits. Im Backlog stehen sie häufig als „Welle 7“, **politisch** können
+und müssen frühere Sprints frei sein, wenn ein Deal das erzwingt — die
+Nummer ist keine harte Reihenfolge für Compliance.
 
 ## Aktuelle Akzeptanz
 
