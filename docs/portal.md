@@ -119,9 +119,7 @@ Lokale SSH-Client-Config (Copy-Paste: [`docs/ssh-corelab.md`](./ssh-corelab.md))
 
 > Nicht den älteren **`kineo360-server`** (91.99.179.44) für diesen Stack verwenden.
 
-**Einmalig auf dem Server:** `/opt/corelab/portal` (und ggf. `medtheris-scraper`) müssen **`deploy:deploy`**
-gehören, sonst schlägt `rsync` fehl (`Permission denied`). Beispiel:  
-`sudo chown -R deploy:deploy /opt/corelab/portal /opt/corelab/medtheris-scraper`
+**Einmalig auf dem Server:** siehe [`docs/ssh-corelab.md`](./ssh-corelab.md) (root: `chown` für `portal`, `medtheris-scraper`, `docker-compose.yml` und **Verzeichnis** `/opt/corelab`).
 
 ```bash
 # vom Repo-Root — Quellcode syncen (kein Git auf dem Server nötig)

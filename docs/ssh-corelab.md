@@ -26,3 +26,17 @@ Host medtheris-corelab-root
 Public Key lokal anzeigen: `cat ~/.ssh/id_ed25519.pub`
 
 Siehe auch: [portal.md → Deploy](./portal.md#deploy).
+
+## Einmalig auf dem Server (root)
+
+Damit User **`deploy`** per rsync den gesamten Stack aktualisieren kann:
+
+```bash
+# als root (z. B. ssh medtheris-corelab-root)
+chown -R deploy:deploy /opt/corelab/portal /opt/corelab/medtheris-scraper
+chown deploy:deploy /opt/corelab/docker-compose.yml
+# rsync legt Temp-Dateien im Ordner /opt/corelab an — der Ordner selbst muss deploy gehören:
+chown deploy:deploy /opt/corelab
+```
+
+Nur **`medtheris-corelab-root`** nutzen, wenn dein **`id_ed25519.pub`** bei **root** in `~/.ssh/authorized_keys` eingetragen ist.
