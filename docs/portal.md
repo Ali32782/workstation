@@ -113,17 +113,36 @@ Add `http://localhost:3000/api/auth/callback/keycloak` to the Keycloak `portal` 
 
 ## Deploy
 
-```bash
-# from repo root, sync source to server
-rsync -avz --delete --exclude='node_modules' --exclude='.next' --exclude='.env*.local' \
-    portal/ deploy@<host>:/opt/corelab/portal/
+**Ziel-Host (vereinbart):** **MedTheris-Corelab** auf Hetzner — SSH `deploy@178.104.222.61`
+(lokal oft als `Host medtheris-corelab` in `~/.ssh/config`).
 
-# on server
-ssh deploy@<host>
+> Nicht den älteren **`kineo360-server`** (91.99.179.44) für diesen Stack verwenden.
+
+**Einmalig auf dem Server:** `/opt/corelab/portal` (und ggf. `medtheris-scraper`) müssen **`deploy:deploy`**
+gehören, sonst schlägt `rsync` fehl (`Permission denied`). Beispiel:  
+`sudo chown -R deploy:deploy /opt/corelab/portal /opt/corelab/medtheris-scraper`
+
+```bash
+# vom Repo-Root — Quellcode syncen (kein Git auf dem Server nötig)
+rsync -avz --delete --exclude='node_modules' --exclude='.next' --exclude='.env*.local' \
+    -e 'ssh -i ~/.ssh/id_ed25519' \
+    portal/ deploy@178.104.222.61:/opt/corelab/portal/
+
+rsync -avz --delete --exclude='__pycache__' --exclude='.venv' \
+    -e 'ssh -i ~/.ssh/id_ed25519' \
+    medtheris-scraper/ deploy@178.104.222.61:/opt/corelab/medtheris-scraper/
+
+rsync -avz -e 'ssh -i ~/.ssh/id_ed25519' \
+    docker-compose.yml deploy@178.104.222.61:/opt/corelab/docker-compose.yml
+
+# auf dem Server
+ssh -i ~/.ssh/id_ed25519 deploy@178.104.222.61
 cd /opt/corelab
-docker compose build portal
-docker compose up -d portal
+docker compose build portal medtheris-scraper
+docker compose up -d portal medtheris-scraper
 ```
+
+Kurzform: `scripts/deploy-medtheris-corelab.sh` (setzt dieselben Pfade; optional `DEPLOY_SSH`, `DEPLOY_SSH_KEY`, `DEPLOY_REMOTE_DIR`).
 
 Container exposes port `3000` on the `proxy` network (not host-bound). NPM proxy host #12 forwards `app.kineo360.work` → `portal:3000`.
 

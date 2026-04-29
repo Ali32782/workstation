@@ -41,7 +41,8 @@ Reihenfolge für die **nächsten Arbeitspakete** (Umsatz vor breitem Growth):
    **Stand im Repo:** Defaults in `portal/src/lib/crm/opportunity-stages.ts`; Abstimmung der Enum-Werte mit Sales in Twenty bleibt Gate vor größerem Kanban (Welle 4).
 3. **Growth:** Statische Lead-Landing **`/p/lead`** (Server Action → Twenty, ohne Bearer-Token auf der Seite); API **`POST /api/public/lead`** bleibt für Embeds.
 
-Nach jedem abgeschlossenen Paket: **Deploy + Smoke** + `cd portal && npx tsc --noEmit`.
+Nach jedem abgeschlossenen Paket: **Deploy + Smoke** + `cd portal && npx tsc --noEmit`.  
+**Produktions-Deploy:** Host **MedTheris-Corelab** (`deploy@178.104.222.61`, nicht `kineo360-server`) — siehe `docs/portal.md` und `scripts/deploy-medtheris-corelab.sh`.
 
 ---
 
