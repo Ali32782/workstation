@@ -113,8 +113,9 @@ Add `http://localhost:3000/api/auth/callback/keycloak` to the Keycloak `portal` 
 
 ## Deploy
 
-**Ziel-Host (vereinbart):** **MedTheris-Corelab** auf Hetzner — SSH `deploy@178.104.222.61`
-(lokal oft als `Host medtheris-corelab` in `~/.ssh/config`).
+**Ziel-Host (vereinbart):** **MedTheris-Corelab** auf Hetzner — `178.104.222.61`, Login **`deploy`**.
+
+Lokale SSH-Client-Config (Copy-Paste: [`docs/ssh-corelab.md`](./ssh-corelab.md)): Host-Alias **`medtheris-corelab`** → dann reicht z. B. `ssh medtheris-corelab` und `./scripts/deploy-medtheris-corelab.sh` ohne IP.
 
 > Nicht den älteren **`kineo360-server`** (91.99.179.44) für diesen Stack verwenden.
 
@@ -124,19 +125,17 @@ gehören, sonst schlägt `rsync` fehl (`Permission denied`). Beispiel:
 
 ```bash
 # vom Repo-Root — Quellcode syncen (kein Git auf dem Server nötig)
+# Voraussetzung: SSH-Alias medtheris-corelab (siehe docs/ssh-corelab.md)
 rsync -avz --delete --exclude='node_modules' --exclude='.next' --exclude='.env*.local' \
-    -e 'ssh -i ~/.ssh/id_ed25519' \
-    portal/ deploy@178.104.222.61:/opt/corelab/portal/
+    portal/ medtheris-corelab:/opt/corelab/portal/
 
 rsync -avz --delete --exclude='__pycache__' --exclude='.venv' \
-    -e 'ssh -i ~/.ssh/id_ed25519' \
-    medtheris-scraper/ deploy@178.104.222.61:/opt/corelab/medtheris-scraper/
+    medtheris-scraper/ medtheris-corelab:/opt/corelab/medtheris-scraper/
 
-rsync -avz -e 'ssh -i ~/.ssh/id_ed25519' \
-    docker-compose.yml deploy@178.104.222.61:/opt/corelab/docker-compose.yml
+rsync -avz docker-compose.yml medtheris-corelab:/opt/corelab/docker-compose.yml
 
 # auf dem Server
-ssh -i ~/.ssh/id_ed25519 deploy@178.104.222.61
+ssh medtheris-corelab
 cd /opt/corelab
 docker compose build portal medtheris-scraper
 docker compose up -d portal medtheris-scraper

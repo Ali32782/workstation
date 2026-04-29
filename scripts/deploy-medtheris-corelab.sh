@@ -5,17 +5,21 @@ set -euo pipefail
 # NICHT kineo360-server (91.99.179.44) — siehe docs/portal.md → Deploy.
 #
 # Env-Overrides:
-#   DEPLOY_SSH          default: deploy@178.104.222.61
-#   DEPLOY_SSH_KEY      default: $HOME/.ssh/id_ed25519
+#   DEPLOY_SSH          default: medtheris-corelab (→ ~/.ssh/config, User deploy)
+#   DEPLOY_SSH_KEY      optional: wenn gesetzt, z. B. $HOME/.ssh/id_ed25519 für -i
 #   DEPLOY_REMOTE_DIR   default: /opt/corelab
 #
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST="${DEPLOY_SSH:-deploy@178.104.222.61}"
-KEY="${DEPLOY_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+HOST="${DEPLOY_SSH:-medtheris-corelab}"
 RDIR="${DEPLOY_REMOTE_DIR:-/opt/corelab}"
 
-SSH=(ssh -i "$KEY" -o BatchMode=yes)
-RSYNC_SSH=(ssh -i "$KEY")
+if [[ -n "${DEPLOY_SSH_KEY:-}" ]]; then
+  SSH=(ssh -i "$DEPLOY_SSH_KEY" -o BatchMode=yes)
+  RSYNC_SSH=(ssh -i "$DEPLOY_SSH_KEY")
+else
+  SSH=(ssh -o BatchMode=yes)
+  RSYNC_SSH=(ssh)
+fi
 
 echo "==> rsync portal → ${HOST}:${RDIR}/portal/"
 rsync -avz --delete \

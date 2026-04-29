@@ -42,7 +42,7 @@ Reihenfolge für die **nächsten Arbeitspakete** (Umsatz vor breitem Growth):
 3. **Growth:** Statische Lead-Landing **`/p/lead`** (Server Action → Twenty, ohne Bearer-Token auf der Seite); API **`POST /api/public/lead`** bleibt für Embeds.
 
 Nach jedem abgeschlossenen Paket: **Deploy + Smoke** + `cd portal && npx tsc --noEmit`.  
-**Produktions-Deploy:** Host **MedTheris-Corelab** (`deploy@178.104.222.61`, nicht `kineo360-server`) — siehe `docs/portal.md` und `scripts/deploy-medtheris-corelab.sh`.
+**Produktions-Deploy:** Host **MedTheris-Corelab** — SSH-Alias `medtheris-corelab` ([`docs/ssh-corelab.md`](./ssh-corelab.md)), Deploy-Skript `scripts/deploy-medtheris-corelab.sh`, Details [`docs/portal.md`](./portal.md). Nicht `kineo360-server` für diesen Stack.
 
 ---
 
