@@ -53,16 +53,46 @@ check_oidc() {
   fi
 }
 
+# OpenSSL -enddate prints e.g. "Jan 15 12:00:00 2026 GMT" (after stripping notAfter=).
+# macOS has BSD date (no -d); GNU date is optional. Python 3 is the portable path.
+cert_not_after_to_epoch() {
+  local not_after="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import calendar, sys
+from datetime import datetime
+raw = sys.argv[1].strip()
+parts = raw.split()
+if len(parts) < 5:
+    sys.exit(1)
+mon, day_s, tim, year_s, tz = parts[0], parts[1], parts[2], parts[3], parts[4]
+dt = datetime.strptime(
+    f"{mon} {int(day_s)} {tim} {int(year_s)} {tz}",
+    "%b %d %H:%M:%S %Y %Z",
+)
+print(calendar.timegm(dt.utctimetuple()))
+' "${not_after}" 2>/dev/null && return 0
+  fi
+  date -d "${not_after}" +%s 2>/dev/null && return 0
+  gdate -d "${not_after}" +%s 2>/dev/null && return 0
+  return 1
+}
+
 check_cert() {
   local host="$1"
-  local not_after days_left
+  local not_after exp_epoch now_epoch days_left
   not_after=$(echo | openssl s_client -servername "${host}" -connect "${host}:443" 2>/dev/null \
     | openssl x509 -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
   if [[ -z "${not_after}" ]]; then
     red "TLS cert  ${host}" "could not read certificate"
     return
   fi
-  days_left=$(( ( $(date -d "${not_after}" +%s 2>/dev/null || gdate -d "${not_after}" +%s) - $(date +%s) ) / 86400 ))
+  exp_epoch=$(cert_not_after_to_epoch "${not_after}") || {
+    red "TLS cert  ${host}" "could not parse expiry (need python3, GNU date, or brew gdate)"
+    return
+  }
+  now_epoch=$(date +%s)
+  days_left=$(( (exp_epoch - now_epoch) / 86400 ))
   if (( days_left > 14 )); then
     green "TLS cert  ${host}  (${days_left}d left)"
   else
