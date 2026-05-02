@@ -25,6 +25,39 @@ LOG="/var/log/corehub/backup-${STAMP}.log"
 mkdir -p "${WORK}" "$(dirname "${LOG}")"
 exec > >(tee -a "${LOG}") 2>&1
 
+# -----------------------------------------------------------------------------
+# Failure webhook — best-effort POST to BACKUP_ALERT_WEBHOOK on any error or
+# on success summary. Designed to talk to Slack / Discord / Mattermost
+# incoming-webhook URLs (they all accept {"text": "..."}). Silent if the env
+# var is unset, so this is opt-in.
+# -----------------------------------------------------------------------------
+notify() {
+  local kind="$1"  # "ok" | "fail"
+  local message="$2"
+  local url="${BACKUP_ALERT_WEBHOOK:-}"
+  if [[ -z "$url" ]]; then
+    return 0
+  fi
+  local emoji
+  case "$kind" in
+    ok)   emoji=":white_check_mark:" ;;
+    fail) emoji=":rotating_light:" ;;
+    *)    emoji=":information_source:" ;;
+  esac
+  # Newlines must survive JSON encoding; we keep this dependency-free with
+  # a tiny inline escaper. jq would be cleaner but isn't always installed.
+  local payload
+  payload=$(printf '%s' "$message" \
+    | python3 -c 'import json, sys; print(json.dumps({"text": sys.argv[1] + " " + sys.stdin.read()}))' \
+        "$emoji" 2>/dev/null \
+    || printf '{"text":"%s backup notify (raw)"}' "$emoji")
+  curl --silent --show-error --max-time 5 \
+       -H "Content-Type: application/json" \
+       -X POST -d "$payload" "$url" >/dev/null || true
+}
+
+trap 'notify fail "Backup ${STAMP} FAILED — see $(hostname):${LOG}"' ERR
+
 echo "[$(date -Is)] ==== Backup start ${STAMP} ===="
 
 echo "--> dump MariaDB"
@@ -136,4 +169,6 @@ s3cmd \
         del "$obj" || true
     done
 
+SIZE_HUMAN="$(du -h "${LOG}" | cut -f1 || echo '?')"
 echo "[$(date -Is)] ==== Backup done ===="
+notify ok "Backup ${STAMP} done on $(hostname). Log size: ${SIZE_HUMAN}"
