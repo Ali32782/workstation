@@ -46,6 +46,45 @@ if docker ps --format '{{.Names}}' | grep -q '^zammad-postgres$'; then
     | gzip > "${WORK}/zammad-postgres.sql.gz" || echo "   (skipped zammad-postgres)"
 fi
 
+# --- Marketing-Hub Postgres dumps ----------------------------------------------
+# Postiz + OpenCut both run on bare postgres:17-alpine images that don't
+# expose pg_dumpall under a named role; we dump the single app DB with the
+# user/pw from .env. Failure is non-fatal since the stack is optional.
+if docker ps --format '{{.Names}}' | grep -q '^postiz_postgres$'; then
+  echo "--> dump Postgres postiz_postgres (logical)"
+  docker exec -e PGPASSWORD="${POSTIZ_POSTGRES_PASSWORD:-postiz}" postiz_postgres \
+    pg_dump -U "${POSTIZ_POSTGRES_USER:-postiz-user}" \
+            -d "${POSTIZ_POSTGRES_DB:-postiz-db-local}" \
+            --no-owner --format=plain \
+    | gzip > "${WORK}/postiz-postgres.sql.gz" || echo "   (skipped postiz_postgres)"
+fi
+
+if docker ps --format '{{.Names}}' | grep -q '^postiz_temporal_postgres$'; then
+  echo "--> dump Postgres postiz_temporal_postgres (logical)"
+  docker exec -e PGPASSWORD="${POSTIZ_TEMPORAL_POSTGRES_PASSWORD:-temporal}" postiz_temporal_postgres \
+    pg_dump -U "${POSTIZ_TEMPORAL_POSTGRES_USER:-temporal}" \
+            -d "${POSTIZ_TEMPORAL_POSTGRES_DB:-temporal}" \
+            --no-owner --format=plain \
+    | gzip > "${WORK}/postiz-temporal-postgres.sql.gz" || echo "   (skipped postiz_temporal_postgres)"
+fi
+
+if docker ps --format '{{.Names}}' | grep -q '^opencut_db$'; then
+  echo "--> dump Postgres opencut_db (logical)"
+  docker exec -e PGPASSWORD="${OPENCUT_POSTGRES_PASSWORD:-opencut}" opencut_db \
+    pg_dump -U "${OPENCUT_POSTGRES_USER:-opencut}" \
+            -d "${OPENCUT_POSTGRES_DB:-opencut}" \
+            --no-owner --format=plain \
+    | gzip > "${WORK}/opencut-postgres.sql.gz" || echo "   (skipped opencut_db)"
+fi
+
+# Documenso Postgres (separate container, separate auth from twenty-db).
+if docker ps --format '{{.Names}}' | grep -q '^documenso-db$'; then
+  echo "--> dump Postgres documenso-db (logical)"
+  docker exec documenso-db \
+    sh -c 'pg_dumpall -U "${POSTGRES_USER:-documenso}"' \
+    | gzip > "${WORK}/documenso-db.sql.gz" || echo "   (skipped documenso-db)"
+fi
+
 echo "--> dump Rocket.Chat MongoDB"
 if docker ps --format '{{.Names}}' | grep -q '^rocketchat-mongo$'; then
   docker exec rocketchat-mongo sh -c "mongodump --archive --gzip --username root --password '${ROCKETCHAT_MONGO_ROOT_PASSWORD}' --authenticationDatabase admin" \
