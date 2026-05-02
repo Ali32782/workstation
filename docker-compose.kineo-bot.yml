@@ -1,0 +1,56 @@
+# =============================================================================
+# Kineo Raumplanungs-Assistent (FastAPI + Anthropic + optional Postgres)
+#
+# Source: https://github.com/Ali32782/Kineo-Raumplanungsassistent (private)
+# Cloned to /opt/corelab/kineo-bot/ on the server.
+#
+# Replaces the Render.com deployment so we can drop the external dependency.
+# Public URL: https://bot.kineo360.work (NPM proxy → kineo_bot:8000).
+# Wired into the Kineo workspace sidebar via NEXT_PUBLIC_KINEO_CHATBOT_URL.
+#
+# Deploy:
+#   ssh medtheris-corelab 'cd /opt/corelab && \
+#     docker compose -f docker-compose.yml -f docker-compose.kineo-bot.yml \
+#       up -d --build kineo_bot'
+# =============================================================================
+
+services:
+  kineo_bot:
+    build:
+      context: ./kineo-bot
+      dockerfile: Dockerfile
+    image: corehub/kineo-bot:latest
+    container_name: kineo_bot
+    restart: unless-stopped
+    environment:
+      # Anthropic Claude — required (main.py crashes on import without it).
+      # Defaults to the scraper key so we don't need a second Anthropic
+      # subscription; override with BOT_ANTHROPIC_API_KEY in .env if you want
+      # the bot's spend tracked separately.
+      ANTHROPIC_API_KEY: ${BOT_ANTHROPIC_API_KEY:-${SCRAPER_ANTHROPIC_API_KEY}}
+
+      # Optional Postgres for OTP sessions + appointments. Empty = bot falls
+      # back to in-memory (fine for low traffic, lost on restart).
+      DATABASE_URL: ${BOT_DATABASE_URL:-}
+
+      # Optional Bearer-token gate (see bot README "Mehrere Nutzer / Passwortschutz").
+      APP_TOKEN: ${BOT_APP_TOKEN:-}
+
+      # Optional OneDoc slot-server forwarding (slots_server.py runs separately).
+      SLOTS_API_KEY: ${BOT_SLOTS_API_KEY:-}
+
+      TZ: ${TZ:-Europe/Zurich}
+    networks:
+      - proxy
+    healthcheck:
+      # Bot serves index.html at "/" via StaticFiles mount — 200 = alive.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  proxy:
+    external: true
+    name: proxy

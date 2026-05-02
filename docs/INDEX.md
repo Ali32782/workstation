@@ -21,6 +21,7 @@ Kurzüberblick über alle Anleitungen unter `docs/` und ihren Umsetzungsgrad im 
 | [marketing-pipeline.md](./marketing-pipeline.md), [mautic-setup.md](./mautic-setup.md) | Marketing-Automation (Mailchimp-Alternative) | Portal APIs / Mautic extern |
 | [opencut-setup.md](./opencut-setup.md) | In-Browser-Videoeditor (CapCut-Alternative) | `docker-compose.opencut.yml`, env `NEXT_PUBLIC_OPENCUT_URL` |
 | [postiz-setup.md](./postiz-setup.md) | Social-Media-Scheduler (Buffer-Alternative, 30+ Plattformen) | `docker-compose.postiz.yml`, env `NEXT_PUBLIC_POSTIZ_URL` |
+| [kineo-bot-setup.md](./kineo-bot-setup.md) | Self-Hosted Raumplanungs-Assistent (FastAPI + Anthropic, ersetzt Render) | `docker-compose.kineo-bot.yml`, `bot.kineo360.work`, env `NEXT_PUBLIC_KINEO_CHATBOT_URL` |
 | [jitsi-isolation-test.md](./jitsi-isolation-test.md) | Jitsi-Tests | `docker-compose.jitsi.yml` |
 | [PRODUCT-VISION.md](./PRODUCT-VISION.md) | Produktvision | Referenz |
 | [SECURITY-DEBT.md](./SECURITY-DEBT.md) | Bekannte Sicherheits-Schulden | Tracking |
