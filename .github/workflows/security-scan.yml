@@ -1,0 +1,89 @@
+# =============================================================================
+# security-scan.yml — weekly + on-demand vulnerability scan
+#
+# Two stages:
+#   1. Trivy filesystem scan against the whole repo (covers package-lock.json,
+#      pyproject/requirements, Dockerfiles, IaC files).
+#   2. Trivy config scan for misconfigurations in docker-compose*.yml and
+#      Github Actions workflows.
+#
+# Reports HIGH and CRITICAL only (severity floor = HIGH) — anything below
+# that level is noise we can't react to weekly. We do NOT fail the build on
+# findings; the SARIF report is uploaded to GitHub's "Security" tab so we
+# can track + dismiss as needed.
+#
+# Cadence: every Monday 06:30 Europe/Zurich + manual via workflow_dispatch.
+# =============================================================================
+name: security-scan
+
+on:
+  schedule:
+    # 04:30 UTC Mon ≈ 06:30 Europe/Zurich (depending on DST). Tight enough to
+    # the dependabot run on the same morning that we get a coherent picture.
+    - cron: "30 4 * * 1"
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "portal/package.json"
+      - "portal/package-lock.json"
+      - "medtheris-scraper/**/requirements*.txt"
+      - "medtheris-scraper/**/pyproject.toml"
+      - "docker-compose*.yml"
+      - ".github/workflows/security-scan.yml"
+
+permissions:
+  contents: read
+  security-events: write    # for SARIF upload to "Security" tab
+  actions: read
+
+jobs:
+  fs-scan:
+    name: trivy-fs (deps + lockfiles)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          # Skip a few known-noisy dirs to keep the report focused.
+          skip-dirs: "node_modules,.next,.venv,__pycache__"
+
+      - name: Upload SARIF (filesystem)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  config-scan:
+    name: trivy-config (compose + ci)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trivy config (IaC) scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          severity: HIGH,CRITICAL
+
+      - name: Upload SARIF (config)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
