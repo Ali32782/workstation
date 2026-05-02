@@ -43,6 +43,10 @@ export type Messages = {
   "common.error": string;
   "common.retry": string;
   "common.upload": string;
+  "error.workspaceTitle": string;
+  "error.workspaceLead": string;
+  "error.retry": string;
+  "error.reloadPage": string;
   "common.download": string;
   "common.copy": string;
   "common.copied": string;
@@ -414,6 +418,10 @@ const de: Messages = {
   "common.noResults": "Keine Treffer.",
   "common.error": "Fehler",
   "common.retry": "Erneut versuchen",
+  "error.workspaceTitle": "Diese Ansicht ist abgestürzt",
+  "error.workspaceLead": "Eine Komponente innerhalb des Workspaces hat eine Ausnahme geworfen. Sidebar und TopBar bleiben verfügbar — du kannst die Ansicht zurücksetzen oder die Seite komplett neu laden.",
+  "error.retry": "Ansicht zurücksetzen",
+  "error.reloadPage": "Seite neu laden",
   "common.upload": "Hochladen",
   "common.download": "Herunterladen",
   "common.copy": "Kopieren",
@@ -787,6 +795,10 @@ const en: Messages = {
   "common.noResults": "No results.",
   "common.error": "Error",
   "common.retry": "Retry",
+  "error.workspaceTitle": "This view crashed",
+  "error.workspaceLead": "A component inside the workspace threw an exception. Sidebar and top bar are still available — you can reset this view or reload the whole page.",
+  "error.retry": "Reset view",
+  "error.reloadPage": "Reload page",
   "common.upload": "Upload",
   "common.download": "Download",
   "common.copy": "Copy",
