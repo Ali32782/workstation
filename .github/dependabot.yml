@@ -1,0 +1,85 @@
+# =============================================================================
+# dependabot.yml — automatic dependency PRs
+#
+# Conservative defaults so PRs don't drown daily standups:
+#   - Weekly cadence (Mondays Europe/Zurich)
+#   - Group all minor + patch updates per ecosystem into ONE PR
+#   - Major updates stay as individual PRs (we want to read those)
+#   - Cap of 5 open PRs per ecosystem to keep the queue review-able
+#
+# Renovate covers more (lockfile-only, postUpgradeTasks, …) but Dependabot
+# is built into GitHub with no extra config or token, which matters when we're
+# self-hosting everything else and want THIS one piece to "just work".
+# =============================================================================
+
+version: 2
+
+updates:
+  # --- Portal (Node) ---
+  - package-ecosystem: npm
+    directory: /portal
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels:
+      - dependencies
+      - portal
+    commit-message:
+      prefix: chore(portal-deps)
+      include: scope
+    groups:
+      portal-minor-patch:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+    ignore:
+      # Pin Next + React to whatever next.config.ts knows about — bumps go
+      # through a manual upgrade pass.
+      - dependency-name: "next"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+
+  # --- Scraper (Python) — currently uses requirements via uv/pip, but
+  # Dependabot's pip ecosystem covers pyproject.toml too. ---
+  - package-ecosystem: pip
+    directory: /medtheris-scraper
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - scraper
+    commit-message:
+      prefix: chore(scraper-deps)
+      include: scope
+    groups:
+      scraper-minor-patch:
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+
+  # --- GitHub Actions versions ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: chore(ci-deps)
