@@ -1,0 +1,251 @@
+# =============================================================================
+# Postiz — open-source social-media scheduler (Buffer/Hootsuite alternative)
+# Public:   https://social.kineo360.work
+# Scope:    primary tenants = medtheris + kineo (shared posting calendar)
+# Image:    ghcr.io/gitroomhq/postiz-app:latest  (no local build)
+# Storage:  per-stack Postgres (v17) + Redis (v7) + Temporal stack
+# Networks: own internal nets, joins `proxy` for NPM
+#
+# WARNING — Resource cost:
+#   This stack runs ~7 containers (Postiz + Postgres + Redis + Temporal +
+#   Temporal-Postgres + Elasticsearch + Temporal-Admin/UI). Plan for ~3-4 GB
+#   resident RAM. Disable the temporal-ui service if you don't need workflow
+#   debugging (it's only useful for diagnosing failed scheduled posts).
+#
+# First-time install (run from repo root on the server):
+#   docker compose -f docker-compose.postiz.yml --env-file .env up -d
+#   # Watch the logs for `Postiz is ready`:
+#   docker compose -f docker-compose.postiz.yml logs -f postiz
+#
+# Subsequent updates (image only, no rebuild):
+#   docker compose -f docker-compose.postiz.yml --env-file .env pull
+#   docker compose -f docker-compose.postiz.yml --env-file .env up -d
+#
+# IMPORTANT: changing env vars requires `down` + `up` (compose env vars are
+# baked at create time, not at restart) — same caveat as Mautic.
+#
+# Required `.env` keys (see .env.example):
+#   POSTIZ_PUBLIC_URL              (e.g. https://social.kineo360.work)
+#   POSTIZ_FRONTEND_URL            (= POSTIZ_PUBLIC_URL)
+#   POSTIZ_NEXT_PUBLIC_BACKEND_URL (= ${POSTIZ_PUBLIC_URL}/api)
+#   POSTIZ_BACKEND_INTERNAL_URL    (= http://postiz_backend:3000)
+#   POSTIZ_JWT_SECRET              (32+ random chars)
+#   POSTIZ_DB_PASSWORD             (postgres password; isolated to this stack)
+#
+# Optional per-platform OAuth (only fill the platforms you actually use):
+#   POSTIZ_X_API_KEY/SECRET, POSTIZ_LINKEDIN_CLIENT_ID/SECRET,
+#   POSTIZ_FACEBOOK_APP_ID/SECRET, POSTIZ_INSTAGRAM_APP_ID/SECRET,
+#   POSTIZ_TIKTOK_CLIENT_ID/SECRET, POSTIZ_YOUTUBE_CLIENT_ID/SECRET, etc.
+#   POSTIZ_OPENAI_API_KEY (AI Copilot for content generation)
+# =============================================================================
+
+name: postiz
+
+networks:
+  proxy:
+    name: proxy
+    external: true
+  postiz-internal:
+    driver: bridge
+  temporal-internal:
+    driver: bridge
+
+volumes:
+  postiz_config:
+  postiz_uploads:
+  postiz_postgres:
+  postiz_redis:
+  postiz_temporal_postgres:
+  postiz_temporal_es:
+
+services:
+
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:latest
+    container_name: postiz_backend
+    restart: unless-stopped
+    environment:
+      # --- Core URLs (must be reachable from the browser; behind NPM)
+      MAIN_URL: ${POSTIZ_PUBLIC_URL:-https://social.kineo360.work}
+      FRONTEND_URL: ${POSTIZ_FRONTEND_URL:-https://social.kineo360.work}
+      NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_NEXT_PUBLIC_BACKEND_URL:-https://social.kineo360.work/api}
+      BACKEND_INTERNAL_URL: ${POSTIZ_BACKEND_INTERNAL_URL:-http://postiz_backend:3000}
+
+      # --- Secrets / DB (DB_URL string is identical to upstream defaults
+      # except the password — keeping their user/db names lets us follow
+      # their migration scripts verbatim).
+      JWT_SECRET: ${POSTIZ_JWT_SECRET}
+      DATABASE_URL: postgresql://postiz-user:${POSTIZ_DB_PASSWORD}@postiz_postgres:5432/postiz-db-local
+      REDIS_URL: redis://postiz_redis:6379
+
+      # --- Temporal (scheduled-post engine — required since v2.12)
+      TEMPORAL_ADDRESS: postiz_temporal:7233
+
+      # --- Behaviour
+      IS_GENERAL: "true"
+      DISABLE_REGISTRATION: ${POSTIZ_DISABLE_REGISTRATION:-true}
+      RUN_CRON: "true"
+
+      # --- Storage: local volume by default (videos / images uploaded to
+      # the calendar). Swap to Cloudflare R2 / S3 by setting STORAGE_PROVIDER
+      # + the matching CLOUDFLARE_* vars in .env.
+      STORAGE_PROVIDER: ${POSTIZ_STORAGE_PROVIDER:-local}
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+
+      # --- Social provider OAuth — empty defaults so the container starts
+      # without errors. Fill the ones you need on the platform's dev portal:
+      #   X (twitter):  https://developer.x.com/en/portal/dashboard
+      #   LinkedIn:     https://www.linkedin.com/developers/apps
+      #   Meta (FB+IG): https://developers.facebook.com/apps
+      #   TikTok:       https://developers.tiktok.com/apps
+      #   YouTube:      https://console.cloud.google.com (OAuth client)
+      X_API_KEY: ${POSTIZ_X_API_KEY:-}
+      X_API_SECRET: ${POSTIZ_X_API_SECRET:-}
+      LINKEDIN_CLIENT_ID: ${POSTIZ_LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${POSTIZ_LINKEDIN_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${POSTIZ_FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${POSTIZ_FACEBOOK_APP_SECRET:-}
+      INSTAGRAM_APP_ID: ${POSTIZ_INSTAGRAM_APP_ID:-}
+      INSTAGRAM_APP_SECRET: ${POSTIZ_INSTAGRAM_APP_SECRET:-}
+      TIKTOK_CLIENT_ID: ${POSTIZ_TIKTOK_CLIENT_ID:-}
+      TIKTOK_CLIENT_SECRET: ${POSTIZ_TIKTOK_CLIENT_SECRET:-}
+      YOUTUBE_CLIENT_ID: ${POSTIZ_YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${POSTIZ_YOUTUBE_CLIENT_SECRET:-}
+      THREADS_APP_ID: ${POSTIZ_THREADS_APP_ID:-}
+      THREADS_APP_SECRET: ${POSTIZ_THREADS_APP_SECRET:-}
+      MASTODON_URL: ${POSTIZ_MASTODON_URL:-https://mastodon.social}
+      MASTODON_CLIENT_ID: ${POSTIZ_MASTODON_CLIENT_ID:-}
+      MASTODON_CLIENT_SECRET: ${POSTIZ_MASTODON_CLIENT_SECRET:-}
+      DISCORD_CLIENT_ID: ${POSTIZ_DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${POSTIZ_DISCORD_CLIENT_SECRET:-}
+      DISCORD_BOT_TOKEN_ID: ${POSTIZ_DISCORD_BOT_TOKEN_ID:-}
+      REDDIT_CLIENT_ID: ${POSTIZ_REDDIT_CLIENT_ID:-}
+      REDDIT_CLIENT_SECRET: ${POSTIZ_REDDIT_CLIENT_SECRET:-}
+      PINTEREST_CLIENT_ID: ${POSTIZ_PINTEREST_CLIENT_ID:-}
+      PINTEREST_CLIENT_SECRET: ${POSTIZ_PINTEREST_CLIENT_SECRET:-}
+      SLACK_ID: ${POSTIZ_SLACK_ID:-}
+      SLACK_SECRET: ${POSTIZ_SLACK_SECRET:-}
+      SLACK_SIGNING_SECRET: ${POSTIZ_SLACK_SIGNING_SECRET:-}
+
+      # --- Optional AI copilot (Postiz uses OpenAI for caption generation
+      # and image suggestions; leave empty to disable the AI button).
+      OPENAI_API_KEY: ${POSTIZ_OPENAI_API_KEY:-}
+
+      # --- Misc
+      API_LIMIT: 30
+      NX_ADD_PLUGINS: "false"
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - postiz_config:/config/
+      - postiz_uploads:/uploads/
+    networks:
+      - proxy
+      - postiz-internal
+      - temporal-internal
+    depends_on:
+      postiz_postgres:
+        condition: service_healthy
+      postiz_redis:
+        condition: service_healthy
+      postiz_temporal:
+        condition: service_started
+
+  postiz_postgres:
+    image: postgres:17-alpine
+    container_name: postiz_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postiz-user
+      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD}
+      POSTGRES_DB: postiz-db-local
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - postiz_postgres:/var/lib/postgresql/data
+    networks:
+      - postiz-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postiz-user -d postiz-db-local"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  postiz_redis:
+    image: redis:7-alpine
+    container_name: postiz_redis
+    restart: unless-stopped
+    volumes:
+      - postiz_redis:/data
+    networks:
+      - postiz-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ------------------------------------------------------------------
+  # Temporal — workflow engine for scheduled posts (required since v2.12)
+  # ------------------------------------------------------------------
+
+  postiz_temporal_es:
+    image: elasticsearch:7.17.27
+    container_name: postiz_temporal_es
+    restart: unless-stopped
+    environment:
+      cluster.routing.allocation.disk.threshold_enabled: "true"
+      cluster.routing.allocation.disk.watermark.low: 512mb
+      cluster.routing.allocation.disk.watermark.high: 256mb
+      cluster.routing.allocation.disk.watermark.flood_stage: 128mb
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms256m -Xmx256m"
+      xpack.security.enabled: "false"
+    volumes:
+      - postiz_temporal_es:/usr/share/elasticsearch/data
+    networks:
+      - temporal-internal
+
+  postiz_temporal_postgres:
+    image: postgres:16-alpine
+    container_name: postiz_temporal_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - postiz_temporal_postgres:/var/lib/postgresql/data
+    networks:
+      - temporal-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  postiz_temporal:
+    image: temporalio/auto-setup:1.28.1
+    container_name: postiz_temporal
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postiz_temporal_postgres
+      # The 1.28.x auto-setup image ships with an empty dynamicconfig dir,
+      # so we mount our own minimal yaml below — otherwise the server
+      # crashes on boot with "no such file or directory".
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+      ENABLE_ES: "true"
+      ES_SEEDS: postiz_temporal_es
+      ES_VERSION: v7
+      TEMPORAL_NAMESPACE: default
+    volumes:
+      - ./temporal-config/development-sql.yaml:/etc/temporal/config/dynamicconfig/development-sql.yaml:ro
+    networks:
+      - temporal-internal
+    depends_on:
+      postiz_temporal_postgres:
+        condition: service_healthy
+      postiz_temporal_es:
+        condition: service_started

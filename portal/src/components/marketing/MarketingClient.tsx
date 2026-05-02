@@ -42,32 +42,44 @@ import type {
   MauticEmail,
   MauticSegment,
 } from "@/lib/marketing/types";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag, type Messages } from "@/lib/i18n/messages";
 
 type Section = "overview" | "contacts" | "segments" | "campaigns" | "emails";
 
-const SECTIONS: { id: Section; label: string; icon: React.ElementType }[] = [
-  { id: "overview", label: "Übersicht", icon: Megaphone },
-  { id: "contacts", label: "Kontakte", icon: UsersIcon },
-  { id: "segments", label: "Segmente", icon: Layers },
-  { id: "campaigns", label: "Kampagnen", icon: Send },
-  { id: "emails", label: "Mails", icon: Mail },
+const NAV_SECTIONS: { id: Section; icon: React.ElementType }[] = [
+  { id: "overview", icon: Megaphone },
+  { id: "contacts", icon: UsersIcon },
+  { id: "segments", icon: Layers },
+  { id: "campaigns", icon: Send },
+  { id: "emails", icon: Mail },
 ];
 
-function relativeTime(iso: string | null): string {
+function relativeTime(
+  iso: string | null,
+  localeFmt: string,
+  tr: (key: keyof Messages) => string,
+): string {
   if (!iso) return "—";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "—";
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return "gerade";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} d`;
-  return new Date(iso).toLocaleDateString("de-DE");
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "—";
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return tr("helpdesk.time.justNow");
+  if (diff < 3600)
+    return `${Math.floor(diff / 60)} ${tr("helpdesk.time.mins")}`;
+  if (diff < 86400)
+    return `${Math.floor(diff / 3600)} ${tr("helpdesk.time.hours")}`;
+  if (diff < 86400 * 7)
+    return `${Math.floor(diff / 86400)} ${tr("helpdesk.time.days")}`;
+  return new Date(iso).toLocaleDateString(localeFmt);
 }
 
-function fullName(c: MauticContact): string {
+function fullName(
+  c: MauticContact,
+  tr: (key: keyof Messages) => string,
+): string {
   const f = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
-  return f || c.email || `Kontakt #${c.id}`;
+  return f || c.email || tr("marketing.contactFallback").replace("{id}", String(c.id));
 }
 
 export function MarketingClient({
@@ -75,14 +87,23 @@ export function MarketingClient({
   workspaceName,
   accent,
   mauticUrl,
+  initialSection,
+  initialQuery,
+  initialContactId,
 }: {
   workspaceId: WorkspaceId;
   workspaceName: string;
   accent: string;
   mauticUrl: string;
+  /** Deep-link from Cmd+K / bookmarks (`?section=&q=&contact=`). */
+  initialSection?: Section;
+  initialQuery?: string;
+  initialContactId?: string;
 }) {
-  const [section, setSection] = useState<Section>("overview");
-  const [search, setSearch] = useState("");
+  const [section, setSection] = useState<Section>(
+    initialSection ?? (initialContactId ? "contacts" : "overview"),
+  );
+  const [search, setSearch] = useState(initialQuery ?? "");
   const [overview, setOverview] = useState<MarketingOverview | null>(null);
   const [contacts, setContacts] = useState<MauticContact[]>([]);
   const [segments, setSegments] = useState<MauticSegment[]>([]);
@@ -93,9 +114,27 @@ export function MarketingClient({
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState<string | null>(null);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    initialContactId && /^\d+$/.test(initialContactId)
+      ? `c-${initialContactId}`
+      : null,
+  );
 
   const ws = workspaceId;
+
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
+  const navLabels = useMemo(
+    () =>
+      ({
+        overview: t("marketing.section.overview"),
+        contacts: t("marketing.section.contacts"),
+        segments: t("marketing.section.segments"),
+        campaigns: t("marketing.section.campaigns"),
+        emails: t("marketing.section.emails"),
+      }) satisfies Record<Section, string>,
+    [t],
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -125,7 +164,7 @@ export function MarketingClient({
         ),
       ]);
       if (ov.status === 503 && ov.body.code === "not_configured") {
-        setNotConfigured(ov.body.error ?? "Mautic ist noch nicht eingerichtet.");
+        setNotConfigured(ov.body.error ?? t("marketing.notConfiguredBanner"));
         setOverview(null);
       } else if (ov.status >= 400) {
         setError(ov.body.error ?? `HTTP ${ov.status}`);
@@ -141,7 +180,7 @@ export function MarketingClient({
     } finally {
       setLoading(false);
     }
-  }, [ws, search]);
+  }, [ws, search, t]);
 
   useEffect(() => {
     reload();
@@ -151,10 +190,10 @@ export function MarketingClient({
     if (section === "contacts") {
       return contacts.map((c) => ({
         id: `c-${c.id}`,
-        title: fullName(c),
+        title: fullName(c, t),
         subtitle:
           [c.email, c.company].filter(Boolean).join(" · ") || c.country || undefined,
-        meta: relativeTime(c.lastActive),
+        meta: relativeTime(c.lastActive, localeFmt, t),
         leading: (
           <div
             className="w-7 h-7 rounded-full flex items-center justify-center text-[10.5px] font-semibold"
@@ -166,7 +205,7 @@ export function MarketingClient({
         trailing:
           c.points > 0 ? (
             <span className="text-[10px] font-medium text-text-tertiary">
-              {c.points} pts
+              {t("crm.marketing.pointsAbbrev").replace("{n}", String(c.points))}
             </span>
           ) : null,
       }));
@@ -192,7 +231,11 @@ export function MarketingClient({
         leading: <Send size={14} className="text-text-tertiary mt-0.5" />,
         trailing: (
           <StatusPill
-            label={c.isPublished ? "aktiv" : "Entwurf"}
+            label={
+              c.isPublished
+                ? t("marketing.kpi.campaignActiveSuffix")
+                : t("marketing.segment.statusDraft")
+            }
             tone={c.isPublished ? "success" : "neutral"}
           />
         ),
@@ -203,7 +246,7 @@ export function MarketingClient({
         id: `e-${e.id}`,
         title: e.name,
         subtitle: e.subject,
-        meta: relativeTime(e.createdAt),
+        meta: relativeTime(e.createdAt, localeFmt, t),
         leading: <Mail size={14} className="text-text-tertiary mt-0.5" />,
         trailing:
           e.sentCount > 0 ? (
@@ -214,7 +257,7 @@ export function MarketingClient({
       }));
     }
     return [];
-  }, [section, contacts, segments, campaigns, emails, accent]);
+  }, [section, contacts, segments, campaigns, emails, accent, localeFmt, t]);
 
   const selectedContact = useMemo(
     () => contacts.find((c) => `c-${c.id}` === selectedId) ?? null,
@@ -237,15 +280,15 @@ export function MarketingClient({
   const primary = (
     <div className="flex flex-col h-full">
       <PaneHeader
-        title="Marketing"
-        subtitle="Mautic"
+        title={t("marketing.title")}
+        subtitle={t("marketing.subtitleMautic")}
         icon={<Megaphone size={14} style={{ color: accent }} />}
         accent={accent}
         right={
           <div className="flex items-center gap-0.5">
             <Link
               href={`/${workspaceId}/marketing/settings`}
-              title="Einstellungen"
+              title={t("marketing.settingsTooltip")}
               className="p-1 rounded hover:bg-bg-elevated text-text-tertiary"
             >
               <SettingsIcon size={13} />
@@ -254,7 +297,7 @@ export function MarketingClient({
               href={mauticUrl}
               target="_blank"
               rel="noreferrer"
-              title="In Mautic öffnen"
+              title={t("marketing.openMauticTooltip")}
               className="p-1 rounded hover:bg-bg-elevated text-text-tertiary"
             >
               <ExternalLink size={13} />
@@ -263,7 +306,7 @@ export function MarketingClient({
         }
       />
       <nav className="flex-1 min-h-0 overflow-auto py-1">
-        {SECTIONS.map((s) => {
+        {NAV_SECTIONS.map((s) => {
           const active = section === s.id;
           const Icon = s.icon;
           return (
@@ -280,17 +323,22 @@ export function MarketingClient({
               style={active ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}
             >
               <Icon size={14} className="shrink-0" />
-              <span className="flex-1 truncate">{s.label}</span>
+              <span className="flex-1 truncate">{navLabels[s.id]}</span>
             </button>
           );
         })}
       </nav>
       {overview && (
         <div className="shrink-0 border-t border-stroke-1 px-3 py-3 grid grid-cols-2 gap-2 text-[11px]">
-          <KPI label="Kontakte" value={overview.contacts.total} />
-          <KPI label="Aktiv 7d" value={overview.contacts.recent} />
-          <KPI label="Segmente" value={overview.segments} />
-          <KPI label="Kampagnen" value={overview.campaigns.active} suffix="aktiv" />
+          <KPI label={t("marketing.kpi.contacts")} value={overview.contacts.total} localeFmt={localeFmt} />
+          <KPI label={t("marketing.kpi.active7d")} value={overview.contacts.recent} localeFmt={localeFmt} />
+          <KPI label={t("marketing.kpi.segments")} value={overview.segments} localeFmt={localeFmt} />
+          <KPI
+            label={t("marketing.kpi.campaigns")}
+            value={overview.campaigns.active}
+            suffix={t("marketing.kpi.campaignActiveSuffix")}
+            localeFmt={localeFmt}
+          />
         </div>
       )}
     </div>
@@ -298,7 +346,7 @@ export function MarketingClient({
 
   const primaryRail = (
     <div className="flex flex-col h-full items-center py-2 gap-1">
-      {SECTIONS.map((s) => {
+      {NAV_SECTIONS.map((s) => {
         const active = section === s.id;
         const Icon = s.icon;
         return (
@@ -309,7 +357,7 @@ export function MarketingClient({
               setSection(s.id);
               setSelectedId(null);
             }}
-            title={s.label}
+            title={navLabels[s.id]}
             className={`w-9 h-9 rounded flex items-center justify-center ${
               active ? "bg-bg-overlay text-text-primary" : "text-text-tertiary hover:bg-bg-elevated"
             }`}
@@ -326,23 +374,23 @@ export function MarketingClient({
   const secondary = (
     <div className="flex flex-col h-full">
       <PaneHeader
-        title={SECTIONS.find((s) => s.id === section)?.label ?? "Marketing"}
+        title={navLabels[section]}
         subtitle={
           section === "contacts"
-            ? `${contacts.length} sichtbar`
+            ? t("marketing.visibleCount").replace("{count}", String(contacts.length))
             : section === "segments"
               ? `${segments.length}`
               : section === "campaigns"
                 ? `${campaigns.length}`
                 : section === "emails"
                   ? `${emails.length}`
-                  : "Übersicht"
+                  : navLabels.overview
         }
         right={
           <button
             type="button"
             onClick={reload}
-            title="Neu laden"
+            title={t("marketing.reloadTooltip")}
             className="p-1 rounded hover:bg-bg-elevated text-text-tertiary"
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
@@ -354,7 +402,7 @@ export function MarketingClient({
             <Search size={12} className="text-text-tertiary" />
             <input
               type="search"
-              placeholder="Suche…"
+              placeholder={`${t("common.search")}…`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-transparent outline-none text-[12px] py-1"
@@ -377,9 +425,7 @@ export function MarketingClient({
           loading={loading}
           accent={accent}
           emptyHint={
-            notConfigured
-              ? "Mautic ist noch nicht eingerichtet."
-              : "Keine Einträge."
+            notConfigured ? t("marketing.notConfiguredBanner") : t("common.noEntries")
           }
         />
       )}
@@ -397,7 +443,7 @@ export function MarketingClient({
               <AlertCircle size={20} className="text-amber-400 mt-1 shrink-0" />
               <div>
                 <h2 className="text-[14px] font-semibold mb-2">
-                  Mautic ist noch nicht einsatzbereit
+                  {t("marketing.notConfiguredDetailTitle")}
                 </h2>
                 <p className="text-[12.5px] text-text-secondary leading-relaxed">
                   {notConfigured}
@@ -406,7 +452,7 @@ export function MarketingClient({
             </div>
             <ol className="text-[12px] text-text-secondary space-y-2 list-decimal pl-5 mt-6">
               <li>
-                Mautic-UI öffnen:{" "}
+                {t("marketing.setup.openUi")}{" "}
                 <a
                   href={mauticUrl}
                   target="_blank"
@@ -416,27 +462,24 @@ export function MarketingClient({
                   {mauticUrl}
                 </a>
               </li>
-              <li>Initial-Admin anlegen (DB-Connection ist via Compose schon hinterlegt).</li>
-              <li>
-                Settings → Configuration → API Settings →{" "}
-                <em>API enabled</em> + <em>HTTP basic auth enabled</em> aktivieren.
-              </li>
-              <li>
-                Settings → Users → neuer User <code>portal-bridge</code>, Rolle{" "}
-                <em>Administrator</em>.
-              </li>
-              <li>
-                Sein Passwort plus Username in <code>.env</code> als{" "}
-                <code>MAUTIC_API_USERNAME</code> /{" "}
-                <code>MAUTIC_API_TOKEN</code> eintragen, Stack neu starten.
-              </li>
+              <li>{t("marketing.setup.adminUser")}</li>
+              <li>{t("marketing.setup.apiSettings")}</li>
+              <li>{t("marketing.setup.portalUser")}</li>
+              <li>{t("marketing.setup.envKeys")}</li>
             </ol>
           </div>
         }
       />
     );
   } else if (section === "overview") {
-    detail = <OverviewDetail overview={overview} mauticUrl={mauticUrl} accent={accent} />;
+    detail = (
+      <OverviewDetail
+        overview={overview}
+        mauticUrl={mauticUrl}
+        accent={accent}
+        workspaceName={workspaceName}
+      />
+    );
   } else if (section === "contacts" && selectedContact) {
     detail = (
       <ContactDetail
@@ -473,8 +516,8 @@ export function MarketingClient({
         main={
           <PaneEmptyState
             icon={<Megaphone size={28} className="text-text-tertiary" />}
-            title="Wähle einen Eintrag"
-            hint="Editor-/Builder-Funktionen (Mail-Designer, Campaign-Editor, Forms) öffnen sich in Mautic — Klick rechts oben auf das ↗-Symbol."
+            title={t("marketing.pickRecordTitle")}
+            hint={t("marketing.pickRecordHint")}
           />
         }
       />
@@ -496,12 +539,22 @@ export function MarketingClient({
 
 // ─── Sub-components ───────────────────────────────────────────────────────
 
-function KPI({ label, value, suffix }: { label: string; value: number; suffix?: string }) {
+function KPI({
+  label,
+  value,
+  suffix,
+  localeFmt,
+}: {
+  label: string;
+  value: number;
+  suffix?: string;
+  localeFmt: string;
+}) {
   return (
     <div>
       <p className="text-text-tertiary uppercase tracking-wide text-[9.5px]">{label}</p>
       <p className="text-[15px] font-semibold leading-tight">
-        {value.toLocaleString("de-DE")}{" "}
+        {value.toLocaleString(localeFmt)}{" "}
         {suffix && <span className="text-[10px] text-text-tertiary font-normal">{suffix}</span>}
       </p>
     </div>
@@ -519,51 +572,68 @@ function OverviewList({
   notConfigured: string | null;
   mauticUrl: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   if (loading) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center text-[12px] text-text-tertiary">
-        Lade…
+        {t("marketing.overview.loading")}
       </div>
     );
   }
   if (notConfigured) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center px-6 text-center text-[12px] text-text-tertiary">
-        Mautic muss noch eingerichtet werden — siehe Anleitung rechts.
+        {t("marketing.overview.setupHint")}
       </div>
     );
   }
   if (!overview) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center text-[12px] text-text-tertiary">
-        Keine Daten.
+        {t("marketing.overview.noData")}
       </div>
     );
   }
   return (
     <div className="flex-1 min-h-0 overflow-auto p-3 space-y-2 text-[12px]">
-      <Tile label="Aktive Kampagnen" value={overview.campaigns.active} />
-      <Tile label="Mails veröffentlicht" value={overview.emails.published} />
-      <Tile label="Versand gesamt" value={overview.recentSends} hint="Summe sentCount aller Mails" />
-      <Tile label="Segmente" value={overview.segments} />
+      <Tile label={t("marketing.tile.activeCampaigns")} value={overview.campaigns.active} localeFmt={localeFmt} />
+      <Tile label={t("marketing.tile.emailsPublished")} value={overview.emails.published} localeFmt={localeFmt} />
+      <Tile
+        label={t("marketing.tile.sendsTotal")}
+        value={overview.recentSends}
+        hint={t("marketing.tile.sendsHint")}
+        localeFmt={localeFmt}
+      />
+      <Tile label={t("marketing.tile.segments")} value={overview.segments} localeFmt={localeFmt} />
       <a
         href={mauticUrl}
         target="_blank"
         rel="noreferrer"
         className="mt-3 flex items-center justify-center gap-1.5 px-2 py-2 rounded border border-stroke-1 text-[12px] hover:bg-bg-elevated"
       >
-        <ExternalLink size={12} /> Mautic-UI öffnen
+        <ExternalLink size={12} /> {t("marketing.openMauticUi")}
       </a>
     </div>
   );
 }
 
-function Tile({ label, value, hint }: { label: string; value: number; hint?: string }) {
+function Tile({
+  label,
+  value,
+  hint,
+  localeFmt,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  localeFmt: string;
+}) {
   return (
     <div className="rounded border border-stroke-1 bg-bg-chrome px-3 py-2.5">
       <p className="text-[10px] uppercase tracking-wide text-text-tertiary">{label}</p>
       <p className="text-[16px] font-semibold leading-tight">
-        {value.toLocaleString("de-DE")}
+        {value.toLocaleString(localeFmt)}
       </p>
       {hint && <p className="text-[10px] text-text-tertiary mt-0.5">{hint}</p>}
     </div>
@@ -574,17 +644,21 @@ function OverviewDetail({
   overview,
   mauticUrl,
   accent,
+  workspaceName,
 }: {
   overview: MarketingOverview | null;
   mauticUrl: string;
   accent: string;
+  workspaceName: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   return (
     <DetailPane
       header={
         <PaneHeader
-          title="Marketing-Übersicht"
-          subtitle="Mautic · MedTheris"
+          title={t("marketing.detail.overviewTitle")}
+          subtitle={`${t("marketing.detail.overviewSubtitle")} · ${workspaceName}`}
           icon={<Megaphone size={14} style={{ color: accent }} />}
           accent={accent}
           right={
@@ -594,7 +668,7 @@ function OverviewDetail({
               rel="noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
             >
-              <ExternalLink size={12} /> Mautic
+              <ExternalLink size={12} /> {t("marketing.subtitleMautic")}
             </a>
           }
         />
@@ -602,39 +676,59 @@ function OverviewDetail({
       main={
         <div className="px-6 py-6 max-w-3xl">
           {!overview ? (
-            <p className="text-[12.5px] text-text-tertiary">
-              Keine Übersicht verfügbar.
-            </p>
+            <p className="text-[12.5px] text-text-tertiary">{t("marketing.noOverview")}</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <BigKpi label="Kontakte" value={overview.contacts.total} sub={`${overview.contacts.recent} aktiv 7d`} />
-              <BigKpi label="Segmente" value={overview.segments} sub="Listen" />
               <BigKpi
-                label="Kampagnen"
+                label={t("marketing.kpi.contacts")}
+                value={overview.contacts.total}
+                sub={t("marketing.bigKpi.contactsSub").replace(
+                  "{recent}",
+                  String(overview.contacts.recent),
+                )}
+                localeFmt={localeFmt}
+              />
+              <BigKpi
+                label={t("marketing.kpi.segments")}
+                value={overview.segments}
+                sub={t("marketing.bigKpi.segmentsSub")}
+                localeFmt={localeFmt}
+              />
+              <BigKpi
+                label={t("marketing.kpi.campaigns")}
                 value={overview.campaigns.active}
-                sub={`${overview.campaigns.total} insgesamt`}
+                sub={t("marketing.bigKpi.campaignsSub").replace(
+                  "{total}",
+                  String(overview.campaigns.total),
+                )}
+                localeFmt={localeFmt}
               />
               <BigKpi
-                label="Mails"
+                label={t("marketing.section.emails")}
                 value={overview.emails.published}
-                sub={`${overview.emails.total} insgesamt`}
+                sub={t("marketing.bigKpi.emailsSub").replace(
+                  "{total}",
+                  String(overview.emails.total),
+                )}
+                localeFmt={localeFmt}
               />
               <BigKpi
-                label="Versendet"
+                label={t("marketing.bigKpi.sentSub")}
                 value={overview.recentSends}
-                sub="Summe aller Mails"
+                sub={t("marketing.bigKpi.sentHint")}
+                localeFmt={localeFmt}
               />
             </div>
           )}
           <div className="mt-8">
             <h3 className="text-[12px] uppercase tracking-wide text-text-tertiary mb-2">
-              Nächste Schritte
+              {t("marketing.nextStepsTitle")}
             </h3>
             <ul className="text-[12.5px] text-text-secondary space-y-1.5 list-disc pl-5">
-              <li>Im Twenty-CRM die Stage-Pipeline mit Mautic-Segmenten verknüpfen.</li>
-              <li>3-Step Drip-Campaign in Mautic anlegen (Welcome → Use-Case → Demo).</li>
-              <li>SMTP-Sender (Migadu johannes@medtheris.kineo360.work) im Mautic-Channel hinterlegen.</li>
-              <li>Form auf der Landing-Page einbetten → Submissions landen automatisch in Mautic-Kontakten.</li>
+              <li>{t("marketing.nextSteps.crmSegments")}</li>
+              <li>{t("marketing.nextSteps.drip")}</li>
+              <li>{t("marketing.nextSteps.smtp")}</li>
+              <li>{t("marketing.nextSteps.form")}</li>
             </ul>
           </div>
         </div>
@@ -647,16 +741,18 @@ function BigKpi({
   label,
   value,
   sub,
+  localeFmt,
 }: {
   label: string;
   value: number;
   sub?: string;
+  localeFmt: string;
 }) {
   return (
     <div className="rounded border border-stroke-1 bg-bg-chrome px-4 py-3">
       <p className="text-[10.5px] uppercase tracking-wide text-text-tertiary">{label}</p>
       <p className="text-[22px] font-semibold leading-tight">
-        {value.toLocaleString("de-DE")}
+        {value.toLocaleString(localeFmt)}
       </p>
       {sub && <p className="text-[10.5px] text-text-tertiary mt-1">{sub}</p>}
     </div>
@@ -686,6 +782,7 @@ function CrmCrossLinkSection({
   workspaceId: WorkspaceId;
   accent: string;
 }) {
+  const { t } = useLocale();
   const [data, setData] = useState<CrmCrossLink | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -717,10 +814,10 @@ function CrmCrossLinkSection({
   }, [contact.id, contact.email, workspaceId]);
 
   return (
-    <SidebarSection title="CRM">
+    <SidebarSection title={t("marketing.sidebar.crm")}>
       {loading && (
         <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
-          <Loader2 size={11} className="animate-spin" /> Suche im CRM…
+          <Loader2 size={11} className="animate-spin" /> {t("marketing.crm.searching")}
         </div>
       )}
       {!loading && data?.person && data.deepLink && (
@@ -733,7 +830,7 @@ function CrmCrossLinkSection({
             <p className="text-[12px] font-medium text-text-primary truncate">
               {`${data.person.firstName ?? ""} ${data.person.lastName ?? ""}`.trim() ||
                 data.person.email ||
-                "(ohne Name)"}
+                t("marketing.crm.unnamedPerson")}
             </p>
             {data.person.companyName && (
               <p className="text-[10.5px] text-text-tertiary truncate">
@@ -742,15 +839,20 @@ function CrmCrossLinkSection({
             )}
             <p className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] text-text-tertiary">
               <ArrowRight size={10} />
-              In Twenty öffnen ({data.workspace})
+              {t("marketing.crm.openInTwenty").replace(
+                "{workspace}",
+                data.workspace ?? "",
+              )}
             </p>
           </Link>
         </div>
       )}
       {!loading && (!data?.person) && (
         <p className="text-[11px] text-text-tertiary leading-relaxed">
-          Keine passende CRM-Person für{" "}
-          <span className="font-mono">{contact.email ?? "—"}</span> gefunden.
+          {t("marketing.crm.noPersonForEmail").replace(
+            "{email}",
+            contact.email ?? "—",
+          )}
         </p>
       )}
     </SidebarSection>
@@ -768,12 +870,17 @@ function ContactDetail({
   mauticUrl: string;
   workspaceId: WorkspaceId;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   return (
     <DetailPane
       header={
         <PaneHeader
-          title={fullName(contact)}
-          subtitle={contact.email ?? `Kontakt #${contact.id}`}
+          title={fullName(contact, t)}
+          subtitle={
+            contact.email ??
+            t("marketing.contactFallback").replace("{id}", String(contact.id))
+          }
           icon={<UsersIcon size={14} style={{ color: accent }} />}
           accent={accent}
           right={
@@ -783,7 +890,7 @@ function ContactDetail({
               rel="noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
             >
-              <ExternalLink size={12} /> in Mautic
+              <ExternalLink size={12} /> {t("marketing.detail.openInMautic")}
             </a>
           }
         />
@@ -791,7 +898,7 @@ function ContactDetail({
       main={
         <div className="px-6 py-6 max-w-2xl">
           <h3 className="text-[12px] uppercase tracking-wide text-text-tertiary mb-2">
-            Kontaktdaten
+            {t("marketing.contact.fieldsHeading")}
           </h3>
           <div className="space-y-1.5 text-[12.5px]">
             {contact.email && <Row icon={<Mail size={12} />} value={contact.email} />}
@@ -806,15 +913,15 @@ function ContactDetail({
           {contact.tags.length > 0 && (
             <>
               <h3 className="text-[12px] uppercase tracking-wide text-text-tertiary mt-6 mb-2">
-                Tags
+                {t("marketing.sidebar.tags")}
               </h3>
               <div className="flex flex-wrap gap-1.5">
-                {contact.tags.map((t) => (
+                {contact.tags.map((tag) => (
                   <span
-                    key={t}
+                    key={tag}
                     className="px-1.5 py-0.5 rounded text-[10.5px] border border-stroke-1 text-text-secondary"
                   >
-                    {t}
+                    {tag}
                   </span>
                 ))}
               </div>
@@ -823,7 +930,7 @@ function ContactDetail({
           {contact.segments.length > 0 && (
             <>
               <h3 className="text-[12px] uppercase tracking-wide text-text-tertiary mt-6 mb-2">
-                Segmente
+                {t("marketing.section.segments")}
               </h3>
               <div className="flex flex-wrap gap-1.5">
                 {contact.segments.map((s) => (
@@ -842,12 +949,15 @@ function ContactDetail({
       }
       rightSidebar={
         <>
-          <SidebarSection title="Eigenschaften">
+          <SidebarSection title={t("marketing.sidebar.properties")}>
             <PropertyList
               rows={[
-                { label: "Punkte", value: <>{contact.points}</> },
-                { label: "Stage", value: contact.stage ?? "—" },
-                { label: "Letzte Aktivität", value: relativeTime(contact.lastActive) },
+                { label: t("marketing.contact.pointsLabel"), value: <>{contact.points}</> },
+                { label: t("marketing.contact.stageLabel"), value: contact.stage ?? "—" },
+                {
+                  label: t("marketing.activity.last"),
+                  value: relativeTime(contact.lastActive, localeFmt, t),
+                },
                 { label: "ID", value: <code>{contact.id}</code> },
               ]}
             />
@@ -879,6 +989,8 @@ function SegmentDetail({
   segment: MauticSegment;
   mauticUrl: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   return (
     <DetailPane
       header={
@@ -893,7 +1005,7 @@ function SegmentDetail({
               rel="noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
             >
-              <ExternalLink size={12} /> in Mautic
+              <ExternalLink size={12} /> {t("marketing.detail.openInMautic")}
             </a>
           }
         />
@@ -901,11 +1013,20 @@ function SegmentDetail({
       main={
         <div className="px-6 py-6 max-w-2xl">
           <p className="text-[12.5px] text-text-secondary leading-relaxed">
-            {segment.description ?? "Keine Beschreibung."}
+            {segment.description ?? t("marketing.segment.noDescription")}
           </p>
           <div className="mt-6 grid grid-cols-2 gap-3">
-            <BigKpi label="Kontakte" value={segment.contactCount} />
-            <BigKpi label="Status" value={segment.isPublished ? 1 : 0} sub={segment.isPublished ? "veröffentlicht" : "Entwurf"} />
+            <BigKpi label={t("marketing.kpi.contacts")} value={segment.contactCount} localeFmt={localeFmt} />
+            <BigKpi
+              label={t("common.status")}
+              value={segment.isPublished ? 1 : 0}
+              sub={
+                segment.isPublished
+                  ? t("marketing.segment.statusPublished")
+                  : t("marketing.segment.statusDraft")
+              }
+              localeFmt={localeFmt}
+            />
           </div>
         </div>
       }
@@ -929,6 +1050,9 @@ function CampaignDetail({
   const [busy, setBusy] = useState<null | "toggle" | "clone">(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
 
   const togglePublished = async () => {
     if (busy) return;
@@ -954,8 +1078,8 @@ function CampaignDetail({
       onChanged(body.campaign);
       setInfo(
         body.campaign.isPublished
-          ? "Kampagne aktiviert. Mautic verteilt Kontakte ab jetzt durch den Flow."
-          : "Kampagne pausiert. Bestehende Kontakte bleiben an ihrem Schritt stehen, neue Trigger werden ignoriert.",
+          ? t("marketing.campaign.activatedToast")
+          : t("marketing.campaign.pausedToast"),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -989,8 +1113,8 @@ function CampaignDetail({
       onCloned(body.campaign);
       setInfo(
         body.eventsCopied
-          ? "Kopie angelegt — Flow + Audience wurden übernommen, Status: Entwurf."
-          : "Kopie angelegt (nur Metadaten) — Mautic-API kopiert auf dieser Version keine Events. Schritte im Builder rekonstruieren.",
+          ? t("marketing.campaign.cloneFull")
+          : t("marketing.campaign.cloneMeta"),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1004,7 +1128,7 @@ function CampaignDetail({
       header={
         <PaneHeader
           title={campaign.name}
-          subtitle={campaign.category ?? "Ohne Kategorie"}
+          subtitle={campaign.category ?? t("marketing.campaign.noCategory")}
           icon={<Send size={14} />}
           right={
             <div className="flex items-center gap-1.5">
@@ -1019,8 +1143,8 @@ function CampaignDetail({
                 } disabled:opacity-50`}
                 title={
                   campaign.isPublished
-                    ? "Kampagne pausieren — neue Trigger werden ignoriert."
-                    : "Kampagne starten — Mautic schiebt Kontakte durch den Flow."
+                    ? t("marketing.campaign.pauseTooltip")
+                    : t("marketing.campaign.startHint")
                 }
               >
                 {busy === "toggle" ? (
@@ -1030,21 +1154,21 @@ function CampaignDetail({
                 ) : (
                   <Play size={12} />
                 )}
-                {campaign.isPublished ? "Pausieren" : "Starten"}
+                {campaign.isPublished ? t("marketing.campaign.pause") : t("marketing.campaign.start")}
               </button>
               <button
                 type="button"
                 onClick={cloneIt}
                 disabled={busy !== null}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated disabled:opacity-50"
-                title="Als pausierten Entwurf duplizieren — Audience + Flow werden mitkopiert."
+                title={t("marketing.campaign.duplicateTooltip")}
               >
                 {busy === "clone" ? (
                   <Loader2 size={12} className="animate-spin" />
                 ) : (
                   <Copy size={12} />
                 )}
-                Duplizieren
+                {t("marketing.campaign.duplicate")}
               </button>
               <a
                 href={`${mauticUrl}/s/campaigns/view/${campaign.id}`}
@@ -1052,7 +1176,7 @@ function CampaignDetail({
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
               >
-                <ExternalLink size={12} /> Editor
+                <ExternalLink size={12} /> {t("marketing.campaign.editor")}
               </a>
             </div>
           }
@@ -1071,21 +1195,22 @@ function CampaignDetail({
             </div>
           )}
           <p className="text-[12.5px] text-text-secondary leading-relaxed">
-            {campaign.description ?? "Keine Beschreibung."}
+            {campaign.description ?? t("marketing.segment.noDescription")}
           </p>
           <div className="mt-6 grid grid-cols-2 gap-3">
-            <BigKpi label="Kontakte" value={campaign.contactCount} />
+            <BigKpi label={t("marketing.kpi.contacts")} value={campaign.contactCount} localeFmt={localeFmt} />
             <BigKpi
-              label="Status"
+              label={t("common.status")}
               value={campaign.isPublished ? 1 : 0}
-              sub={campaign.isPublished ? "aktiv" : "Entwurf"}
+              sub={
+                campaign.isPublished
+                  ? t("marketing.kpi.campaignActiveSuffix")
+                  : t("marketing.segment.statusDraft")
+              }
+              localeFmt={localeFmt}
             />
           </div>
-          <p className="mt-6 text-[11.5px] text-text-tertiary">
-            Drip-Sequenzen, Verzweigungen & Mail-Templates editierst du im
-            Mautic-Builder. Start, Pause und Duplizieren laufen direkt aus dem
-            Portal — alles andere ist im Editor („In Mautic öffnen").
-          </p>
+          <p className="mt-6 text-[11.5px] text-text-tertiary">{t("marketing.builderHint")}</p>
         </div>
       }
     />
@@ -1093,6 +1218,8 @@ function CampaignDetail({
 }
 
 function EmailDetail({ email, mauticUrl }: { email: MauticEmail; mauticUrl: string }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   return (
     <DetailPane
       header={
@@ -1107,7 +1234,7 @@ function EmailDetail({ email, mauticUrl }: { email: MauticEmail; mauticUrl: stri
               rel="noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:bg-bg-elevated"
             >
-              <ExternalLink size={12} /> Designer in Mautic
+              <ExternalLink size={12} /> {t("marketing.email.designerInMautic")}
             </a>
           }
         />
@@ -1115,26 +1242,30 @@ function EmailDetail({ email, mauticUrl }: { email: MauticEmail; mauticUrl: stri
       main={
         <div className="px-6 py-6 max-w-2xl">
           <div className="grid grid-cols-3 gap-3">
-            <BigKpi label="Versendet" value={email.sentCount} />
-            <BigKpi label="Geöffnet" value={email.readCount} />
+            <BigKpi label={t("marketing.bigKpi.sentSub")} value={email.sentCount} localeFmt={localeFmt} />
+            <BigKpi label={t("marketing.email.opened")} value={email.readCount} localeFmt={localeFmt} />
             <BigKpi
-              label="Open-Rate"
+              label={t("marketing.email.openRate")}
               value={Math.round(email.readPercent ?? 0)}
               sub="%"
+              localeFmt={localeFmt}
             />
           </div>
           <PropertyList
             rows={[
-              { label: "Typ", value: email.type },
+              { label: t("marketing.email.typeLabel"), value: email.type },
               {
-                label: "Status",
+                label: t("common.status"),
                 value: email.isPublished ? (
-                  <StatusPill label="veröffentlicht" tone="success" />
+                  <StatusPill label={t("marketing.email.statusPublished")} tone="success" />
                 ) : (
-                  <StatusPill label="Entwurf" tone="neutral" />
+                  <StatusPill label={t("marketing.segment.statusDraft")} tone="neutral" />
                 ),
               },
-              { label: "Erstellt", value: relativeTime(email.createdAt) },
+              {
+                label: t("marketing.email.createdLabel"),
+                value: relativeTime(email.createdAt, localeFmt, t),
+              },
             ]}
           />
         </div>

@@ -1,0 +1,154 @@
+# =============================================================================
+# OpenCut — open-source CapCut alternative (in-browser video editor)
+# Public:   https://videos.kineo360.work
+# Scope:    primary tenants = medtheris + kineo (Marketing-Hub video assets)
+# Editor:   100% client-side (Next.js + WebCodecs + WebGPU)
+# Storage:  per-stack Postgres + Redis (NO shared dependencies — keeps an
+#           upstream upgrade from poking at Plane/Documenso DBs).
+# Networks: own internal network for db/redis, joins `proxy` for NPM.
+#
+# First-time install (run from repo root on the server):
+#   git clone https://github.com/OpenCut-app/OpenCut /opt/corelab/opencut
+#   docker compose -f docker-compose.opencut.yml --env-file .env up -d --build
+#   # Watch the build (~6-10 min on first run, cached after that):
+#   docker compose -f docker-compose.opencut.yml logs -f opencut_web
+#
+# Subsequent updates:
+#   cd /opt/corelab/opencut && git pull
+#   docker compose -f docker-compose.opencut.yml --env-file .env up -d --build
+#
+# Required `.env` keys (see .env.example):
+#   OPENCUT_PUBLIC_URL          (e.g. https://videos.kineo360.work)
+#   OPENCUT_BETTER_AUTH_SECRET  (32+ random chars; rotate carefully)
+#   OPENCUT_DB_PASSWORD         (postgres password; isolated to this stack)
+#   OPENCUT_REDIS_HTTP_TOKEN    (any string; only used over the internal net)
+# Optional:
+#   OPENCUT_FREESOUND_CLIENT_ID + OPENCUT_FREESOUND_API_KEY  (sound library)
+#   OPENCUT_MARBLE_WORKSPACE_KEY                              (blog CMS)
+# =============================================================================
+
+name: opencut
+
+networks:
+  proxy:
+    name: proxy
+    external: true
+  opencut-internal:
+    driver: bridge
+
+volumes:
+  opencut_postgres:
+  opencut_redis:
+
+services:
+
+  # Postgres dedicated to OpenCut. Reusing our shared Postgres would mean
+  # juggling its migration scripts on every OpenCut upgrade — not worth
+  # the saved RAM (this image is ~300 MB resident).
+  opencut_db:
+    image: postgres:17-alpine
+    container_name: opencut_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opencut
+      POSTGRES_PASSWORD: ${OPENCUT_DB_PASSWORD}
+      POSTGRES_DB: opencut
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - opencut_postgres:/var/lib/postgresql/data
+    networks:
+      - opencut-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opencut"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # Standard Redis. Used by OpenCut for session storage + rate-limiting via
+  # the Upstash REST adapter below (keeps the upstream code unchanged so
+  # we don't fork against their auth/Better-Auth implementation).
+  opencut_redis:
+    image: redis:7-alpine
+    container_name: opencut_redis
+    restart: unless-stopped
+    volumes:
+      - opencut_redis:/data
+    networks:
+      - opencut-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # Translates Upstash's REST protocol to a real Redis connection. OpenCut
+  # is built against Upstash (Vercel sponsorship) and the easiest way to
+  # self-host without forking is this shim — same image upstream uses.
+  opencut_redis_http:
+    image: hiett/serverless-redis-http:latest
+    container_name: opencut_redis_http
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${OPENCUT_REDIS_HTTP_TOKEN:-opencut-internal}
+      SRH_CONNECTION_STRING: "redis://opencut_redis:6379"
+    networks:
+      - opencut-internal
+    depends_on:
+      opencut_redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  opencut_web:
+    build:
+      # Cloned upstream lives here on the server. CI does NOT build this
+      # image — the operator pulls + rebuilds via `up -d --build`.
+      context: /opt/corelab/opencut
+      dockerfile: ./apps/web/Dockerfile
+      args:
+        FREESOUND_CLIENT_ID: ${OPENCUT_FREESOUND_CLIENT_ID:-}
+        FREESOUND_API_KEY: ${OPENCUT_FREESOUND_API_KEY:-}
+        NEXT_PUBLIC_MARBLE_API_URL: https://api.marblecms.com
+        MARBLE_WORKSPACE_KEY: ${OPENCUT_MARBLE_WORKSPACE_KEY:-build-placeholder}
+    image: corehub/opencut:latest
+    container_name: opencut_web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://opencut:${OPENCUT_DB_PASSWORD}@opencut_db:5432/opencut
+      BETTER_AUTH_SECRET: ${OPENCUT_BETTER_AUTH_SECRET}
+      UPSTASH_REDIS_REST_URL: http://opencut_redis_http:80
+      UPSTASH_REDIS_REST_TOKEN: ${OPENCUT_REDIS_HTTP_TOKEN:-opencut-internal}
+      NEXT_PUBLIC_SITE_URL: ${OPENCUT_PUBLIC_URL:-https://videos.kineo360.work}
+      NEXT_PUBLIC_MARBLE_API_URL: https://api.marblecms.com
+      MARBLE_WORKSPACE_KEY: ${OPENCUT_MARBLE_WORKSPACE_KEY:-placeholder}
+      FREESOUND_CLIENT_ID: ${OPENCUT_FREESOUND_CLIENT_ID:-}
+      FREESOUND_API_KEY: ${OPENCUT_FREESOUND_API_KEY:-}
+      TZ: ${TZ:-Europe/Zurich}
+    networks:
+      - proxy
+      - opencut-internal
+    depends_on:
+      opencut_db:
+        condition: service_healthy
+      opencut_redis_http:
+        condition: service_healthy
+    healthcheck:
+      # Built-in /api/health route — same one upstream uses. The OpenCut
+      # production image is distroless-ish (no curl, no wget), so we use
+      # node's stdlib http client which is always available.
+      test:
+        - "CMD-SHELL"
+        - >-
+          node -e "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

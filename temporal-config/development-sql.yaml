@@ -1,0 +1,13 @@
+# Temporal dynamic config for Postiz' bundled SQL+ES setup.
+# Required because temporalio/auto-setup:1.28.1 ships with an empty
+# /etc/temporal/config/dynamicconfig/, which makes the server crash on
+# startup when DYNAMIC_CONFIG_FILE_PATH is set.
+#
+# Values are intentionally minimal — Postiz only relies on default
+# scheduling behaviour, and these flags just stop Temporal from
+# complaining about missing keys. Do NOT enable additional dev-only
+# flags (e.g. forceSearchAttributesCacheRefreshOnRead) in production.
+
+limit.maxIDLength:
+  - value: 255
+    constraints: {}

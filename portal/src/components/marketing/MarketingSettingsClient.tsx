@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Settings as SettingsIcon,
@@ -20,6 +20,8 @@ import {
   Database,
   Plug,
 } from "lucide-react";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 type Settings = {
   workspace: string;
@@ -503,6 +505,8 @@ function KpiCard({
   value: number;
   accent: string;
 }) {
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   return (
     <div
       className="rounded-md border border-stroke-1 bg-bg-chrome px-3 py-3"
@@ -515,7 +519,7 @@ function KpiCard({
         </p>
       </div>
       <p className="text-[20px] font-semibold leading-none tabular-nums">
-        {value.toLocaleString("de-DE")}
+        {value.toLocaleString(localeFmt)}
       </p>
     </div>
   );
