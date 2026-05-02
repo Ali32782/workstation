@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Plus, X, StickyNote, Loader2, Save } from "lucide-react";
+import { useLocale } from "@/components/LocaleProvider";
 
 /**
  * Quick-Capture floating action button.
@@ -22,6 +23,7 @@ import { Plus, X, StickyNote, Loader2, Save } from "lucide-react";
  * (camera input) will reuse this same dropdown.
  */
 export function QuickCapture({ workspaceId }: { workspaceId: string }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,10 +90,10 @@ export function QuickCapture({ workspaceId }: { workspaceId: string }) {
     <>
       <button
         type="button"
-        aria-label="Quick-Capture öffnen"
+        aria-label={t("dash.quickCapture.openAria")}
         onClick={() => setOpen((v) => !v)}
         className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105 print:hidden"
-        title={`Quick-Capture (⌘⇧N) · ${count} Notizen`}
+        title={t("dash.quickCapture.toggleTitle").replace("{n}", String(count))}
       >
         {open ? <X size={20} /> : <Plus size={22} />}
       </button>
@@ -100,10 +102,10 @@ export function QuickCapture({ workspaceId }: { workspaceId: string }) {
           <div className="px-3 py-2 border-b border-stroke-1 flex items-center gap-2">
             <StickyNote size={14} className="text-fuchsia-400" />
             <h3 className="text-[12.5px] font-semibold text-text-primary">
-              Quick-Capture
+              {t("dash.quickCapture.heading")}
             </h3>
             <span className="ml-auto text-[10.5px] text-text-quaternary">
-              {count} gespeichert
+              {t("dash.quickCapture.savedCount").replace("{n}", String(count))}
             </span>
           </div>
           <textarea
@@ -117,12 +119,12 @@ export function QuickCapture({ workspaceId }: { workspaceId: string }) {
               }
               if (e.key === "Escape") setOpen(false);
             }}
-            placeholder="Was willst du dir merken?"
+            placeholder={t("dash.quickCapture.placeholder")}
             className="w-full px-3 py-2 bg-transparent border-0 outline-none text-[13px] resize-none min-h-[100px] text-text-primary placeholder:text-text-tertiary"
           />
           <div className="px-3 py-2 border-t border-stroke-1 flex items-center justify-between">
             <span className="text-[10px] text-text-quaternary">
-              ⌘↩ speichern · Esc abbrechen
+              {t("dash.quickCapture.keyboardHints")}
             </span>
             <button
               type="button"
@@ -131,7 +133,7 @@ export function QuickCapture({ workspaceId }: { workspaceId: string }) {
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-fuchsia-500/20 hover:bg-fuchsia-500/30 text-fuchsia-200 text-[11.5px] font-medium disabled:opacity-40"
             >
               {busy ? <Loader2 size={11} className="spin" /> : <Save size={11} />}
-              Speichern
+              {t("dash.quickCapture.save")}
             </button>
           </div>
         </div>

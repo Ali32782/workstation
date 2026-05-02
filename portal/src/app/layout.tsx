@@ -1,12 +1,46 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { LocaleProvider } from "@/components/LocaleProvider";
+import { localeFromCookies } from "@/lib/i18n/server-locale";
+
+/** iOS notch / home indicator; enables `env(safe-area-inset-*)` in CSS. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "Corehub Workstation",
-  description: "Internal portal for Corehub + MedTheris teams",
+  description:
+    "Internes Portal für Corehub, MedTheris und Kineo – Chat, Calls, Mail und mehr.",
+  applicationName: "Corehub Workstation",
+  /** Web-Manifest: `app/manifest.ts` — Next setzt `<link rel="manifest">` automatisch. */
   icons: {
-    icon: "/branding/corehub.svg",
+    icon: [{ url: "/branding/corehub.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/branding/corehub-mark.svg", type: "image/svg+xml" }],
+  },
+  /** Statusleiste / Theme in installierter Web-App; dunkel = Portal-Default. */
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f7f9" },
+    { color: "#0b0d10" },
+  ],
+  /**
+   * iOS Safari: „Zum Home-Bildschirm“ → näher an Vollblick, besser für Jitsi/getUserMedia.
+   * `black-translucent` + `viewportFit: cover` lässt die UI unter die Notch laufen.
+   */
+  appleWebApp: {
+    capable: true,
+    title: "Corehub",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+    address: false,
+    email: false,
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
   },
 };
 
@@ -32,20 +66,21 @@ const themeInitScript = `
 })();
 `;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const initialLocale = await localeFromCookies();
   return (
-    <html lang="de" suppressHydrationWarning>
+    <html lang={initialLocale} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{ __html: themeInitScript }}
         />
       </head>
       <body>
-        <LocaleProvider>{children}</LocaleProvider>
+        <LocaleProvider initialLocale={initialLocale}>{children}</LocaleProvider>
       </body>
     </html>
   );

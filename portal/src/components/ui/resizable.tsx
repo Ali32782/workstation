@@ -71,21 +71,74 @@ export type ResizableSide = "left" | "right";
 export function useResizableWidth(opts: {
   storageKey?: string;
   defaultWidth: number;
+  /**
+   * Optional viewport-aware default. When the user has no stored value AND
+   * `window.innerWidth <= tabletMaxPx`, this width is used instead of
+   * `defaultWidth` — so 13" laptops / iPads start with a narrower side
+   * column without overriding an explicit user choice.
+   */
+  tabletDefault?: number;
+  /** Threshold for `tabletDefault`. Defaults to 1199px (Tailwind `xl-1`). */
+  tabletMaxPx?: number;
+  /**
+   * Optional fraction of the current viewport width the column may at most
+   * occupy. When set, on window resize the width is clamped so the column
+   * never exceeds `viewportMaxRatio * window.innerWidth`. Helps users on
+   * small laptops/tablets even if they have an older, larger value stored
+   * in localStorage. The user can still drag wider — we only narrow on
+   * actual resize / mount, never permanently override an explicit drag.
+   */
+  viewportMaxRatio?: number;
   min: number;
   max: number;
   side?: ResizableSide;
 }) {
-  const { storageKey, defaultWidth, min, max, side = "left" } = opts;
+  const {
+    storageKey,
+    defaultWidth,
+    tabletDefault,
+    tabletMaxPx = 1199,
+    viewportMaxRatio,
+    min,
+    max,
+    side = "left",
+  } = opts;
 
   const [width, setWidth] = useState<number>(() => {
     const stored = readWidth(storageKey);
-    return clamp(stored ?? defaultWidth, min, max);
+    if (stored != null) return clamp(stored, min, max);
+    if (
+      tabletDefault != null &&
+      typeof window !== "undefined" &&
+      window.innerWidth <= tabletMaxPx
+    ) {
+      return clamp(tabletDefault, min, max);
+    }
+    return clamp(defaultWidth, min, max);
   });
 
   // Keep storage in sync without re-running on every render.
   useEffect(() => {
     writeWidth(storageKey, width);
   }, [storageKey, width]);
+
+  // Viewport cap: on mount + on resize, narrow the column when it would eat
+  // more than the configured fraction of the window. We don't widen back —
+  // the user keeps control via drag.
+  useEffect(() => {
+    if (!viewportMaxRatio || typeof window === "undefined") return;
+    const apply = () => {
+      const cap = Math.floor(window.innerWidth * viewportMaxRatio);
+      if (cap <= 0) return;
+      setWidth((prev) => {
+        const next = clamp(Math.min(prev, cap), min, max);
+        return next === prev ? prev : next;
+      });
+    };
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, [viewportMaxRatio, min, max]);
 
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 

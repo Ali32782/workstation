@@ -6,9 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   DEFAULT_LOCALE,
   detectLocale,
@@ -31,20 +33,32 @@ const Ctx = createContext<LocaleCtx>({
 
 const STORAGE_KEY = "corehub:locale";
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
-  // SSR / first paint: render with the default locale to avoid hydration
-  // mismatches. The `<html lang>` attribute is updated client-side after
-  // we know the resolved locale.
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+function persistLocaleCookie(next: Locale) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
+export function LocaleProvider({
+  children,
+  initialLocale,
+}: {
+  children: ReactNode;
+  /** SSR-resolved locale (read from `corehub:locale` cookie). */
+  initialLocale?: Locale;
+}) {
+  const ssrLocale = initialLocale ?? DEFAULT_LOCALE;
+  const router = useRouter();
+  const refreshedRef = useRef(false);
+  const [locale, setLocaleState] = useState<Locale>(ssrLocale);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    let resolved: Locale = DEFAULT_LOCALE;
+    let resolved: Locale = ssrLocale;
     try {
       const stored = localStorage.getItem(STORAGE_KEY) as Locale | null;
       if (stored === "de" || stored === "en") {
         resolved = stored;
-      } else {
+      } else if (typeof navigator !== "undefined") {
         resolved = detectLocale(navigator.language);
       }
     } catch {
@@ -54,20 +68,35 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     setMounted(true);
     if (typeof document !== "undefined") {
       document.documentElement.lang = resolved;
+      persistLocaleCookie(resolved);
     }
-  }, []);
+    // SSR rendered with `ssrLocale` (cookie). If the client has a different
+    // preference (older localStorage value, or first visit with `navigator
+    // .language=de` and no cookie yet), the server-side strings on this
+    // page are out of sync. A single router.refresh() re-runs the server
+    // components with the now-aligned cookie so everything matches.
+    if (resolved !== ssrLocale && !refreshedRef.current) {
+      refreshedRef.current = true;
+      router.refresh();
+    }
+  }, [ssrLocale, router]);
 
-  const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      /* ignore */
-    }
-    if (typeof document !== "undefined") {
-      document.documentElement.lang = next;
-    }
-  }, []);
+  const setLocale = useCallback(
+    (next: Locale) => {
+      setLocaleState(next);
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        /* ignore */
+      }
+      if (typeof document !== "undefined") {
+        document.documentElement.lang = next;
+        persistLocaleCookie(next);
+      }
+      router.refresh();
+    },
+    [router],
+  );
 
   const value = useMemo<LocaleCtx>(
     () => ({

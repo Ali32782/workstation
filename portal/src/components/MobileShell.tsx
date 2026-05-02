@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { Sidebar, type HealthSummary } from "./Sidebar";
 import type { WorkspaceId } from "@/lib/workspaces";
 import { cn } from "@/lib/utils";
+import { useT } from "./LocaleProvider";
 
 /**
  * Mobile-friendly wrapper around `Sidebar`.
@@ -45,6 +46,7 @@ export function MobileShell({
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const t = useT();
 
   useEffect(() => {
     setOpen(false);
@@ -70,12 +72,15 @@ export function MobileShell({
       </div>
 
       <button
-        aria-label={open ? "Menü schließen" : "Menü öffnen"}
+        aria-label={open ? t("common.menu.close") : t("common.menu.open")}
         aria-expanded={open}
         aria-controls="mobile-drawer"
         onClick={() => setOpen((v) => !v)}
-        className="md:hidden fixed right-4 z-50 rounded-full bg-bg-chrome border border-stroke-1 shadow-lg w-12 h-12 flex items-center justify-center text-text-primary active:scale-95 transition-transform motion-reduce:transition-none"
-        style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+        className="md:hidden fixed z-50 rounded-full bg-bg-chrome border border-stroke-1 shadow-lg w-12 h-12 flex items-center justify-center text-text-primary active:scale-95 transition-transform motion-reduce:transition-none touch-manipulation"
+        style={{
+          bottom: "calc(1rem + env(safe-area-inset-bottom))",
+          right: "max(1rem, env(safe-area-inset-right))",
+        }}
       >
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
@@ -103,7 +108,7 @@ export function MobileShell({
           )}
         >
           <button
-            aria-label="Menü schließen"
+            aria-label={t("common.menu.close")}
             onClick={() => setOpen(false)}
             className="absolute top-3 right-3 z-10 w-10 h-10 rounded-md flex items-center justify-center text-text-tertiary hover:bg-bg-elevated active:bg-bg-elevated"
           >
@@ -117,7 +122,9 @@ export function MobileShell({
         </div>
       </div>
 
-      <main className="flex-1 min-w-0 overflow-hidden">{children}</main>
+      <main className="flex-1 min-w-0 min-h-0 overflow-hidden pb-[max(0px,calc(3.25rem+env(safe-area-inset-bottom)))] md:pb-0">
+        {children}
+      </main>
     </div>
   );
 }

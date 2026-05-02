@@ -5,21 +5,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 import {
-  WORKSPACES,
   SECTIONS,
+  resolveWorkspace,
   type WorkspaceId,
   type AppSection,
   type App,
 } from "@/lib/workspaces";
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useT } from "./LocaleProvider";
+import { useLocale, useT } from "./LocaleProvider";
 import type { Messages } from "@/lib/i18n/messages";
 
 const SECTION_LABELS: Record<AppSection, keyof Messages> = {
   "Übersicht": "section.overview",
   "Kommunikation": "section.communication",
-  "Arbeit": "section.work",
+  "Office-Hub": "section.officeHub",
+  "Projekt-Hub": "section.projectHub",
   "System": "section.system",
 };
 
@@ -40,8 +41,11 @@ const APP_LABELS: Record<string, keyof Messages> = {
   status: "nav.status",
   identity: "nav.identity",
   proxy: "nav.proxy",
-  onboarding: "nav.onboarding",
+  "gap-report": "nav.gapReport",
+  "ops-dashboard": "nav.opsDashboard",
   admin: "nav.admin",
+  onboarding: "nav.onboarding",
+  aiKnowledge: "nav.aiKnowledge",
 };
 
 export function Sidebar({
@@ -53,7 +57,7 @@ export function Sidebar({
   isAdmin?: boolean;
   health?: HealthSummary;
 }) {
-  const workspace = WORKSPACES[workspaceId];
+  const workspace = resolveWorkspace(workspaceId);
   const pathname = usePathname();
   const t = useT();
 
@@ -161,6 +165,9 @@ export type HealthSummary = {
 };
 
 function HealthFooter({ health }: { health?: HealthSummary }) {
+  const { locale, t } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-CH";
+
   if (!health) {
     return (
       <a
@@ -173,7 +180,7 @@ function HealthFooter({ health }: { health?: HealthSummary }) {
           className="w-1.5 h-1.5 rounded-full"
           style={{ background: "var(--color-text-quaternary)" }}
         />
-        Status unbekannt
+        {t("sidebar.healthUnknown")}
       </a>
     );
   }
@@ -181,8 +188,11 @@ function HealthFooter({ health }: { health?: HealthSummary }) {
   const allUp = health.down === 0;
   const tone = allUp ? "var(--color-success)" : "var(--color-warning)";
   const label = allUp
-    ? `Alle Systeme online · ${health.up}/${health.total}`
-    : `${health.down} Service${health.down === 1 ? "" : "s"} down · ${health.up}/${health.total}`;
+    ? t("sidebar.healthAllUp").replace("{up}", String(health.up)).replace("{total}", String(health.total))
+    : t("sidebar.healthPartialDown")
+        .replace("{down}", String(health.down))
+        .replace("{up}", String(health.up))
+        .replace("{total}", String(health.total));
 
   return (
     <a
@@ -190,7 +200,10 @@ function HealthFooter({ health }: { health?: HealthSummary }) {
       target="_blank"
       rel="noopener noreferrer"
       className="flex items-center gap-2 text-text-tertiary hover:text-text-secondary text-[11px] transition-colors"
-      title={`Letzter Check: ${new Date(health.fetchedAt).toLocaleTimeString("de-CH")}`}
+      title={t("sidebar.healthLastCheck").replace(
+        "{time}",
+        new Date(health.fetchedAt).toLocaleTimeString(localeTag),
+      )}
     >
       <span className="relative inline-flex">
         <span
@@ -224,6 +237,7 @@ function SidebarItem({
   label: string;
 }) {
   const Icon = app.icon;
+  const t = useT();
 
   const href =
     app.embed === "native"
@@ -266,7 +280,7 @@ function SidebarItem({
                   : "var(--color-success)",
           }}
         >
-          {app.badge.label}
+          {app.badge.label === "bald" ? t("nav.badge.soon") : app.badge.label}
         </span>
       )}
     </>

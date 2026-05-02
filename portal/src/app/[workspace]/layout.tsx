@@ -27,7 +27,7 @@ export default async function WorkspaceLayout({
   const health = await fetchHealthSummary();
 
   return (
-    <div className="min-h-screen flex flex-col bg-bg-base">
+    <div className="min-h-dvh flex flex-col bg-bg-base">
       <TopBar
         workspace={workspace}
         user={{

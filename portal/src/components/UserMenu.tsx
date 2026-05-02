@@ -83,7 +83,7 @@ export function UserMenu({
               className="flex items-center gap-2.5 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-overlay transition-colors"
             >
               <Settings size={14} />
-              MFA / Passwort
+              {t("menu.mfaPassword")}
             </a>
           </div>
           <div className="py-2 px-3 border-t border-stroke-1 flex items-center justify-between gap-3">
@@ -104,13 +104,13 @@ export function UserMenu({
             <a
               href="/api/portal/full-logout"
               className="w-full flex items-start gap-2.5 px-3 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-overlay transition-colors"
-              title="Beendet die Sessions in allen Apps (Nextcloud, Chat, Code, Plane …) und meldet dich anschließend ab."
+              title={t("menu.fullLogout.title")}
             >
               <RefreshCcw size={14} className="mt-0.5 shrink-0" />
               <span className="flex flex-col leading-tight">
-                <span className="text-text-primary">Aus allen Apps abmelden</span>
+                <span className="text-text-primary">{t("menu.fullLogout.action")}</span>
                 <span className="text-text-quaternary text-[11px]">
-                  Empfohlen für User-Wechsel oder Test-Szenarien
+                  {t("menu.fullLogout.subtitle")}
                 </span>
               </span>
             </a>
@@ -118,7 +118,7 @@ export function UserMenu({
               <button
                 type="submit"
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text-secondary hover:text-danger hover:bg-bg-overlay transition-colors"
-                title="Beendet nur die Portal-Session. App-Sessions (Nextcloud, Chat …) bleiben aktiv."
+                title={t("menu.logoutPortalOnly.title")}
               >
                 <LogOut size={14} />
                 {t("menu.logout")}

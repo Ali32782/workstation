@@ -1,0 +1,11 @@
+---
+description: Portal—UI copy & Intl must stay i18n-safe (DE/EN via messages.ts).
+globs: portal/src/**/*.tsx,portal/src/**/*.ts
+alwaysApply: false
+---
+
+# Portal i18n
+
+- **Sichtbarer Text** (Buttons, Titel, `placeholder`, `aria-label`, `title`, Fehlermeldungen für Nutzer): immer **`useLocale().t`** bzw. **`useT()`** und Schlüssel in **`portal/src/lib/i18n/messages.ts`** — Eintrag im **`Messages`‑Typ** plus **`de`** und **`en`**. Keine neuen fest eingebauten deutschen/englischen UI‑Strings in Komponenten.
+- **Datums-/Zeit-/Zahlenformatierung** für die Oberfläche: **`localeTag(locale)`** aus **`@/lib/i18n/messages`** verwenden (z. B. `toLocaleString(localeTag(locale), …)`), nicht **`"de-DE"`** als festes Locale für Nutzer‑Facing‑Output.
+- Vor Merge im Portal: **`npm run verify`** aus **`portal/`** — führt **`check:i18n`** und **`typecheck`** (`tsc --noEmit`) aus. Nur i18n‑Lint: **`npm run check:i18n`**. Bewusste **`de-DE`**‑Ausnahmen nur über **`portal/scripts/i18n-check.config.json`** (`ignoreFiles`) dokumentieren.

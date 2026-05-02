@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useLocale } from "@/components/LocaleProvider";
 
 export type RecordListItem = {
   id: string;
@@ -36,22 +37,23 @@ export function RecordList({
   loading?: boolean;
   accent?: string;
 }) {
+  const { t } = useLocale();
   if (loading) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center text-[12px] text-text-tertiary">
-        Lade…
+        {t("common.loading")}
       </div>
     );
   }
   if (items.length === 0) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center px-6 text-center text-[12px] text-text-tertiary">
-        {emptyHint ?? "Keine Einträge."}
+        {emptyHint ?? t("common.noEntries")}
       </div>
     );
   }
   return (
-    <ul className="flex-1 min-h-0 overflow-auto">
+    <ul className="flex-1 min-h-0 overflow-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-manipulation">
       {items.map((it) => {
         const isSel = it.id === selectedId;
         const rowAccent =

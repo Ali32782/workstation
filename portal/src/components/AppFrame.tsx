@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { ExternalLink, RefreshCw, Loader2 } from "lucide-react";
-import { WORKSPACES } from "@/lib/workspaces";
+import { resolveWorkspace, type WorkspaceId } from "@/lib/workspaces";
+import { useLocale } from "@/components/LocaleProvider";
 
 export function AppFrame({
   appId,
@@ -17,12 +18,15 @@ export function AppFrame({
   url: string;
   accent: string;
 }) {
+  const { t } = useLocale();
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [iframeBlocked, setIframeBlocked] = useState(false);
 
   const Icon = useMemo(() => {
-    for (const ws of Object.values(WORKSPACES)) {
+    const ids: WorkspaceId[] = ["corehub", "medtheris", "kineo"];
+    for (const id of ids) {
+      const ws = resolveWorkspace(id);
       const match = ws.apps.find((a) => a.id === appId);
       if (match) return match.icon;
     }
@@ -54,7 +58,7 @@ export function AppFrame({
             setIframeBlocked(false);
           }}
           className="text-text-tertiary hover:text-text-primary p-1 rounded transition-colors"
-          title="Neu laden"
+          title={t("common.reload")}
         >
           <RefreshCw size={14} />
         </button>
@@ -63,7 +67,7 @@ export function AppFrame({
           target="_blank"
           rel="noopener noreferrer"
           className="text-text-tertiary hover:text-text-primary p-1 rounded transition-colors"
-          title="In neuem Tab öffnen"
+          title={t("common.openInNewTab")}
         >
           <ExternalLink size={14} />
         </a>

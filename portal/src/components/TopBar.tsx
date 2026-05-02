@@ -34,7 +34,7 @@ export function TopBar({
     .map((id) => WORKSPACES[id]);
 
   return (
-    <header className="h-16 px-3 md:px-5 flex items-center gap-2 md:gap-4 bg-bg-chrome border-b border-stroke-1">
+    <header className="min-h-16 shrink-0 pt-[env(safe-area-inset-top,0px)] px-3 md:px-5 flex items-center gap-2 md:gap-4 bg-bg-chrome border-b border-stroke-1">
       <Link
         href={`/${workspace.id}/dashboard`}
         className="flex items-center gap-3 hover:opacity-90 transition-opacity shrink-0"

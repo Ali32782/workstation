@@ -74,6 +74,18 @@ html, body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* iOS: stable full-height; avoids 100vh under/outside browser chrome. */
+  min-height: 100dvh;
+}
+
+/* iPhone: calmer taps; avoid 300 ms delay where gestures still apply. */
+button,
+a,
+[role="button"],
+textarea,
+input,
+select {
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.06);
 }
 
 /*

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, PanelLeft } from "lucide-react";
+import { useT } from "@/components/LocaleProvider";
 
 /**
  * Outlook-style three-pane layout used by all native portal apps
@@ -118,6 +119,8 @@ export function ThreePaneLayout({
    */
   hidePrimary?: boolean;
 }) {
+  const t = useT();
+
   // ── Persisted widths + primary mode ─────────────────────────────────────
   const initialStored = useMemo(() => readStored(storageKey), [storageKey]);
   const [primaryW, setPrimaryW] = useState<number>(
@@ -227,32 +230,43 @@ export function ThreePaneLayout({
 
   // ── Render: mobile stack ───────────────────────────────────────────────
   if (viewport === "mobile") {
+    const gutterX =
+      "pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]";
     if (hasSelection) {
       return (
-        <div className="flex h-full min-h-0 bg-bg-base text-text-primary text-[13px]">
+        <div
+          className={`flex h-full min-h-0 bg-bg-base text-text-primary text-[13px] ${gutterX}`}
+        >
           <section className="flex-1 min-w-0 bg-bg-base flex flex-col min-h-0">
             {onMobileBack && (
               <button
+                type="button"
                 onClick={onMobileBack}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-stroke-1 bg-bg-chrome text-[12px] text-text-secondary hover:text-text-primary"
+                className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3 py-2 border-b border-stroke-1 bg-bg-chrome text-[12px] text-text-secondary hover:text-text-primary touch-manipulation"
               >
                 <ArrowLeft size={14} />
-                Zurück zur Liste
+                {t("pane.mobile.backToList")}
               </button>
             )}
-            <div className="flex-1 min-h-0 overflow-auto">{detail}</div>
+            <div className="flex-1 min-h-0 overflow-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+              {detail}
+            </div>
           </section>
         </div>
       );
     }
     return (
-      <div className="flex flex-col h-full min-h-0 bg-bg-base text-text-primary text-[13px]">
+      <div
+        className={`flex flex-col h-full min-h-0 bg-bg-base text-text-primary text-[13px] ${gutterX}`}
+      >
         {!hidePrimary && primary && (
-          <div className="shrink-0 max-h-[35vh] overflow-auto border-b border-stroke-1 bg-bg-chrome">
+          <div className="shrink-0 max-h-[35vh] overflow-auto overscroll-y-contain border-b border-stroke-1 bg-bg-chrome [-webkit-overflow-scrolling:touch]">
             {primary}
           </div>
         )}
-        <div className="flex-1 min-h-0 bg-bg-base flex flex-col">{secondary}</div>
+        <div className="flex-1 min-h-0 min-w-0 bg-bg-base flex flex-col overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+          {secondary}
+        </div>
       </div>
     );
   }
@@ -282,9 +296,11 @@ export function ThreePaneLayout({
               }
               className="absolute top-1.5 right-1 z-10 p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-overlay"
               title={
-                primaryMode === "rail" ? "Seitenleiste ausklappen" : "Seitenleiste einklappen"
+                primaryMode === "rail"
+                  ? t("pane.sidebar.expand")
+                  : t("pane.sidebar.collapse")
               }
-              aria-label="Seitenleiste umschalten"
+              aria-label={t("pane.sidebar.toggleAria")}
             >
               {primaryMode === "rail" ? (
                 <ChevronRight size={13} />
@@ -301,7 +317,10 @@ export function ThreePaneLayout({
 
       {/* Splitter primary↔secondary */}
       {showPrimary && !isRail && (
-        <Splitter onPointerDown={startDrag("primary")} title="Breite anpassen" />
+        <Splitter
+          onPointerDown={startDrag("primary")}
+          title={t("pane.splitter.resizeWidth")}
+        />
       )}
 
       {/* Secondary */}
@@ -315,8 +334,8 @@ export function ThreePaneLayout({
             type="button"
             onClick={() => setPrimaryMode(primaryRail ? "rail" : "expanded")}
             className="absolute top-1.5 left-1 z-10 p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-overlay"
-            title="Seitenleiste einblenden"
-            aria-label="Seitenleiste einblenden"
+            title={t("pane.sidebar.showTitle")}
+            aria-label={t("pane.sidebar.showTitle")}
           >
             <PanelLeft size={13} />
           </button>
@@ -325,7 +344,10 @@ export function ThreePaneLayout({
       </section>
 
       {/* Splitter secondary↔detail */}
-      <Splitter onPointerDown={startDrag("secondary")} title="Breite anpassen" />
+      <Splitter
+        onPointerDown={startDrag("secondary")}
+        title={t("pane.splitter.resizeWidth")}
+      />
 
       {/* Detail */}
       <section className="flex-1 min-w-0 bg-bg-base flex flex-col min-h-0">
@@ -379,10 +401,10 @@ export function PaneHeader({
 }) {
   return (
     <header
-      className="shrink-0 px-3 py-2 border-b border-stroke-1 bg-bg-chrome"
+      className="shrink-0 px-3 py-2 border-b border-stroke-1 bg-bg-chrome touch-manipulation min-w-0"
       style={accent ? { boxShadow: `inset 0 -1px 0 0 ${accent}30` } : undefined}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-start sm:items-center gap-2 min-w-0">
         {icon && (
           <div
             className="w-7 h-7 rounded flex items-center justify-center shrink-0"
@@ -403,9 +425,21 @@ export function PaneHeader({
             )}
           </div>
         )}
-        {right && <div className="ml-auto flex items-center gap-1">{right}</div>}
+        {right && (
+          <div
+            className={
+              "ml-auto flex flex-wrap items-center justify-end gap-1 min-w-0 shrink-0 max-w-full " +
+              "max-md:[&>button]:min-h-[44px] max-md:[&>button]:min-w-[44px] " +
+              "max-md:[&>button]:inline-flex max-md:[&>button]:items-center max-md:[&>button]:justify-center " +
+              "max-md:[&>button]:shrink-0 max-md:[&>a]:min-h-[44px] max-md:[&>a]:min-w-[44px] " +
+              "max-md:[&>a]:inline-flex max-md:[&>a]:items-center max-md:[&>a]:justify-center max-md:[&>a]:shrink-0"
+            }
+          >
+            {right}
+          </div>
+        )}
       </div>
-      {children && <div className="mt-2">{children}</div>}
+      {children && <div className="mt-2 min-w-0">{children}</div>}
     </header>
   );
 }
