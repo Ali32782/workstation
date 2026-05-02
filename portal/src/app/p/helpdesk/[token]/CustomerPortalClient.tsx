@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TicketDetail } from "@/lib/helpdesk/types";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 /**
  * Read-only, customer-facing view for a single ticket. Loads from the
@@ -23,6 +25,8 @@ export function CustomerPortalClient({
   expiresAt: number;
   workspace: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const [ticket, setTicket] = useState<TicketDetail>(initialTicket);
   const [reply, setReply] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -71,14 +75,14 @@ export function CustomerPortalClient({
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       setReply("");
-      setInfo("Deine Antwort wurde gesendet.");
+      setInfo(t("portal.helpdeskPublic.replySent"));
       await refetch();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
     }
-  }, [reply, token, refetch]);
+  }, [reply, token, refetch, t]);
 
   const ticketHeader = useMemo(() => {
     return {
@@ -86,10 +90,10 @@ export function CustomerPortalClient({
       title: ticket.title,
       state: ticket.stateName,
       priority: ticket.priorityName,
-      created: new Date(ticket.createdAt).toLocaleString("de-DE"),
-      updated: new Date(ticket.updatedAt).toLocaleString("de-DE"),
+      created: new Date(ticket.createdAt).toLocaleString(localeFmt),
+      updated: new Date(ticket.updatedAt).toLocaleString(localeFmt),
     };
-  }, [ticket]);
+  }, [ticket, localeFmt]);
 
   return (
     <main className="min-h-screen bg-bg-base text-text-primary">
@@ -104,11 +108,12 @@ export function CustomerPortalClient({
                 {ticketHeader.title}
               </h1>
               <p className="text-[12px] text-text-tertiary mt-1.5">
-                Status:{" "}
+                {t("portal.helpdeskPublic.statusPrefix")}{" "}
                 <span className="text-text-secondary">{ticketHeader.state}</span>
                 {ticketHeader.priority && (
                   <>
-                    {" "}· Priorität:{" "}
+                    {" "}
+                    · {t("portal.helpdeskPublic.priorityPrefix")}{" "}
                     <span className="text-text-secondary">
                       {ticketHeader.priority}
                     </span>
@@ -116,8 +121,9 @@ export function CustomerPortalClient({
                 )}
               </p>
               <p className="text-[11px] text-text-quaternary mt-0.5">
-                Eröffnet {ticketHeader.created} · zuletzt aktualisiert{" "}
-                {ticketHeader.updated}
+                {t("portal.helpdeskPublic.metaOpenedUpdated")
+                  .replace("{opened}", ticketHeader.created)
+                  .replace("{updated}", ticketHeader.updated)}
               </p>
             </div>
             <button
@@ -125,9 +131,11 @@ export function CustomerPortalClient({
               onClick={() => void refetch()}
               disabled={refreshing}
               className="text-[11px] px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary disabled:opacity-60"
-              title="Antworten neu laden"
+              title={t("portal.helpdeskPublic.refreshTitle")}
             >
-              {refreshing ? "Aktualisiert…" : "Aktualisieren"}
+              {refreshing
+                ? t("portal.helpdeskPublic.refreshing")
+                : t("portal.helpdeskPublic.refresh")}
             </button>
           </div>
         </header>
@@ -135,7 +143,7 @@ export function CustomerPortalClient({
         <section className="space-y-2.5">
           {ticket.articles.length === 0 ? (
             <p className="text-[12px] text-text-tertiary px-1">
-              Noch kein Verlauf.
+              {t("portal.helpdeskPublic.noArticles")}
             </p>
           ) : (
             ticket.articles.map((a) => (
@@ -145,11 +153,13 @@ export function CustomerPortalClient({
         </section>
 
         <section className="rounded-lg border border-stroke-1 bg-bg-elevated p-4 sm:p-5">
-          <h2 className="text-[12.5px] font-semibold mb-2">Antworten</h2>
+          <h2 className="text-[12.5px] font-semibold mb-2">
+            {t("portal.helpdeskPublic.replyHeading")}
+          </h2>
           <textarea
             value={reply}
             onChange={(e) => setReply(e.target.value)}
-            placeholder="Schreibe hier deine Antwort an das Support-Team…"
+            placeholder={t("portal.helpdeskPublic.replyPlaceholder")}
             rows={6}
             className="w-full bg-bg-base border border-stroke-1 rounded-md px-3 py-2 text-[13px] outline-none focus:border-stroke-2 leading-relaxed resize-y"
             maxLength={32 * 1024}
@@ -164,8 +174,8 @@ export function CustomerPortalClient({
           )}
           <div className="flex items-center justify-between gap-2 mt-3">
             <p className="text-[10.5px] text-text-quaternary">
-              Link aktiv bis{" "}
-              {new Date(expiresAt * 1000).toLocaleDateString("de-DE")}
+              {t("portal.helpdeskPublic.linkExpires")}{" "}
+              {new Date(expiresAt * 1000).toLocaleDateString(localeFmt)}
             </p>
             <button
               type="button"
@@ -173,14 +183,15 @@ export function CustomerPortalClient({
               disabled={submitting || !reply.trim()}
               className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-[12.5px] font-medium hover:bg-blue-500 disabled:opacity-60"
             >
-              {submitting ? "Wird gesendet…" : "Antwort senden"}
+              {submitting
+                ? t("portal.helpdeskPublic.sending")
+                : t("portal.helpdeskPublic.sendReply")}
             </button>
           </div>
         </section>
 
         <footer className="pt-2 text-center text-[10.5px] text-text-quaternary">
-          Diese Seite wurde dir per Magic-Link freigeschaltet. Niemand außer
-          dem Support-Team kann ohne Link auf diese Seite zugreifen.
+          {t("portal.helpdeskPublic.footerMagicLink")}
         </footer>
       </div>
     </main>
@@ -188,6 +199,8 @@ export function CustomerPortalClient({
 }
 
 function ArticleBubble({ article }: { article: TicketDetail["articles"][number] }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const isCustomer = article.senderName === "Customer";
   return (
     <article
@@ -199,7 +212,9 @@ function ArticleBubble({ article }: { article: TicketDetail["articles"][number] 
     >
       <header className="flex items-center justify-between gap-2 mb-1.5">
         <div className="text-[11.5px] font-semibold">
-          {article.fromName || article.senderName || "Unbekannt"}
+          {article.fromName ||
+            article.senderName ||
+            t("portal.helpdeskPublic.unknownAuthor")}
           <span className="ml-2 text-[10px] uppercase tracking-wide text-text-quaternary">
             {article.senderName}
           </span>
@@ -208,7 +223,7 @@ function ArticleBubble({ article }: { article: TicketDetail["articles"][number] 
           className="text-[10.5px] text-text-quaternary tabular-nums"
           dateTime={article.createdAt}
         >
-          {new Date(article.createdAt).toLocaleString("de-DE")}
+          {new Date(article.createdAt).toLocaleString(localeFmt)}
         </time>
       </header>
       <div

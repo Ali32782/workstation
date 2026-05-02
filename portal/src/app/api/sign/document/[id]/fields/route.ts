@@ -70,10 +70,9 @@ export async function GET(
 }
 
 /**
- * Create one or more fields. The body shape mirrors what `createFields`
- * expects, plus we accept `documentId` implicitly from the URL:
- *
- *   { fields: [{type, recipientId, page, pageX, pageY, pageWidth, pageHeight, label?}, ...] }
+ * Create one or more fields. Body: `{ fields: FieldCreateInput[] }`; the
+ * server resolves the Documenso `envelopeId` from the document id and calls
+ * `POST /api/v2/envelope/field/create-many` with `{ envelopeId, data }`.
  */
 export async function POST(
   req: NextRequest,

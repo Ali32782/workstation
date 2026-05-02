@@ -56,6 +56,7 @@ export type DocumentSummary = {
 };
 
 export type DocumentDetail = DocumentSummary & {
+  /** Documenso web UI routes by this id when present (e.g. `envelope_*`); else use numeric `id`. */
   envelopeId: string;
   visibility: "EVERYONE" | "MANAGER_AND_ABOVE" | "ADMIN";
   externalId: string | null;
@@ -63,6 +64,14 @@ export type DocumentDetail = DocumentSummary & {
   teamUrl: string | null;
   /** True when this document was first created via a portal upload (authoritative for privacy toggles). */
   uploadedViaPortal?: boolean;
+  /**
+   * Only on DRAFT detail GET from portal: whether Documenso already has a SIGNATURE
+   * field per signer (enables „Direkt senden“ vs. Editor-Zwang).
+   */
+  draftSendPreflight?: {
+    ok: boolean;
+    missingSignatureFor: string[];
+  };
 };
 
 export type SignTotals = {

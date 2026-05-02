@@ -5,6 +5,7 @@ import type {
   DocumentDetail,
   DocumentSummary,
   RecipientSummary,
+  SignSendStatus,
   SignStatus,
   SignTotals,
 } from "./types";
@@ -51,13 +52,16 @@ type RawDocument = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
-  envelopeId: string;
+  /** Primary slug for the hosted web UI (newer builds); falls back to `id` in links. */
+  envelopeId?: string;
   teamId: number;
   externalId: string | null;
   visibility: DocumentDetail["visibility"];
   user?: { id: number; name: string | null; email: string };
   recipients?: RawRecipient[];
   team?: { id: number; url: string } | null;
+  /** Present on newer Documenso — fields should target this envelope item. */
+  documentData?: { envelopeItemId?: string | null };
 };
 
 type FindResponse = {
@@ -68,16 +72,61 @@ type FindResponse = {
   totalPages: number;
 };
 
+/** Documenso API may use different casing; portal UI only distinguishes sent vs. not. */
+function normalizeSendStatus(raw: unknown): SignSendStatus {
+  const s = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  if (s === "SENT") return "SENT";
+  return "NOT_SENT";
+}
+
+/** Normalise enum strings from the wire so strict equality checks stay reliable. */
+function normalizeSigningStatus(
+  raw: unknown,
+): RecipientSummary["signingStatus"] {
+  const s = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  if (s === "SIGNED") return "SIGNED";
+  if (s === "REJECTED") return "REJECTED";
+  return "NOT_SIGNED";
+}
+
+/**
+ * Documenso may leave the document/envelope on PENDING until a seal job runs.
+ * Recipients can already be SIGNED in the API — align portal-facing status so
+ * lists and actions match signer reality (native Documenso UI unchanged).
+ */
+function coerceDocumentStatusFromRecipients(
+  apiStatus: SignStatus,
+  recipients: RecipientSummary[],
+): SignStatus {
+  if (apiStatus !== "PENDING") return apiStatus;
+  const actionRecipients = recipients.filter(
+    (r) => r.role === "SIGNER" || r.role === "APPROVER",
+  );
+  if (actionRecipients.length === 0) return apiStatus;
+  if (actionRecipients.some((r) => r.signingStatus === "REJECTED"))
+    return apiStatus;
+  return actionRecipients.every((r) => r.signingStatus === "SIGNED")
+    ? "COMPLETED"
+    : apiStatus;
+}
+
 function mapRecipient(r: RawRecipient): RecipientSummary {
+  // Documenso sometimes leaves `sendStatus` on NOT_SENT after a successful
+  // send (or when the signer reached the flow via copied link). If they
+  // already opened the envelope, SMTP did not "fail to deliver" from UX view.
+  const sendStatus: SignSendStatus =
+    r.readStatus === "OPENED"
+      ? "SENT"
+      : normalizeSendStatus(r.sendStatus);
   return {
     id: r.id,
     email: r.email,
     name: r.name || r.email,
     role: r.role,
     signingOrder: r.signingOrder,
-    signingStatus: r.signingStatus,
+    signingStatus: normalizeSigningStatus(r.signingStatus),
     readStatus: r.readStatus,
-    sendStatus: r.sendStatus,
+    sendStatus,
     signedAt: r.signedAt,
     rejectionReason: r.rejectionReason,
     token: r.token,
@@ -86,10 +135,11 @@ function mapRecipient(r: RawRecipient): RecipientSummary {
 
 function mapDocument(d: RawDocument): DocumentSummary {
   const recipients = (d.recipients ?? []).map(mapRecipient);
+  const status = coerceDocumentStatusFromRecipients(d.status, recipients);
   return {
     id: d.id,
     title: d.title || "(ohne Titel)",
-    status: d.status,
+    status,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
     completedAt: d.completedAt,
@@ -113,7 +163,7 @@ function mapDocumentDetail(
   // "/documents/<id>" route).
   return {
     ...mapDocument(d),
-    envelopeId: d.envelopeId,
+    envelopeId: d.envelopeId ?? "",
     visibility: d.visibility,
     externalId: d.externalId,
     teamId: d.teamId,
@@ -327,12 +377,14 @@ export async function distributeDocument(
 export async function redistributeDocument(
   tenant: SignTenantConfig,
   documentId: number,
-  recipients?: number[],
+  recipients: number[],
   meta?: DistributeMeta,
 ): Promise<void> {
   const fetcher = tenantFetch(tenant);
-  const payload: Record<string, unknown> = { documentId };
-  if (recipients?.length) payload.recipients = recipients;
+  const payload: Record<string, unknown> = {
+    documentId,
+    recipients,
+  };
   const m = buildMeta(meta);
   if (m) payload.meta = m;
   const r = await fetcher(`/api/v2/document/redistribute`, {
@@ -559,6 +611,7 @@ export async function deleteRecipient(
  */
 export type FieldType =
   | "SIGNATURE"
+  | "FREE_SIGNATURE"
   | "DATE"
   | "INITIALS"
   | "TEXT"
@@ -584,7 +637,7 @@ export type FieldSummary = {
 type RawField = {
   id: number;
   recipientId: number;
-  type: FieldType;
+  type: FieldType | string;
   page: number;
   positionX: number;
   positionY: number;
@@ -594,10 +647,11 @@ type RawField = {
 };
 
 function mapField(f: RawField): FieldSummary {
+  const t = String(f.type).toUpperCase() as FieldSummary["type"];
   return {
     id: f.id,
     recipientId: f.recipientId,
-    type: f.type,
+    type: t,
     page: f.page,
     pageX: f.positionX,
     pageY: f.positionY,
@@ -607,18 +661,21 @@ function mapField(f: RawField): FieldSummary {
   };
 }
 
+/**
+ * Loads fields for a document. Documenso v2 embeds them on `GET /document/{id}`;
+ * the legacy `/document/{id}/fields` route is not exposed (404).
+ */
 export async function listFields(
   tenant: SignTenantConfig,
   documentId: number,
 ): Promise<FieldSummary[]> {
   const fetcher = tenantFetch(tenant);
-  // Documenso v2 returns an array of fields when the doc has any.
-  const r = await fetchJson<{ fields?: RawField[] } | RawField[]>(
+  const r = await fetchJson<{ fields?: RawField[] }>(
     fetcher,
     "documenso",
-    `/api/v2/document/${documentId}/fields`,
+    `/api/v2/document/${documentId}`,
   );
-  const list = Array.isArray(r) ? r : (r?.fields ?? []);
+  const list = r?.fields ?? [];
   return list.map(mapField);
 }
 
@@ -633,6 +690,78 @@ export type FieldCreateInput = {
   label?: string;
 };
 
+/** Documenso v2: type-specific `fieldMeta` must match Zod (see documenso `field-meta.ts`). Partial objects often missing `placeholder`/`text`/`fontSize` → HTTP 400. */
+const DEFAULT_FIELD_FONT_SIZE = 12;
+const DEFAULT_SIGNATURE_TEXT_FONT_SIZE = 18;
+
+function fieldMetaForCreate(f: FieldCreateInput): Record<string, unknown> | undefined {
+  const label = (f.label?.trim() ?? "") || "";
+  switch (f.type) {
+    case "SIGNATURE":
+      return {
+        type: "signature",
+        fontSize: DEFAULT_SIGNATURE_TEXT_FONT_SIZE,
+        required: true,
+        readOnly: false,
+        label: label || "Signatur",
+        placeholder: "",
+      };
+    case "INITIALS":
+      return {
+        type: "initials",
+        fontSize: DEFAULT_FIELD_FONT_SIZE,
+        textAlign: "left",
+        required: true,
+        readOnly: false,
+        label: label || "Initialen",
+        placeholder: "",
+      };
+    case "DATE":
+      return {
+        type: "date",
+        fontSize: DEFAULT_FIELD_FONT_SIZE,
+        textAlign: "left",
+        required: true,
+        readOnly: false,
+        label: label || "Datum",
+        placeholder: "",
+      };
+    case "TEXT":
+      return {
+        type: "text",
+        fontSize: DEFAULT_FIELD_FONT_SIZE,
+        textAlign: "left",
+        required: true,
+        readOnly: false,
+        label: label || "Text",
+        placeholder: label || "Eingeben",
+        text: "",
+      };
+    case "EMAIL":
+      return {
+        type: "email",
+        fontSize: DEFAULT_FIELD_FONT_SIZE,
+        textAlign: "left",
+        required: true,
+        readOnly: false,
+        label: label || "E-Mail",
+        placeholder: "",
+      };
+    case "NAME":
+      return {
+        type: "name",
+        fontSize: DEFAULT_FIELD_FONT_SIZE,
+        textAlign: "left",
+        required: true,
+        readOnly: false,
+        label: label || "Name",
+        placeholder: "",
+      };
+    default:
+      return undefined;
+  }
+}
+
 export async function createFields(
   tenant: SignTenantConfig,
   documentId: number,
@@ -640,30 +769,83 @@ export async function createFields(
 ): Promise<FieldSummary[]> {
   if (fields.length === 0) return [];
   const fetcher = tenantFetch(tenant);
-  const res = await fetcher(`/api/v2/envelope/field/create-many`, {
-    method: "POST",
-    json: {
-      documentId,
-      fields: fields.map((f) => ({
-        type: f.type,
-        recipientId: f.recipientId,
-        pageNumber: f.page,
-        pageX: f.pageX,
-        pageY: f.pageY,
-        width: f.pageWidth,
-        height: f.pageHeight,
-        fieldMeta: f.label ? { type: "text", label: f.label } : undefined,
-      })),
-    },
+  /**
+   * Single GET: `envelopeId` + `documentData.envelopeItemId` (OpenAPI) —
+   * without `envelopeItemId`, newer Documenso builds can attach fields to the
+   * wrong PDF item or behave inconsistently.
+   */
+  const raw = await fetchJson<RawDocument>(
+    fetcher,
+    "documenso",
+    `/api/v2/document/${documentId}`,
+  );
+  const envelopeItemId = raw.documentData?.envelopeItemId?.trim() || undefined;
+  const envelopeId = raw.envelopeId?.trim() ?? "";
+
+  const envelopePayload = fields.map((f) => {
+    const meta = fieldMetaForCreate(f);
+    const row: Record<string, unknown> = {
+      type: f.type,
+      recipientId: f.recipientId,
+      page: f.page,
+      positionX: f.pageX,
+      positionY: f.pageY,
+      width: f.pageWidth,
+      height: f.pageHeight,
+    };
+    if (meta) row.fieldMeta = meta;
+    if (envelopeItemId) row.envelopeItemId = envelopeItemId;
+    return row;
   });
+
+  /** Alternate v2 shape: `pageNumber` + `pageX`/`pageY` (not `position*`). */
+  const documentPayload = fields.map((f) => {
+    const meta = fieldMetaForCreate(f);
+    const row: Record<string, unknown> = {
+      type: f.type,
+      recipientId: f.recipientId,
+      pageNumber: f.page,
+      pageX: f.pageX,
+      pageY: f.pageY,
+      width: Math.max(1, f.pageWidth),
+      height: Math.max(1, f.pageHeight),
+    };
+    if (meta) row.fieldMeta = meta;
+    return row;
+  });
+
+  let res: Response;
+  let path: string;
+  let envelopeErrorBody = "";
+
+  if (envelopeId) {
+    path = "/api/v2/envelope/field/create-many";
+    res = await fetcher(path, {
+      method: "POST",
+      json: { envelopeId, data: envelopePayload },
+    });
+    if (!res.ok) {
+      envelopeErrorBody = await res.text().catch(() => "");
+      path = "/api/v2/document/field/create-many";
+      res = await fetcher(path, {
+        method: "POST",
+        json: { documentId, fields: documentPayload },
+      });
+    }
+  } else {
+    path = "/api/v2/document/field/create-many";
+    res = await fetcher(path, {
+      method: "POST",
+      json: { documentId, fields: documentPayload },
+    });
+  }
+
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new AppApiError(
-      "documenso",
-      res.status,
-      "/api/v2/envelope/field/create-many",
-      body,
-    );
+    const hint = envelopeErrorBody
+      ? `envelope create-many: ${envelopeErrorBody.slice(0, 500)} · then `
+      : "";
+    throw new AppApiError("documenso", res.status, path, hint + body);
   }
   // Servers vary in how they shape the response; just re-fetch.
   return listFields(tenant, documentId);
@@ -674,16 +856,23 @@ export async function deleteField(
   fieldId: number,
 ): Promise<void> {
   const fetcher = tenantFetch(tenant);
-  const res = await fetcher(`/api/v2/envelope/field/delete`, {
+  let res = await fetcher(`/api/v2/envelope/field/delete`, {
+    method: "POST",
+    json: { fieldId },
+  });
+  if (res.ok) return;
+  const envBody = await res.text().catch(() => "");
+  res = await fetcher(`/api/v2/document/field/delete`, {
     method: "POST",
     json: { fieldId },
   });
   if (!res.ok) {
+    const docBody = await res.text().catch(() => "");
     throw new AppApiError(
       "documenso",
       res.status,
-      "/api/v2/envelope/field/delete",
-      await res.text().catch(() => ""),
+      "/api/v2/document/field/delete",
+      `envelope: ${envBody.slice(0, 400)} · document: ${docBody.slice(0, 400)}`,
     );
   }
 }
@@ -776,11 +965,15 @@ export async function downloadDocumentPdf(
 export function documensoDocumentUrl(
   documentId: number,
   teamUrl: string | null | undefined,
+  envelopeId?: string | null,
 ): string {
+  const slug =
+    envelopeId?.trim() ? envelopeId.trim() : String(documentId);
+  const enc = encodeURIComponent(slug);
   if (teamUrl) {
-    return `${PUBLIC}/t/${teamUrl}/documents/${documentId}`;
+    return `${PUBLIC}/t/${teamUrl}/documents/${enc}`;
   }
-  return `${PUBLIC}/documents/${documentId}`;
+  return `${PUBLIC}/documents/${enc}`;
 }
 
 /** Public per-recipient signing URL (the link Documenso emails out). */

@@ -9,7 +9,7 @@
  *   │  + bulk add  │   - active recipient = colour code  │              │
  *   └──────────────┴─────────────────────────────────────┴──────────────┘
  *
- * Field types match Documenso v2: SIGNATURE, INITIALS, DATE, TEXT.
+ * Field types match Documenso v2: SIGNATURE, INITIALS, DATE, TEXT, NAME.
  * Coordinates are stored as percentages of the rendered page so they
  * survive the server-side PDF re-rendering Documenso does on signing.
  */
@@ -23,10 +23,14 @@ import {
   type DragEvent,
   type RefObject,
 } from "react";
+import { useLocale } from "@/components/LocaleProvider";
+import { useIsNarrowScreen } from "@/lib/use-is-narrow-screen";
+import type { Messages } from "@/lib/i18n/messages";
 import {
   PenLine,
   Calendar as CalendarIcon,
   Type,
+  User,
   Loader2,
   Send,
   Trash2,
@@ -43,7 +47,7 @@ import type {
   RecipientSummary,
 } from "@/lib/sign/types";
 
-type FieldType = "SIGNATURE" | "INITIALS" | "DATE" | "TEXT";
+type FieldType = "SIGNATURE" | "INITIALS" | "DATE" | "TEXT" | "NAME";
 
 type EditorField = {
   id: number | null; // null = pending, not yet persisted
@@ -79,6 +83,32 @@ type DragState = {
 const FIELD_MIN_WIDTH = 4; // % of page
 const FIELD_MIN_HEIGHT = 2; // % of page
 
+/** After `saveRecipients` / before field persist: map placeholder ids (-1,…) and fix stale positive ids when Documenso recreated recipients. */
+function remapFieldRecipientsAfterSave(
+  flds: EditorField[],
+  recList: DraftRecipient[],
+  fresh: RecipientSummary[],
+): EditorField[] {
+  const emailToId = new Map(
+    fresh.map((r) => [r.email.trim().toLowerCase(), r.id]),
+  );
+  const validIds = new Set(fresh.map((r) => r.id));
+  return flds.map((f) => {
+    if (f.recipientId > 0) {
+      if (validIds.has(f.recipientId)) return f;
+      const staleRec = recList.find((r) => r.id === f.recipientId);
+      if (!staleRec?.email) return f;
+      const id = emailToId.get(staleRec.email.trim().toLowerCase());
+      return id != null ? { ...f, recipientId: id } : f;
+    }
+    const idx = -f.recipientId - 1;
+    const rec = recList[idx];
+    if (!rec?.email) return f;
+    const id = emailToId.get(rec.email.trim().toLowerCase());
+    return id != null ? { ...f, recipientId: id } : f;
+  });
+}
+
 function clampField(f: EditorField): EditorField {
   const w = Math.max(FIELD_MIN_WIDTH, Math.min(100, f.pageWidth));
   const h = Math.max(FIELD_MIN_HEIGHT, Math.min(100, f.pageHeight));
@@ -96,47 +126,61 @@ type DraftRecipient = {
   signingOrder: number | null;
 };
 
-const FIELD_PALETTE: Array<{
+type PaletteEntry = {
   type: FieldType;
   label: string;
   hint: string;
   icon: typeof PenLine;
-  defaultWidth: number; // % of page width
-  defaultHeight: number; // % of page height
-}> = [
-  {
-    type: "SIGNATURE",
-    label: "Signatur",
-    hint: "Unterschrift des Empfängers",
-    icon: PenLine,
-    defaultWidth: 30,
-    defaultHeight: 6,
-  },
-  {
-    type: "INITIALS",
-    label: "Initialen",
-    hint: "Kurzkennung an mehreren Stellen",
-    icon: AlignStartHorizontal,
-    defaultWidth: 8,
-    defaultHeight: 4,
-  },
-  {
-    type: "DATE",
-    label: "Datum",
-    hint: "Wird automatisch beim Unterschreiben gefüllt",
-    icon: CalendarIcon,
-    defaultWidth: 18,
-    defaultHeight: 4,
-  },
-  {
-    type: "TEXT",
-    label: "Text",
-    hint: "Frei beschreibbares Feld",
-    icon: Type,
-    defaultWidth: 22,
-    defaultHeight: 4,
-  },
-];
+  defaultWidth: number;
+  defaultHeight: number;
+};
+
+function buildFieldPalette(
+  t: (key: keyof Messages, fallback?: string) => string,
+): PaletteEntry[] {
+  return [
+    {
+      type: "SIGNATURE",
+      label: t("sign.editor.field.signature"),
+      hint: t("sign.editor.field.hint.signature"),
+      icon: PenLine,
+      defaultWidth: 30,
+      defaultHeight: 6,
+    },
+    {
+      type: "INITIALS",
+      label: t("sign.editor.field.initials"),
+      hint: t("sign.editor.field.hint.initials"),
+      icon: AlignStartHorizontal,
+      defaultWidth: 8,
+      defaultHeight: 4,
+    },
+    {
+      type: "DATE",
+      label: t("sign.editor.field.date"),
+      hint: t("sign.editor.field.hint.date"),
+      icon: CalendarIcon,
+      defaultWidth: 18,
+      defaultHeight: 4,
+    },
+    {
+      type: "TEXT",
+      label: t("sign.editor.field.text"),
+      hint: t("sign.editor.field.hint.text"),
+      icon: Type,
+      defaultWidth: 22,
+      defaultHeight: 4,
+    },
+    {
+      type: "NAME",
+      label: t("sign.editor.field.name"),
+      hint: t("sign.editor.field.hint.name"),
+      icon: User,
+      defaultWidth: 28,
+      defaultHeight: 4,
+    },
+  ];
+}
 
 const RECIPIENT_COLORS = [
   "#3b82f6",
@@ -165,6 +209,9 @@ export function FieldEditor({
   onClose: () => void;
   onSent: () => void;
 }) {
+  const { t } = useLocale();
+  const isNarrowScreen = useIsNarrowScreen();
+  const fieldPalette = useMemo(() => buildFieldPalette(t), [t]);
   const [recipients, setRecipients] = useState<DraftRecipient[]>(() =>
     (doc.recipients ?? []).map((r) => ({
       id: r.id,
@@ -214,7 +261,13 @@ export function FieldEditor({
         const r = await fetch(apiUrl(`/api/sign/document/${doc.id}/pdf`), {
           cache: "no-store",
         });
-        if (!r.ok) throw new Error(`PDF-Download fehlgeschlagen (${r.status})`);
+        if (!r.ok)
+          throw new Error(
+            t("sign.editor.pdfDownloadFailed").replace(
+              "{status}",
+              String(r.status),
+            ),
+          );
         const buf = await r.arrayBuffer();
         if (cancelled) return;
         setPdfBytes(buf);
@@ -226,7 +279,7 @@ export function FieldEditor({
     return () => {
       cancelled = true;
     };
-  }, [apiUrl, doc.id]);
+  }, [apiUrl, doc.id, t]);
 
   // Load existing fields so the editor starts populated.
   useEffect(() => {
@@ -291,7 +344,10 @@ export function FieldEditor({
     if (
       target.id != null &&
       !confirm(
-        `Empfänger „${target.name || target.email}" und alle zugewiesenen Felder entfernen?`,
+        t("sign.editor.confirm.removeRecipient").replace(
+          "{name}",
+          target.name || target.email,
+        ),
       )
     ) {
       return;
@@ -321,6 +377,10 @@ export function FieldEditor({
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       const fresh = (j.recipients ?? []) as RecipientSummary[];
+      const validIds = new Set(fresh.map((x) => x.id));
+      const emailToFreshId = new Map(
+        fresh.map((x) => [x.email.trim().toLowerCase(), x.id]),
+      );
       // Re-key our drafts to the canonical Documenso IDs (matched by email).
       setRecipients((prev) =>
         prev.map((rec) => {
@@ -337,11 +397,16 @@ export function FieldEditor({
             : rec;
         }),
       );
-      // Re-key pending fields too — fields placed before recipient save have
-      // negative placeholder recipientIds (-(idx+1)) that we now resolve.
+      // Re-key fields: placeholders (-1,…) and stale positive ids after recipient recreate.
       setFields((prev) =>
         prev.map((f) => {
-          if (f.recipientId > 0) return f;
+          if (f.recipientId > 0) {
+            if (validIds.has(f.recipientId)) return f;
+            const staleRec = recipients.find((r) => r.id === f.recipientId);
+            if (!staleRec?.email) return f;
+            const nid = emailToFreshId.get(staleRec.email.trim().toLowerCase());
+            return nid != null ? { ...f, recipientId: nid } : f;
+          }
           const idx = -f.recipientId - 1;
           const real = recipients[idx];
           if (!real?.email) return f;
@@ -371,7 +436,7 @@ export function FieldEditor({
     const rect = pageRef.current.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * 100;
     const y = ((clientY - rect.top) / rect.height) * 100;
-    const palette = FIELD_PALETTE.find((p) => p.type === type)!;
+    const palette = fieldPalette.find((p) => p.type === type)!;
     // Center the field on the cursor.
     const px = Math.max(0, Math.min(100 - palette.defaultWidth, x - palette.defaultWidth / 2));
     const py = Math.max(0, Math.min(100 - palette.defaultHeight, y - palette.defaultHeight / 2));
@@ -464,11 +529,12 @@ export function FieldEditor({
       const oldId = f.id;
       try {
         // Delete the old persisted field, then re-create at the new geometry.
-        await fetch(
+        const del = await fetch(
           apiUrl(`/api/sign/document/${doc.id}/fields`) +
             `&fieldId=${encodeURIComponent(oldId)}`,
           { method: "DELETE" },
         );
+        if (!del.ok) return;
         const r = await fetch(apiUrl(`/api/sign/document/${doc.id}/fields`), {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -488,8 +554,12 @@ export function FieldEditor({
           }),
         });
         if (!r.ok) return;
-        const j = (await r.json()) as { fields?: EditorField[] };
-        const fresh = j.fields ?? [];
+        const r2 = await fetch(apiUrl(`/api/sign/document/${doc.id}/fields`), {
+          cache: "no-store",
+        });
+        const j2 = (await r2.json()) as { fields?: EditorField[] };
+        if (!r2.ok) return;
+        const freshList = j2.fields ?? [];
         // Documenso returns the full field set; pick the newly minted one
         // for this field's slot by matching geometry and dropping any id we
         // already track locally.
@@ -498,7 +568,7 @@ export function FieldEditor({
             .map((x) => x.id)
             .filter((x): x is number => x != null && x !== oldId),
         );
-        const candidate = fresh
+        const candidate = freshList
           .filter(
             (x) =>
               x.id != null &&
@@ -520,7 +590,7 @@ export function FieldEditor({
           );
         }
       } catch {
-        // Network hiccup; user can hit Senden later to re-sync everything.
+        // Network hiccup; user can send again later to re-sync everything.
       }
     },
     [apiUrl, doc.id],
@@ -659,8 +729,9 @@ export function FieldEditor({
 
   /* ── Save fields + send ─────────────────────────────────────────── */
 
-  async function persistFields(): Promise<void> {
-    const pending = fields.filter((f) => f.id == null && f.recipientId > 0);
+  async function persistFields(fieldSource?: EditorField[]): Promise<void> {
+    const src = fieldSource ?? fields;
+    const pending = src.filter((f) => f.id == null && f.recipientId > 0);
     if (pending.length === 0) return;
     setSaving("fields");
     try {
@@ -680,11 +751,13 @@ export function FieldEditor({
           })),
         }),
       });
-      const j = await r.json();
+      const j = (await r.json()) as { fields?: EditorField[]; error?: string };
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-      setFields(
-        (j.fields ?? []) as Array<EditorField & { id: number }>,
-      );
+      const fresh = j.fields ?? [];
+      if (pending.length > 0 && fresh.length === 0) {
+        throw new Error(t("sign.editor.persistEmpty"));
+      }
+      setFields(fresh);
     } finally {
       setSaving(null);
     }
@@ -693,32 +766,44 @@ export function FieldEditor({
   async function send() {
     // Validate required state.
     if (recipients.length === 0) {
-      alert("Mindestens ein Empfänger nötig.");
+      alert(t("sign.editor.alert.needRecipient"));
       return;
     }
     if (recipients.some((r) => !r.email || !r.email.includes("@"))) {
-      alert("Jeder Empfänger braucht eine gültige E-Mail.");
+      alert(t("sign.editor.alert.validEmail"));
       return;
     }
     const signers = recipients.filter((r) => r.role === "SIGNER");
-    const fieldsBySigner = new Set(
-      fields.map((f) => f.recipientId).filter((id) => id > 0),
-    );
-    const signersWithoutFields = signers.filter(
-      (s) => s.id != null && !fieldsBySigner.has(s.id),
-    );
-    if (signersWithoutFields.length > 0) {
-      const ok = confirm(
-        `Achtung: ${signersWithoutFields.length} Empfänger haben noch kein Feld (z.B. Signatur). Trotzdem senden?`,
+    const missingSignature = signers.filter((s, idx) => {
+      const rid = s.id == null ? -(idx + 1) : s.id;
+      return !fields.some(
+        (f) => f.recipientId === rid && f.type === "SIGNATURE",
       );
-      if (!ok) return;
+    });
+    if (missingSignature.length > 0) {
+      alert(
+        `${t("sign.editor.missingSigIntro")} ${missingSignature.map((r) => r.name || r.email).join(", ")}`,
+      );
+      return;
     }
     setSaving("send");
     try {
-      // 1) Sync recipients (idempotent).
-      await saveRecipients();
-      // 2) Persist any pending fields.
-      await persistFields();
+      // 1) Sync recipients (idempotent) — must run before persisting fields
+      //    so placeholder recipientIds (-1, -2, …) resolve to Documenso IDs.
+      const freshRecipients = await saveRecipients();
+      const fieldsMapped = remapFieldRecipientsAfterSave(
+        fields,
+        recipients,
+        freshRecipients,
+      );
+      const orphan = fieldsMapped.filter(
+        (f) => f.id == null && f.recipientId <= 0,
+      );
+      if (orphan.length > 0) {
+        throw new Error(t("sign.editor.alert.fieldRecipientMismatch"));
+      }
+      // 2) Persist any pending fields (uses remapped ids — avoids stale React state).
+      await persistFields(fieldsMapped);
       // 3) Distribute (this is the "Versand-Workflow").
       const r = await fetch(apiUrl(`/api/sign/document/${doc.id}`), {
         method: "POST",
@@ -729,7 +814,9 @@ export function FieldEditor({
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       onSent();
     } catch (e) {
-      alert(`Senden fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      alert(
+        `${t("sign.editor.sendFailed")}: ${e instanceof Error ? e.message : e}`,
+      );
     } finally {
       setSaving(null);
     }
@@ -739,6 +826,14 @@ export function FieldEditor({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex flex-col">
+      {isNarrowScreen && (
+        <div
+          className="shrink-0 px-3 py-2 text-[11.5px] text-amber-200 bg-amber-950/60 border-b border-amber-800/50"
+          role="alert"
+        >
+          {t("sign.editor.mobileHint")}
+        </div>
+      )}
       {/* Top bar */}
       <div
         className="h-14 shrink-0 px-4 flex items-center gap-3 border-b border-stroke-1 bg-bg-elevated"
@@ -755,8 +850,20 @@ export function FieldEditor({
             {doc.title}
           </h1>
           <p className="text-[11px] text-text-tertiary mt-0.5">
-            Felder platzieren · {fields.length} Feld
-            {fields.length === 1 ? "" : "er"} · {recipients.length} Empfänger
+            {t("sign.editor.placeFieldsLead")} ·{" "}
+            {fields.length === 1
+              ? t("sign.editor.fieldsCountOne")
+              : t("sign.editor.fieldsCountMany").replace(
+                  "{n}",
+                  String(fields.length),
+                )}{" "}
+            ·{" "}
+            {recipients.length === 1
+              ? t("sign.editor.recipientsCountOne")
+              : t("sign.editor.recipientsCountMany").replace(
+                  "{n}",
+                  String(recipients.length),
+                )}
           </p>
         </div>
         <button
@@ -770,7 +877,7 @@ export function FieldEditor({
           ) : (
             <CheckCircle2 size={12} />
           )}
-          Empfänger speichern
+          {t("sign.editor.recipientSave")}
         </button>
         <button
           type="button"
@@ -784,13 +891,13 @@ export function FieldEditor({
           ) : (
             <Send size={12} />
           )}
-          {doc.status === "DRAFT" ? "Senden" : "Erneut senden"}
+          {doc.status === "DRAFT" ? t("sign.editor.send") : t("sign.editor.resend")}
         </button>
         <button
           type="button"
           onClick={onClose}
           className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary"
-          aria-label="Schließen"
+          aria-label={t("common.close")}
         >
           <X size={16} />
         </button>
@@ -802,13 +909,13 @@ export function FieldEditor({
         <aside className="w-72 shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col">
           <div className="px-3 py-2 border-b border-stroke-1 flex items-center gap-2">
             <h2 className="text-[11.5px] uppercase tracking-wide text-text-tertiary font-semibold">
-              Empfänger
+              {t("sign.editor.recipientsHeading")}
             </h2>
             <button
               type="button"
               onClick={addRecipient}
               className="ml-auto p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Empfänger hinzufügen"
+              title={t("sign.editor.addRecipientTitle")}
             >
               <Plus size={13} />
             </button>
@@ -816,7 +923,7 @@ export function FieldEditor({
           <div className="flex-1 min-h-0 overflow-auto p-2 space-y-1.5">
             {recipients.length === 0 && (
               <p className="text-[11.5px] text-text-tertiary text-center mt-4">
-                Noch keine Empfänger. „+" klicken oder direkt unten ergänzen.
+                {t("sign.editor.noRecipients")}
               </p>
             )}
             {recipients.map((r, i) => {
@@ -839,7 +946,7 @@ export function FieldEditor({
                     />
                     <input
                       className="input flex-1 text-[12px] py-1 px-1.5"
-                      placeholder="Name"
+                      placeholder={t("sign.editor.placeholder.name")}
                       value={r.name}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) =>
@@ -853,14 +960,14 @@ export function FieldEditor({
                         removeRecipient(i);
                       }}
                       className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-red-400"
-                      title="Entfernen"
+                      title={t("sign.editor.removeRecipientTitle")}
                     >
                       <Trash2 size={11} />
                     </button>
                   </div>
                   <input
                     className="input mt-1 text-[11.5px] py-1 px-1.5 w-full"
-                    placeholder="E-Mail"
+                    placeholder={t("sign.editor.placeholder.email")}
                     value={r.email}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) =>
@@ -878,10 +985,12 @@ export function FieldEditor({
                         })
                       }
                     >
-                      <option value="SIGNER">Signiert</option>
-                      <option value="APPROVER">Bestätigt</option>
-                      <option value="VIEWER">Liest mit</option>
-                      <option value="CC">CC</option>
+                      <option value="SIGNER">{t("sign.editor.roleOption.signer")}</option>
+                      <option value="APPROVER">
+                        {t("sign.editor.role.approver")}
+                      </option>
+                      <option value="VIEWER">{t("sign.editor.roleOption.viewer")}</option>
+                      <option value="CC">{t("sign.role.CC")}</option>
                     </select>
                     <input
                       type="number"
@@ -889,7 +998,7 @@ export function FieldEditor({
                       placeholder="#"
                       className="input w-12 text-[11px] py-0.5 px-1 text-center tabular-nums"
                       value={r.signingOrder ?? ""}
-                      title="Reihenfolge"
+                      title={t("sign.editor.orderTitle")}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) =>
                         patchRecipient(i, {
@@ -901,11 +1010,18 @@ export function FieldEditor({
                     />
                   </div>
                   <div className="mt-1 text-[10.5px] text-text-quaternary">
-                    {fields.filter((f) => {
-                      if (r.id != null) return f.recipientId === r.id;
-                      return f.recipientId === -(i + 1);
-                    }).length}{" "}
-                    Feld(er)
+                    {(() => {
+                      const n = fields.filter((f) => {
+                        if (r.id != null) return f.recipientId === r.id;
+                        return f.recipientId === -(i + 1);
+                      }).length;
+                      return n === 1
+                        ? t("sign.editor.fieldsCountOne")
+                        : t("sign.editor.fieldsCountMany").replace(
+                            "{n}",
+                            String(n),
+                          );
+                    })()}
                   </div>
                 </div>
               );
@@ -929,7 +1045,9 @@ export function FieldEditor({
               <ChevronLeft size={14} />
             </button>
             <span className="text-[11.5px] text-text-secondary tabular-nums">
-              Seite {pageIdx + 1} / {pageCount || "?"}
+              {t("sign.editor.pageIndicator")
+                .replace("{current}", String(pageIdx + 1))
+                .replace("{total}", String(pageCount || "?"))}
             </span>
             <button
               type="button"
@@ -942,8 +1060,7 @@ export function FieldEditor({
               <ChevronRight size={14} />
             </button>
             <span className="ml-auto text-[10.5px] text-text-tertiary">
-              Drag-Drop platzieren · Feld anklicken zum Verschieben/Resize ·
-              Pfeiltasten = nudge · Entf = löschen
+              {t("sign.editor.toolbarHints")} {t("sign.editor.shortcuts")}
             </span>
           </div>
 
@@ -989,8 +1106,8 @@ export function FieldEditor({
                       const c =
                         recIdx >= 0 ? colorFor(recIdx) : "#888";
                       const palette =
-                        FIELD_PALETTE.find((p) => p.type === f.type) ??
-                        FIELD_PALETTE[0];
+                        fieldPalette.find((p) => p.type === f.type) ??
+                        fieldPalette[0];
                       const Icon = palette.icon;
                       const globalIdx = fields.indexOf(f);
                       const selected = selectedFieldIdx === globalIdx;
@@ -1039,7 +1156,14 @@ export function FieldEditor({
                               : undefined,
                             zIndex: selected ? 5 : 1,
                           }}
-                          title={`${palette.label} · ${recipients[recIdx]?.name || "—"} (Drag zum Verschieben, Pfeiltasten zum Feinen)`}
+                          title={t("sign.editor.fieldOverlayTitle")
+                            .replace("{label}", palette.label)
+                            .replace(
+                              "{name}",
+                              recipients[recIdx]?.name ||
+                                recipients[recIdx]?.email ||
+                                "—",
+                            )}
                         >
                           <Icon size={11} className="mr-1 opacity-80 pointer-events-none" />
                           <span className="truncate pointer-events-none">{palette.label}</span>
@@ -1051,7 +1175,7 @@ export function FieldEditor({
                               removeField(globalIdx);
                             }}
                             className={`absolute -top-2 -right-2 w-4 h-4 rounded-full bg-bg-base border border-stroke-1 text-text-tertiary hover:text-red-400 transition flex items-center justify-center ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                            aria-label="Feld entfernen"
+                            aria-label={t("sign.editor.removeFieldAria")}
                           >
                             <X size={9} />
                           </button>
@@ -1083,7 +1207,7 @@ export function FieldEditor({
             {loading && !pdfError && (
               <div className="self-center text-text-tertiary inline-flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" />
-                <span className="text-[12px]">PDF wird geladen…</span>
+                <span className="text-[12px]">{t("sign.editor.loadingPdf")}</span>
               </div>
             )}
           </div>
@@ -1093,11 +1217,11 @@ export function FieldEditor({
         <aside className="w-60 shrink-0 border-l border-stroke-1 bg-bg-chrome flex flex-col">
           <div className="px-3 py-2 border-b border-stroke-1">
             <h2 className="text-[11.5px] uppercase tracking-wide text-text-tertiary font-semibold">
-              Felder
+              {t("sign.editor.trayHeading")}
             </h2>
             <p className="text-[10.5px] text-text-quaternary mt-0.5 leading-snug">
-              In das Dokument ziehen oder klicken &amp; auf Seite klicken.
-              Aktiv für:
+              {t("sign.editor.trayHint")}{" "}
+              {t("sign.editor.activeFor")}
               <span
                 className="ml-1 font-medium"
                 style={{ color: activeColor }}
@@ -1107,7 +1231,7 @@ export function FieldEditor({
             </p>
           </div>
           <div className="flex-1 min-h-0 overflow-auto p-2 space-y-2">
-            {FIELD_PALETTE.map((p) => {
+            {fieldPalette.map((p) => {
               const Icon = p.icon;
               const dragSelected = draggingType === p.type;
               return (
@@ -1154,15 +1278,13 @@ export function FieldEditor({
                   background: `${activeColor}10`,
                 }}
               >
-                Klick auf das PDF, um zu platzieren
+                {t("sign.editor.placeOnPdf")}
               </div>
             )}
           </div>
           <div className="border-t border-stroke-1 p-2.5 text-[10.5px] text-text-quaternary leading-snug">
-            <strong>Versand-Workflow:</strong> Beim Klick auf „Senden"
-            speichern wir Empfänger, persistieren noch nicht gespeicherte
-            Felder und verteilen das Dokument per Documenso-API
-            (Empfänger-Mails inkl. Signaturlink).
+            <strong>{t("sign.editor.workflowStrong")}</strong>{" "}
+            {t("sign.editor.workflowBody")}
           </div>
         </aside>
       </div>

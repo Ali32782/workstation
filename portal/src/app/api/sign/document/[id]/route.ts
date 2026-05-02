@@ -3,9 +3,11 @@ import {
   deleteDocument,
   distributeDocument,
   getDocument,
+  listFields,
   redistributeDocument,
   repeatDocument,
 } from "@/lib/sign/documenso";
+import { draftSignatureCoveragePreflight } from "@/lib/sign/draft-preflight";
 import {
   workspaceIdOrNull,
   deletePortalAnnotations,
@@ -75,11 +77,29 @@ export async function GET(
     const owners = await getPortalPrivateOwners(g.session.workspace);
     const portalPrivate = owners.has(id);
     const uploader = await getPortalUploader(g.session.workspace, id);
+
+    let draftSendPreflight: { ok: boolean; missingSignatureFor: string[] } | undefined;
+    if (document.status === "DRAFT") {
+      try {
+        const fields = await listFields(g.session.tenant, id);
+        draftSendPreflight = draftSignatureCoveragePreflight(
+          document.recipients,
+          fields,
+        );
+      } catch {
+        draftSendPreflight = {
+          ok: false,
+          missingSignatureFor: [],
+        };
+      }
+    }
+
     return NextResponse.json({
       document: {
         ...document,
         portalPrivate,
         uploadedViaPortal: Boolean(uploader),
+        draftSendPreflight,
       },
     });
   } catch (e) {
@@ -216,17 +236,77 @@ export async function POST(
     }
 
     if (body.action === "send") {
+      const doc = await getDocument(g.session.tenant, id);
+      if (doc.status !== "DRAFT") {
+        return NextResponse.json(
+          { error: "Versand nur für Entwürfe möglich." },
+          { status: 400 },
+        );
+      }
+      const fields = await listFields(g.session.tenant, id);
+      const pre = draftSignatureCoveragePreflight(doc.recipients, fields);
+      if (!pre.ok) {
+        return NextResponse.json(
+          {
+            error:
+              `Bei Documenso fehlen noch Signatur-Felder auf dem PDF für: ${pre.missingSignatureFor.join(", ")}. ` +
+              `Öffne „Felder & Empfänger im Editor“, platziere mindestens ein „Signatur“-Feld pro Unterzeichner, ` +
+              `speichere (Senden im Editor), oder versuche danach erneut „Direkt senden“.`,
+            code: "missing_signature_fields",
+            missingSignatureFor: pre.missingSignatureFor,
+          },
+          { status: 400 },
+        );
+      }
       await distributeDocument(g.session.tenant, id, meta);
       return NextResponse.json({ ok: true });
     }
     if (body.action === "remind") {
-      await redistributeDocument(
-        g.session.tenant,
-        id,
-        body.recipients,
-        meta,
-      );
-      return NextResponse.json({ ok: true, recipients: body.recipients ?? null });
+      const doc = await getDocument(g.session.tenant, id);
+      if (doc.status !== "PENDING") {
+        return NextResponse.json(
+          {
+            error:
+              "Erinnerungen sind nur möglich, solange das Dokument auf Unterschrift wartet (Status „Ausstehend“).",
+          },
+          { status: 400 },
+        );
+      }
+      const pendingIds = doc.recipients
+        .filter(
+          (r) =>
+            r.signingStatus === "NOT_SIGNED" &&
+            r.role !== "CC" &&
+            r.role !== "VIEWER",
+        )
+        .map((r) => r.id);
+      let ids: number[];
+      if (body.recipients?.length) {
+        const allowed = new Set(pendingIds);
+        ids = body.recipients.filter((rid) => allowed.has(rid));
+        if (ids.length === 0) {
+          return NextResponse.json(
+            {
+              error:
+                "Keine der gewählten Empfänger ist noch ausstehend — Erinnerung nicht möglich.",
+            },
+            { status: 400 },
+          );
+        }
+      } else {
+        ids = pendingIds;
+      }
+      if (ids.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Keine ausstehenden Unterzeichner — es gibt niemanden, den wir erinnern können.",
+          },
+          { status: 400 },
+        );
+      }
+      await redistributeDocument(g.session.tenant, id, ids, meta);
+      return NextResponse.json({ ok: true, recipients: ids });
     }
     if (body.action === "repeat") {
       const out = await repeatDocument(g.session.tenant, id);

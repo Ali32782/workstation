@@ -34,6 +34,7 @@ import {
   Settings as SettingsIcon,
   Lock,
   Download,
+  Copy,
 } from "lucide-react";
 import { FieldEditor } from "./FieldEditor";
 import {
@@ -49,6 +50,7 @@ import type {
   DocumentDetail,
   DocumentSummary,
   RecipientSummary,
+  SignSendStatus,
   SignSigningStatus,
   SignStatus,
   SignTotals,
@@ -57,10 +59,9 @@ import {
   formatSignExternalIdForCompany,
   parseCompanyIdFromSignExternalId,
   signArchivePdfFilename,
-  signSalesNextStepDe,
 } from "@/lib/sign/sales-flow";
-import { useT } from "@/components/LocaleProvider";
-import type { Messages } from "@/lib/i18n/messages";
+import { useLocale } from "@/components/LocaleProvider";
+import type { Locale, Messages } from "@/lib/i18n/messages";
 
 const STATUS_FILTERS: ReadonlyArray<{
   id: SignStatus | "ALL";
@@ -104,15 +105,27 @@ function statusTone(s: SignStatus): StatusTone {
   }
 }
 
-function signingStatusLabel(s: SignSigningStatus): string {
+function signingStatusLabel(
+  s: SignSigningStatus,
+  t: (k: keyof Messages, fallback?: string) => string,
+): string {
   switch (s) {
     case "NOT_SIGNED":
-      return "Ausstehend";
+      return t("sign.signingStatus.pending");
     case "SIGNED":
-      return "Unterzeichnet";
+      return t("sign.signingStatus.signed");
     case "REJECTED":
-      return "Abgelehnt";
+      return t("sign.signingStatus.rejected");
   }
+}
+
+function sendStatusLabel(
+  s: SignSendStatus,
+  t: (k: keyof Messages, fallback?: string) => string,
+): string {
+  return s === "SENT"
+    ? t("sign.emailStatus.sent")
+    : t("sign.emailStatus.notSent");
 }
 
 function signingStatusTone(s: SignSigningStatus): StatusTone {
@@ -126,27 +139,74 @@ function signingStatusTone(s: SignSigningStatus): StatusTone {
   }
 }
 
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return "gerade eben";
-  if (diff < 3600) return `vor ${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} h`;
-  if (diff < 86400 * 7) return `vor ${Math.floor(diff / 86400)} d`;
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "numeric",
-    month: "short",
-  });
+function sendStatusTone(s: SignSendStatus): StatusTone {
+  return s === "SENT" ? "muted" : "warn";
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatRelativeIso(
+  iso: string,
+  locale: Locale,
+  t: (k: keyof Messages, fallback?: string) => string,
+): string {
+  const time = new Date(iso).getTime();
+  const diff = (Date.now() - time) / 1000;
+  if (diff < 60) return t("sign.time.justNow");
+  if (diff < 3600)
+    return t("sign.time.minsAgo").replace(
+      "{n}",
+      String(Math.floor(diff / 60)),
+    );
+  if (diff < 86400)
+    return t("sign.time.hoursAgo").replace(
+      "{n}",
+      String(Math.floor(diff / 3600)),
+    );
+  if (diff < 86400 * 7)
+    return t("sign.time.daysAgo").replace(
+      "{n}",
+      String(Math.floor(diff / 86400)),
+    );
+  return new Date(iso).toLocaleDateString(
+    locale === "en" ? "en-US" : "de-DE",
+    { day: "numeric", month: "short" },
+  );
+}
+
+function formatDateIso(iso: string, locale: Locale): string {
+  return new Date(iso).toLocaleDateString(
+    locale === "en" ? "en-US" : "de-DE",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  );
+}
+
+function salesNextForLocale(
+  status: SignStatus,
+  t: (k: keyof Messages, fallback?: string) => string,
+): string {
+  switch (status) {
+    case "DRAFT":
+      return t("sign.sales.nextDraft");
+    case "PENDING":
+      return t("sign.sales.nextPending");
+    case "COMPLETED":
+      return t("sign.sales.nextCompleted");
+    case "REJECTED":
+      return t("sign.sales.nextRejected");
+  }
+}
+
+function recipientRoleUpper(
+  role: RecipientSummary["role"],
+  t: (k: keyof Messages, fallback?: string) => string,
+): string {
+  const key = `sign.role.${role}` as keyof Messages;
+  return t(key);
 }
 
 export function SignClient({
@@ -175,7 +235,7 @@ export function SignClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState<string | null>(null);
-  const t = useT();
+  const { locale, t } = useLocale();
   const [filter, setFilter] = useState<SignStatus | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [totals, setTotals] = useState<SignTotals | null>(null);
@@ -184,6 +244,8 @@ export function SignClient({
   const [detail, setDetail] = useState<DocumentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  /** Abgelaufene Detail-Fetches dürfen keinen State überschreiben (schnelles Wechseln in der Liste). */
+  const detailFetchGen = useRef(0);
   const [acting, setActing] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
 
@@ -232,7 +294,7 @@ export function SignClient({
       );
       const j = await r.json();
       if (r.status === 503 && j.code === "not_configured") {
-        setNotConfigured(j.error ?? "Sign ist für diesen Workspace nicht eingerichtet.");
+        setNotConfigured(j.error ?? t("sign.notConfiguredDefault"));
         setDocs([]);
         return;
       }
@@ -244,26 +306,45 @@ export function SignClient({
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, filter, search]);
+  }, [apiUrl, filter, search, t]);
 
   const loadDetail = useCallback(
     async (id: number) => {
+      const gen = ++detailFetchGen.current;
       setDetailLoading(true);
       setDetailError(null);
       try {
         const r = await fetch(apiUrl(`/api/sign/document/${id}`), {
           cache: "no-store",
         });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-        setDetail(j.document);
+        const j = (await r.json()) as {
+          document?: DocumentDetail;
+          error?: string;
+        };
+        if (gen !== detailFetchGen.current) return;
+        if (!r.ok) {
+          if (r.status === 404) {
+            setSelectedId(null);
+            setDetail(null);
+          }
+          throw new Error(j.error ?? `HTTP ${r.status}`);
+        }
+        const doc = j.document;
+        if (!doc || doc.id !== id) {
+          throw new Error(j.error ?? t("sign.error.invalidResponse"));
+        }
+        setDetail(doc);
       } catch (e) {
+        if (gen !== detailFetchGen.current) return;
+        setDetail(null);
         setDetailError(e instanceof Error ? e.message : String(e));
       } finally {
-        setDetailLoading(false);
+        if (gen === detailFetchGen.current) {
+          setDetailLoading(false);
+        }
       }
     },
-    [apiUrl],
+    [apiUrl, t],
   );
 
   useEffect(() => {
@@ -346,12 +427,12 @@ export function SignClient({
           await Promise.all([loadDocs(), loadDetail(detail.id)]);
         }
       } catch (e) {
-        alert(`Aktion fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("sign.actionFailed")}: ${e instanceof Error ? e.message : e}`);
       } finally {
         setActing(null);
       }
     },
-    [detail, apiUrl, loadDocs, loadDetail],
+    [detail, apiUrl, loadDocs, loadDetail, t],
   );
 
   const setPortalListingScope = useCallback(
@@ -369,7 +450,7 @@ export function SignClient({
         await Promise.all([loadDocs(), loadDetail(detail.id)]);
       } catch (e) {
         alert(
-          `Sichtbarkeit konnte nicht geändert werden: ${
+          `${t("sign.visibilityChangeFailed")}: ${
             e instanceof Error ? e.message : e
           }`,
         );
@@ -377,12 +458,13 @@ export function SignClient({
         setActing(null);
       }
     },
-    [detail, apiUrl, loadDocs, loadDetail],
+    [detail, apiUrl, loadDocs, loadDetail, t],
   );
 
   const onDelete = useCallback(async () => {
     if (!detail) return;
-    if (!confirm(`„${detail.title}“ wirklich löschen?`)) return;
+    if (!confirm(t("sign.deleteConfirm").replace("{title}", detail.title)))
+      return;
     setActing("delete");
     try {
       const r = await fetch(apiUrl(`/api/sign/document/${detail.id}`), {
@@ -396,11 +478,11 @@ export function SignClient({
       setDetail(null);
       await loadDocs();
     } catch (e) {
-      alert(`Löschen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      alert(`${t("sign.deleteFailed")}: ${e instanceof Error ? e.message : e}`);
     } finally {
       setActing(null);
     }
-  }, [detail, apiUrl, loadDocs]);
+  }, [detail, apiUrl, loadDocs, t]);
 
   /* ── Upload (with auto-PDF-conversion for non-PDF files) ─────── */
 
@@ -436,8 +518,8 @@ export function SignClient({
 
         setUploadInfo(
           j.converted
-            ? `„${f.name}“ wurde nach PDF konvertiert und hochgeladen. Empfänger und Felder im Editor zuordnen.`
-            : `„${f.name}“ wurde hochgeladen. Empfänger und Felder im Editor zuordnen.`,
+            ? t("sign.upload.convertedNamed").replace("{name}", f.name)
+            : t("sign.upload.plainNamed").replace("{name}", f.name),
         );
         await loadDocs();
         setSelectedId(docId);
@@ -449,15 +531,17 @@ export function SignClient({
         setUploading(false);
       }
     },
-    [apiUrl, loadDocs, uploadListingForTeam, uploadExternalId],
+    [apiUrl, loadDocs, uploadListingForTeam, uploadExternalId, t],
   );
 
   const documensoOpenUrl = useMemo(() => {
-    if (detail?.teamUrl) {
-      return `${documensoUrl}/t/${detail.teamUrl}/documents/${detail.id}`;
+    if (!detail) return `${documensoUrl}/documents`;
+    const slug = detail.envelopeId?.trim() || String(detail.id);
+    const enc = encodeURIComponent(slug);
+    if (detail.teamUrl) {
+      return `${documensoUrl}/t/${detail.teamUrl}/documents/${enc}`;
     }
-    if (detail) return `${documensoUrl}/documents/${detail.id}`;
-    return `${documensoUrl}/documents`;
+    return `${documensoUrl}/documents/${enc}`;
   }, [detail, documensoUrl]);
 
   /* ── Pane 1: Status-Filter ──────────────────────────────────── */
@@ -549,33 +633,39 @@ export function SignClient({
       <details className="shrink-0 border-t border-stroke-1 px-3 py-2 text-[10.5px] text-text-tertiary">
         <summary className="cursor-pointer text-text-secondary hover:text-text-primary list-none flex items-center gap-1.5">
           <CornerUpRight size={12} className="shrink-0 opacity-70" />
-          Vertriebsablauf (Kurz)
+          {t("sign.salesFlow.title")}
         </summary>
         <ul className="mt-2 space-y-1.5 pl-1 leading-snug border-l border-stroke-1 ml-0.5 pl-3">
           <li>
-            <span className="text-text-secondary font-medium">1. Entwurf</span> — PDF
-            hochladen (oder aus Office exportieren). Felder &amp; Empfänger im Editor.
+            <span className="text-text-secondary font-medium">
+              {t("sign.salesFlow.step1Title")}
+            </span>{" "}
+            — {t("sign.salesFlow.step1Body")}
           </li>
           <li>
-            <span className="text-text-secondary font-medium">2. Zur Unterschrift</span>{" "}
-            — senden; Empfänger erhalten Documenso-Mail.
+            <span className="text-text-secondary font-medium">
+              {t("sign.salesFlow.step2Title")}
+            </span>{" "}
+            — {t("sign.salesFlow.step2Body")}
           </li>
           <li>
-            <span className="text-text-secondary font-medium">3. Erledigt</span> — PDF
-            archivieren (Documenso).
+            <span className="text-text-secondary font-medium">
+              {t("sign.salesFlow.step3Title")}
+            </span>{" "}
+            — {t("sign.salesFlow.step3Body")}
           </li>
         </ul>
       </details>
 
       {signLinkCompanyId?.trim() && (
         <div className="shrink-0 px-2 py-1.5 mx-1 mb-0.5 rounded-md border border-stroke-1 bg-bg-elevated/80 text-[10.5px] text-text-secondary leading-snug">
-          CRM-Verknüpfung aktiv: Upload landet mit Documenso-{" "}
+          {t("sign.crmLinkActive")}{" "}
           <code className="text-[10px] text-text-primary">externalId</code>.{" "}
           <Link
             href={`/${workspaceId}/crm/company/${encodeURIComponent(signLinkCompanyId.trim())}`}
             className="text-info hover:underline"
           >
-            Zum Company-Hub
+            {t("sign.companyHub")}
           </Link>
         </div>
       )}
@@ -589,8 +679,8 @@ export function SignClient({
             onChange={(e) => setUploadListingForTeam(e.target.checked)}
           />
           <span className="text-[10.5px] text-text-tertiary leading-snug">
-            Für das gesamte Team in dieser Sign-Liste sichtbar (sonst Standard:{" "}
-            <span className="text-text-secondary">nur für mich</span>)
+            {t("sign.upload.teamCheckbox")}{" "}
+            <span className="text-text-secondary">{t("sign.upload.onlyMe")}</span>)
           </span>
         </label>
         <input
@@ -606,14 +696,14 @@ export function SignClient({
           disabled={uploading}
           className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-white text-[11.5px] font-medium disabled:opacity-60"
           style={{ background: accent }}
-          title="PDF, DOCX, ODT, RTF, TXT u.v.m. — Nicht-PDFs werden automatisch konvertiert"
+          title={t("sign.upload.formatsTitle")}
         >
           {uploading ? (
             <Loader2 size={13} className="animate-spin" />
           ) : (
             <Upload size={13} />
           )}
-          {uploading ? "Wird hochgeladen…" : "Dokument hochladen"}
+          {uploading ? t("sign.upload.uploading") : t("sign.upload.documentButton")}
         </button>
         {documensoNativeUiEnabled && (
           <a
@@ -623,12 +713,12 @@ export function SignClient({
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[10.5px]"
           >
             <ExternalLink size={11} />
-            In Documenso verwalten
+            {t("sign.manageInDocumenso")}
           </a>
         )}
         <p className="text-[10px] text-text-quaternary text-center leading-snug flex items-center justify-center gap-1">
           <FileType2 size={10} />
-          Word, ODT &amp; mehr werden automatisch zu PDF
+          {t("sign.autoPdfFooter")}
         </p>
         {uploadError && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[10.5px] p-2 leading-snug">
@@ -658,7 +748,14 @@ export function SignClient({
           const tab = STATUS_FILTERS.find((f) => f.id === filter);
           return tab ? t(tab.labelKey, tab.fallback) : t("sign.documents");
         })()}
-        subtitle={`${filteredDocs.length} Dokument${filteredDocs.length === 1 ? "" : "e"}`}
+        subtitle={`${
+          filteredDocs.length === 1
+            ? t("sign.list.oneDoc")
+            : t("sign.list.nDocs").replace(
+                "{n}",
+                String(filteredDocs.length),
+              )
+        }`}
         accent={accent}
       >
         <div className="relative">
@@ -670,7 +767,7 @@ export function SignClient({
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Titel suchen…"
+            placeholder={t("sign.search.placeholder")}
             className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
           />
         </div>
@@ -690,14 +787,14 @@ export function SignClient({
             <div className="flex items-start gap-2">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <div className="min-w-0">
-                <strong>Sign noch nicht eingerichtet</strong>
+                <strong>{t("sign.notConfigured.title")}</strong>
                 <p className="mt-1 text-[11.5px] opacity-90">{notConfigured}</p>
                 {isAdmin && (
                   <a
                     href={`/admin/onboarding/sign?ws=${encodeURIComponent(workspaceId)}`}
                     className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[11px] font-medium transition-colors"
                   >
-                    Jetzt provisionieren
+                    {t("sign.notConfigured.provision")}
                     <ExternalLink size={11} />
                   </a>
                 )}
@@ -711,13 +808,13 @@ export function SignClient({
         </div>
       ) : filteredDocs.length === 0 ? (
         <PaneEmptyState
-          title={search ? "Keine Treffer" : "Noch keine Dokumente"}
+          title={search ? t("sign.empty.noMatch") : t("sign.empty.noDocuments")}
           hint={
             search
-              ? "Versuche einen anderen Suchbegriff."
+              ? t("sign.empty.hintOtherSearch")
               : documensoNativeUiEnabled
-                ? "Lege das erste Dokument hier oder in Documenso an."
-                : "Lade über die linke Seitenleiste ein Dokument hoch oder warte auf freigegebene Dokumente."
+                ? t("sign.empty.hintCreateDocumenso")
+                : t("sign.empty.hintUploadSidebar")
           }
           icon={<FileSignature size={28} />}
         />
@@ -743,16 +840,16 @@ export function SignClient({
   if (notConfigured) {
     detailNode = (
       <PaneEmptyState
-        title="Native Sign-Integration"
-        hint="Sobald für diesen Workspace ein Documenso-Team konfiguriert ist, erscheinen hier die Dokumente."
+        title={t("sign.detail.emptyNativeTitle")}
+        hint={t("sign.detail.emptyNativeHint")}
         icon={<PenLine size={32} />}
       />
     );
   } else if (!selectedId) {
     detailNode = (
       <PaneEmptyState
-        title="Kein Dokument gewählt"
-        hint="Wähle links ein Dokument, um Status, Empfänger und Aktionen zu sehen — oder lege ein neues an."
+        title={t("sign.detail.pickDocumentTitle")}
+        hint={t("sign.detail.pickDocumentHint")}
         icon={<FileSignature size={32} />}
       />
     );
@@ -777,6 +874,7 @@ export function SignClient({
         workspaceId={workspaceId}
         accent={accent}
         documensoOpenUrl={documensoOpenUrl}
+        signingBaseUrl={documensoUrl}
         isAdmin={isAdmin}
         acting={acting}
         documensoNativeUiEnabled={documensoNativeUiEnabled}
@@ -816,7 +914,7 @@ export function SignClient({
         <div className="flex items-center gap-1.5 text-[11px] text-text-tertiary mt-0.5">
           <span>#{detail.id}</span>
           <span>·</span>
-          <span>{formatRelative(detail.createdAt)}</span>
+          <span>{formatRelativeIso(detail.createdAt, locale, t)}</span>
           <span>·</span>
           <StatusPill label={statusLabel(detail.status, t)} tone={statusTone(detail.status)} />
         </div>
@@ -829,7 +927,7 @@ export function SignClient({
           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
         >
           <ExternalLink size={11} />
-          In Documenso öffnen
+          {t("sign.openInDocumenso")}
         </a>
       )}
     </div>
@@ -840,7 +938,7 @@ export function SignClient({
     >
       <PenLine size={14} style={{ color: accent }} />
       <h1 className="text-[12.5px] font-semibold leading-tight">
-        Sign ·{" "}
+        {t("sign.chunkSignWorkspace")}{" "}
         <span className="text-text-tertiary font-normal">{workspaceName}</span>
       </h1>
       {documensoNativeUiEnabled && (
@@ -851,7 +949,7 @@ export function SignClient({
           className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
         >
           <ExternalLink size={11} />
-          In Documenso öffnen
+          {t("sign.openInDocumenso")}
         </a>
       )}
     </div>
@@ -959,7 +1057,7 @@ function DocumentRow({
   onClick: () => void;
   accent: string;
 }) {
-  const t = useT();
+  const { locale, t } = useLocale();
   const signers = doc.recipients.filter((r) => r.role === "SIGNER");
   const signed = signers.filter((r) => r.signingStatus === "SIGNED").length;
   const total = signers.length;
@@ -989,8 +1087,8 @@ function DocumentRow({
             </span>
             {doc.portalPrivate && (
               <span
-                title="In CoreLab nur für dich gelistet"
-                aria-label="In CoreLab nur für dich gelistet"
+                title={t("sign.row.privateListed")}
+                aria-label={t("sign.row.privateListed")}
               >
                 <Lock
                   size={11}
@@ -1003,19 +1101,19 @@ function DocumentRow({
               <AlertTriangle
                 size={11}
                 className="text-amber-400 shrink-0"
-                aria-label="Liegt seit Tagen unangetastet — eine Erinnerung könnte helfen."
+                aria-label={t("sign.row.stalledHint")}
               />
             )}
             <StatusPill label={statusLabel(doc.status, t)} tone={statusTone(doc.status)} />
           </div>
           <div className="flex items-center gap-1.5 text-[10.5px] text-text-tertiary mt-1">
             <Clock size={10} />
-            <span>{formatRelative(doc.createdAt)}</span>
+            <span>{formatRelativeIso(doc.createdAt, locale, t)}</span>
             {total > 0 && (
               <>
                 <span>·</span>
                 <span>
-                  {signed}/{total} unterzeichnet
+                  {signed}/{total} {t("sign.row.signedProgress")}
                 </span>
               </>
             )}
@@ -1023,7 +1121,8 @@ function DocumentRow({
               <>
                 <span>·</span>
                 <span className="text-amber-400">
-                  Letzte Aktivität {formatRelative(doc.updatedAt)}
+                  {t("sign.row.lastActivity")}{" "}
+                  {formatRelativeIso(doc.updatedAt, locale, t)}
                 </span>
               </>
             )}
@@ -1039,7 +1138,7 @@ function DocumentRow({
                     email={r.email}
                     size={18}
                     ring
-                    title={`${r.name} · ${signingStatusLabel(r.signingStatus)}`}
+                    title={`${r.name} · ${signingStatusLabel(r.signingStatus, t)}`}
                   />
                 ))}
                 {signers.length > 4 && (
@@ -1071,6 +1170,34 @@ function DocumentRow({
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */
+/*                     Signing-order vs. invite email                     */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Recipients who should already have a signing invite in flight (parallel
+ * signing, or the current step in a sequential order). Others may show
+ * Documenso `sendStatus: NOT_SENT` until previous signers finish — not an SMTP bug.
+ */
+function recipientsShouldHaveSigningInviteNow(
+  recipients: RecipientSummary[],
+  needsSigning: (r: RecipientSummary) => boolean,
+): RecipientSummary[] {
+  const unsigned = recipients.filter(needsSigning);
+  if (unsigned.length === 0) return [];
+  const finiteOrders = unsigned
+    .map((r) => r.signingOrder)
+    .filter((o): o is number => o != null && Number.isFinite(o));
+  const minOrder =
+    finiteOrders.length > 0 ? Math.min(...finiteOrders) : null;
+  return unsigned.filter(
+    (r) =>
+      minOrder == null ||
+      r.signingOrder == null ||
+      r.signingOrder === minOrder,
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
 /*                            Detail view                                  */
 /* ─────────────────────────────────────────────────────────────────────── */
 
@@ -1079,6 +1206,7 @@ function DocumentDetailView({
   workspaceId,
   accent,
   documensoOpenUrl,
+  signingBaseUrl,
   documensoNativeUiEnabled,
   isAdmin,
   acting,
@@ -1097,6 +1225,8 @@ function DocumentDetailView({
   workspaceId: WorkspaceId;
   accent: string;
   documensoOpenUrl: string;
+  /** Public Documenso origin für `/sign/{token}` (gleiche Basis wie Einladungslinks). */
+  signingBaseUrl: string;
   documensoNativeUiEnabled: boolean;
   isAdmin: boolean;
   acting: string | null;
@@ -1111,12 +1241,31 @@ function DocumentDetailView({
   onOpenEditor: () => void;
   onSetPortalListingScope: (scope: "private" | "team") => void;
 }) {
-  const t = useT();
+  const { locale, t } = useLocale();
   const linkedCompanyId = parseCompanyIdFromSignExternalId(doc.externalId);
   const signers = doc.recipients.filter((r) => r.role === "SIGNER");
   const totalSigners = signers.length;
   const signedCount = signers.filter((r) => r.signingStatus === "SIGNED").length;
   const pct = totalSigners === 0 ? 0 : Math.round((signedCount / totalSigners) * 100);
+  /** Documenso requires signature fields before distribute — API sets this on DRAFT detail GET. */
+  const canSendDraft = doc.draftSendPreflight?.ok === true;
+
+  const needsSigning = (r: RecipientSummary) =>
+    (r.role === "SIGNER" || r.role === "APPROVER") &&
+    r.signingStatus === "NOT_SIGNED";
+
+  const inviteNow = recipientsShouldHaveSigningInviteNow(
+    doc.recipients,
+    needsSigning,
+  );
+  const smtpLikelyProblem =
+    doc.status === "PENDING" &&
+    inviteNow.some((r) => r.sendStatus === "NOT_SENT");
+  const sequentialInviteWaiting =
+    doc.status === "PENDING" &&
+    !smtpLikelyProblem &&
+    doc.recipients.some(needsSigning) &&
+    doc.recipients.some((r) => needsSigning(r) && r.sendStatus === "NOT_SENT");
 
   const main = (
     <div className="px-6 py-5">
@@ -1143,17 +1292,20 @@ function DocumentDetailView({
           <div className="flex-1 min-w-0">
             <p className="text-[12.5px] font-semibold">
               {doc.status === "COMPLETED"
-                ? "Alle Empfänger haben unterzeichnet"
+                ? t("sign.detail.progressAllSigned")
                 : doc.status === "PENDING"
-                ? `${signedCount} von ${totalSigners} Empfängern haben unterzeichnet`
-                : doc.status === "REJECTED"
-                ? "Mindestens ein Empfänger hat abgelehnt"
-                : "Entwurf — noch nicht versendet"}
+                  ? t("sign.detail.signedProgressLine")
+                      .replace("{signed}", String(signedCount))
+                      .replace("{total}", String(totalSigners))
+                  : doc.status === "REJECTED"
+                    ? t("sign.detail.progressOneRejected")
+                    : t("sign.detail.progressDraft")}
             </p>
             <p className="text-[11px] text-text-tertiary mt-0.5">
-              Erstellt {formatDate(doc.createdAt)}
+              {t("sign.detail.createdOn")}{" "}
+              {formatDateIso(doc.createdAt, locale)}
               {doc.completedAt
-                ? ` · Abgeschlossen ${formatDate(doc.completedAt)}`
+                ? ` · ${t("sign.detail.completedOn")} ${formatDateIso(doc.completedAt, locale)}`
                 : ""}
             </p>
           </div>
@@ -1170,19 +1322,73 @@ function DocumentDetailView({
           <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11.5px] p-2.5 leading-relaxed">
             <AlertTriangle size={13} className="shrink-0 mt-0.5" />
             <span>
-              Dieses Dokument liegt seit {formatRelative(doc.updatedAt)} ohne
-              Bewegung. Eine Erinnerung — gerne mit kurzem persönlichem Hinweis —
-              hilft erfahrungsgemäß deutlich.
+              {t("sign.detail.stalledLead")}{" "}
+              {formatRelativeIso(doc.updatedAt, locale, t)}{" "}
+              {t("sign.detail.stalledText")}
+            </span>
+          </div>
+        )}
+        {smtpLikelyProblem && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/35 bg-amber-500/10 text-amber-100 text-[11.5px] p-2.5 leading-relaxed">
+            <Mail size={13} className="shrink-0 mt-0.5" />
+            <span>
+              <span className="font-semibold text-text-primary">
+                {t("sign.detail.smtpWarningTitle")}
+              </span>{" "}
+              {t("sign.detail.smtpWarningBody")}
+            </span>
+          </div>
+        )}
+        {sequentialInviteWaiting && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 text-sky-100 text-[11.5px] p-2.5 leading-relaxed">
+            <Clock size={13} className="shrink-0 mt-0.5" />
+            <span>
+              <span className="font-semibold text-text-primary">
+                {t("sign.detail.sequentialTitle")}
+              </span>{" "}
+              {t("sign.detail.sequentialBody")}
             </span>
           </div>
         )}
         <p className="text-[11px] text-text-secondary mt-3 leading-relaxed border-t border-stroke-1/50 pt-3">
-          {signSalesNextStepDe(doc.status)}
+          {salesNextForLocale(doc.status, t)}
         </p>
+        {doc.status === "DRAFT" &&
+          doc.draftSendPreflight &&
+          !doc.draftSendPreflight.ok && (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-rose-500/35 bg-rose-500/10 text-rose-200 text-[11.5px] p-2.5 leading-relaxed">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>
+                <span className="font-semibold text-text-primary">
+                  {t("sign.detail.preflightTitle")}
+                </span>{" "}
+                {t("sign.detail.preflightBody")}
+                {doc.draftSendPreflight.missingSignatureFor.length > 0 ? (
+                  <>
+                    {" "}
+                    {t("sign.detail.preflightMissingFor")}{" "}
+                    <span className="text-text-primary font-medium">
+                      {doc.draftSendPreflight.missingSignatureFor.join(", ")}
+                    </span>
+                    .
+                  </>
+                ) : null}{" "}
+                {t("sign.detail.preflightInstructionBefore")}{" "}
+                <strong className="text-text-primary">
+                  {t("sign.detail.preflightEditorStrong")}
+                </strong>{" "}
+                {t("sign.detail.preflightInstructionMid")}{" "}
+                <strong className="text-text-primary">
+                  {t("sign.detail.preflightSendStrong")}
+                </strong>
+                {t("sign.detail.preflightInstructionEnd")}
+              </span>
+            </div>
+          )}
         {doc.externalId?.trim() && (
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-tertiary">
             <span>
-              Portal-Referenz:{" "}
+              {t("sign.detail.portalRef")}{" "}
               <code className="text-[10px] text-text-primary">{doc.externalId}</code>
             </span>
             {linkedCompanyId ? (
@@ -1190,7 +1396,7 @@ function DocumentDetailView({
                 href={`/${workspaceId}/crm/company/${encodeURIComponent(linkedCompanyId)}`}
                 className="text-info hover:underline"
               >
-                Company-Hub
+                {t("sign.companyHub")}
               </Link>
             ) : null}
           </div>
@@ -1199,6 +1405,19 @@ function DocumentDetailView({
 
       {/* Quick actions */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
+        <a
+          href={`/api/sign/document/${doc.id}/pdf?ws=${encodeURIComponent(workspaceId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary"
+          title={t("sign.detail.pdfViewTitle")}
+        >
+          <FileType2 size={12} />
+          {t("sign.detail.pdfView")}
+        </a>
+        <p className="w-full text-[10.5px] text-text-quaternary leading-relaxed max-w-2xl">
+          {t("sign.detail.pdfExplainer")}
+        </p>
         {doc.status === "DRAFT" && (
           <button
             type="button"
@@ -1207,7 +1426,7 @@ function DocumentDetailView({
             style={{ background: accent }}
           >
             <LayoutGrid size={12} />
-            Felder &amp; Empfänger im Editor
+            {t("sign.detail.editorButton")}
           </button>
         )}
         {doc.status === "DRAFT" && (
@@ -1215,27 +1434,35 @@ function DocumentDetailView({
             <button
               type="button"
               onClick={onSend}
-              disabled={acting === "send"}
+              disabled={acting === "send" || !canSendDraft}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-medium disabled:opacity-60"
               style={{ borderColor: accent, color: accent }}
-              title="Sendet die Signatur-Mail mit der Standard-Vorlage des Teams."
+              title={
+                canSendDraft
+                  ? t("sign.detail.sendDirectTitleOk")
+                  : t("sign.detail.sendDirectTitleBlocked")
+              }
             >
               {acting === "send" ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <Send size={12} />
               )}
-              Direkt senden
+              {t("sign.detail.sendDirect")}
             </button>
             <button
               type="button"
               onClick={onSendWithMessage}
-              disabled={acting === "send"}
+              disabled={acting === "send" || !canSendDraft}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary disabled:opacity-60"
-              title="Vor dem Senden Betreff und persönliche Nachricht eingeben."
+              title={
+                canSendDraft
+                  ? t("sign.detail.sendMessageTitleOk")
+                  : t("sign.detail.sendMessageTitleBlocked")
+              }
             >
               <MessageSquare size={12} />
-              Mit Nachricht…
+              {t("sign.detail.withMessage")}
             </button>
           </>
         )}
@@ -1247,24 +1474,24 @@ function DocumentDetailView({
               disabled={acting === "remind"}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-[12px] font-medium disabled:opacity-60"
               style={{ background: accent }}
-              title="Sendet die Signatur-Mail noch einmal an alle, die noch nicht unterschrieben haben."
+              title={t("sign.detail.remindAllTitle")}
             >
               {acting === "remind" ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <Mail size={12} />
               )}
-              Alle erinnern
+              {t("sign.detail.remindAll")}
             </button>
             <button
               type="button"
               onClick={onRemindWithMessage}
               disabled={acting === "remind"}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary disabled:opacity-60"
-              title="Erinnerung mit personalisierter Nachricht senden."
+              title={t("sign.detail.remindMessageTitle")}
             >
               <MessageSquare size={12} />
-              Mit Nachricht…
+              {t("sign.detail.withMessage")}
             </button>
           </>
         )}
@@ -1274,10 +1501,10 @@ function DocumentDetailView({
               <a
                 href={`/api/sign/document/${doc.id}/pdf?ws=${encodeURIComponent(workspaceId)}&download=1&filename=${encodeURIComponent(signArchivePdfFilename(doc.title, doc.id))}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px] font-medium text-text-secondary hover:text-text-primary"
-                title="Signiertes PDF als Datei speichern (Archiv)"
+                title={t("sign.detail.archivePdfTitle")}
               >
                 <Download size={12} />
-                PDF archivieren
+                {t("sign.detail.archivePdf")}
               </a>
             )}
             <button
@@ -1286,14 +1513,14 @@ function DocumentDetailView({
             disabled={acting === "repeat"}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px] font-medium disabled:opacity-60"
             style={{ borderColor: accent, color: accent }}
-            title="Legt eine neue Entwurfs-Kopie mit denselben Empfängern an. Die signierten Felder müssen im Editor neu gesetzt werden."
+            title={t("sign.detail.repeatSendTitle")}
           >
             {acting === "repeat" ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
               <CornerUpRight size={12} />
             )}
-            Erneut versenden
+            {t("sign.detail.repeatSend")}
           </button>
           </>
         )}
@@ -1305,7 +1532,9 @@ function DocumentDetailView({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary text-[12px]"
           >
             <CornerUpRight size={12} />
-            {doc.status === "DRAFT" ? "Entwurf öffnen" : "Detail öffnen"}
+            {doc.status === "DRAFT"
+              ? t("sign.detail.openDraft")
+              : t("sign.detail.openDetail")}
           </a>
         )}
         <button
@@ -1319,17 +1548,35 @@ function DocumentDetailView({
           ) : (
             <Trash2 size={12} />
           )}
-          Löschen
+          {t("sign.detail.delete")}
         </button>
       </div>
 
       {/* Recipients */}
-      <h2 className="text-[11px] uppercase tracking-wide font-semibold text-text-tertiary mb-2">
-        Empfänger ({doc.recipients.length})
+      <h2 className="text-[11px] uppercase tracking-wide font-semibold text-text-quaternary mb-1">
+        {t("sign.detail.recipientsWithCount").replace(
+          "{n}",
+          String(doc.recipients.length),
+        )}
       </h2>
+      {(() => {
+        const chain = doc.recipients.filter(
+          (r) => r.role === "SIGNER" || r.role === "APPROVER",
+        );
+        const hasOrder = chain.some((r) => r.signingOrder != null);
+        const multi = chain.length > 1;
+        if (!multi) return null;
+        return (
+          <p className="text-[10.5px] text-text-quaternary mb-2 leading-relaxed">
+            {hasOrder
+              ? t("sign.detail.orderHelp")
+              : t("sign.detail.parallelHelp")}
+          </p>
+        );
+      })()}
       {doc.recipients.length === 0 ? (
         <p className="text-[12px] text-text-tertiary">
-          Noch keine Empfänger zugewiesen.
+          {t("sign.detail.noRecipientsYet")}
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -1343,6 +1590,8 @@ function DocumentDetailView({
               <RecipientRow
                 key={r.id}
                 recipient={r}
+                documentStatus={doc.status}
+                signingBaseUrl={signingBaseUrl}
                 accent={accent}
                 canRemind={
                   doc.status === "PENDING" &&
@@ -1361,19 +1610,19 @@ function DocumentDetailView({
 
   const rightSidebar = (
     <>
-      <SidebarSection title="Status">
+      <SidebarSection title={t("common.status")}>
         <div className="space-y-2 text-[11.5px]">
           <Field label={t("common.status")}>
             <StatusPill label={statusLabel(doc.status, t)} tone={statusTone(doc.status)} />
           </Field>
           {(doc.uploadedViaPortal || doc.portalPrivate || isAdmin) && (
             <>
-              <Field label="Liste (CoreLab)">
+              <Field label={t("sign.sidebar.listCoreLab")}>
                 <div className="flex flex-col gap-2 min-w-0">
                   <span className="text-text-secondary">
                     {doc.portalPrivate
-                      ? "Nur in deinem Sign-Bereich sichtbar"
-                      : "Für alle mit Workspace-Zugang"}
+                      ? t("sign.sidebar.privateVisible")
+                      : t("sign.sidebar.teamVisible")}
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     <button
@@ -1394,7 +1643,7 @@ function DocumentDetailView({
                             }
                       }
                     >
-                      Nur ich
+                      {t("sign.sidebar.onlyMe")}
                     </button>
                     <button
                       type="button"
@@ -1411,80 +1660,79 @@ function DocumentDetailView({
                           : undefined
                       }
                     >
-                      Team
+                      {t("sign.sidebar.team")}
                     </button>
                   </div>
                   <p className="text-[10px] text-text-quaternary leading-snug">
-                    Betrifft nur die CoreLab-Sign-Liste, nicht die Sichtbarkeit in
-                    Documenso selbst.
+                    {t("sign.sidebar.listNote")}
                   </p>
                 </div>
               </Field>
             </>
           )}
           {!doc.uploadedViaPortal && !doc.portalPrivate && !isAdmin && (
-            <Field label="Liste (CoreLab)">
+            <Field label={t("sign.sidebar.listCoreLab")}>
               <span className="text-text-tertiary text-[11px] leading-snug">
-                Nur für im Portal hochgeladene Dokumente änderbar.
+                {t("sign.sidebar.listReadOnly")}
               </span>
             </Field>
           )}
-          <Field label="Quelle">
+          <Field label={t("sign.sidebar.source")}>
             <span className="text-text-secondary">
               {doc.source === "DOCUMENT"
-                ? "Direkter Upload"
+                ? t("sign.sidebar.sourceUpload")
                 : doc.source === "TEMPLATE"
-                ? "Vorlage"
-                : "Vorlage (Direct Link)"}
+                  ? t("sign.sidebar.sourceTemplate")
+                  : t("sign.sidebar.sourceTemplateDirect")}
             </span>
           </Field>
-          <Field label="Sichtbar">
+          <Field label={t("sign.sidebar.visibility")}>
             <span className="text-text-secondary">
               {doc.visibility === "EVERYONE"
-                ? "Team"
+                ? t("sign.sidebar.visTeam")
                 : doc.visibility === "MANAGER_AND_ABOVE"
-                ? "Manager+"
-                : "Admin"}
+                  ? t("sign.sidebar.visManager")
+                  : t("sign.sidebar.visAdmin")}
             </span>
           </Field>
         </div>
       </SidebarSection>
 
-      <SidebarSection title="Zeitstempel">
+      <SidebarSection title={t("sign.sidebar.timestamps")}>
         <div className="space-y-2 text-[11.5px]">
-          <Field label="Erstellt">
+          <Field label={t("sign.sidebar.created")}>
             <span className="text-text-secondary inline-flex items-center gap-1">
               <Calendar size={10} />
-              {formatDate(doc.createdAt)}
+              {formatDateIso(doc.createdAt, locale)}
             </span>
           </Field>
-          <Field label="Aktualisiert">
+          <Field label={t("sign.sidebar.updated")}>
             <span className="text-text-secondary inline-flex items-center gap-1">
               <Calendar size={10} />
-              {formatDate(doc.updatedAt)}
+              {formatDateIso(doc.updatedAt, locale)}
             </span>
           </Field>
           {doc.completedAt && (
-            <Field label="Abgeschlossen">
+            <Field label={t("sign.sidebar.completed")}>
               <span className="text-text-secondary inline-flex items-center gap-1">
                 <CheckCircle2 size={10} className="text-emerald-400" />
-                {formatDate(doc.completedAt)}
+                {formatDateIso(doc.completedAt, locale)}
               </span>
             </Field>
           )}
         </div>
       </SidebarSection>
 
-      <SidebarSection title="Inhaber">
+      <SidebarSection title={t("sign.sidebar.owner")}>
         <div className="text-[11.5px] text-text-secondary truncate">
           {doc.ownerEmail ?? "—"}
         </div>
       </SidebarSection>
 
       {totalSigners > 0 && (
-        <SidebarSection title="Fortschritt">
+        <SidebarSection title={t("sign.sidebar.progress")}>
           <div className="text-[12px] font-semibold mb-1.5" style={{ color: accent }}>
-            {signedCount} / {totalSigners} unterzeichnet
+            {signedCount} / {totalSigners} {t("sign.sidebar.signedFraction")}
           </div>
           <div className="h-1.5 rounded-full bg-bg-overlay overflow-hidden">
             <div
@@ -1511,6 +1759,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function RecipientRow({
   recipient,
+  documentStatus,
+  signingBaseUrl,
   accent,
   canRemind = false,
   reminding = false,
@@ -1518,44 +1768,97 @@ function RecipientRow({
   onRemindWithMessage,
 }: {
   recipient: RecipientSummary;
+  documentStatus: SignStatus;
+  signingBaseUrl: string;
   accent: string;
   canRemind?: boolean;
   reminding?: boolean;
   onRemind?: () => void;
   onRemindWithMessage?: () => void;
 }) {
+  const { locale, t } = useLocale();
   const signed = recipient.signingStatus === "SIGNED";
   const rejected = recipient.signingStatus === "REJECTED";
   const opened = recipient.readStatus === "OPENED";
+  const showEmailStatus =
+    documentStatus === "PENDING" &&
+    (recipient.role === "SIGNER" || recipient.role === "APPROVER");
+  const canCopySignLink =
+    documentStatus === "PENDING" &&
+    !signed &&
+    !rejected &&
+    (recipient.role === "SIGNER" || recipient.role === "APPROVER") &&
+    recipient.token?.trim().length > 0;
+
+  async function copyPersonalSignLink() {
+    const base = signingBaseUrl.replace(/\/$/, "");
+    const url = `${base}/sign/${recipient.token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt(t("sign.prompt.copySignLink"), url);
+    }
+  }
+
+  const isOrderRole =
+    recipient.role === "SIGNER" || recipient.role === "APPROVER";
+
   return (
     <div className="flex items-center gap-3 px-3 py-2 rounded-md border border-stroke-1 hover:border-stroke-2 bg-bg-elevated/40">
+      {isOrderRole ? (
+        <div
+          className="w-7 shrink-0 flex justify-center tabular-nums"
+          title={
+            recipient.signingOrder != null
+              ? t("sign.recipient.stepTitle").replace(
+                  "{n}",
+                  String(recipient.signingOrder),
+                )
+              : t("sign.recipient.parallelTitle")
+          }
+        >
+          {recipient.signingOrder != null ? (
+            <span
+              className="text-[11px] font-semibold w-7 h-7 flex items-center justify-center rounded-md"
+              style={{ background: `${accent}22`, color: accent }}
+            >
+              {recipient.signingOrder}
+            </span>
+          ) : (
+            <span className="text-[12px] text-text-quaternary font-medium leading-7">
+              ∥
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="w-7 shrink-0" aria-hidden />
+      )}
       <Avatar name={recipient.name} email={recipient.email} size={32} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[12.5px] font-semibold truncate">
             {recipient.name}
           </span>
-          {recipient.signingOrder != null && (
-            <span
-              className="text-[10px] tabular-nums px-1.5 py-[1px] rounded-full"
-              style={{ background: `${accent}20`, color: accent }}
-              title={`Reihenfolge ${recipient.signingOrder}`}
-            >
-              #{recipient.signingOrder}
-            </span>
-          )}
           <span className="text-[10px] text-text-quaternary uppercase tracking-wide">
-            {recipient.role}
+            {recipientRoleUpper(recipient.role, t)}
           </span>
+          {showEmailStatus && (
+            <StatusPill
+              label={sendStatusLabel(recipient.sendStatus, t)}
+              tone={sendStatusTone(recipient.sendStatus)}
+            />
+          )}
         </div>
         <div className="flex items-center gap-2 text-[10.5px] text-text-tertiary mt-0.5">
           <span className="truncate">{recipient.email}</span>
           {opened && !signed && !rejected && (
-            <span className="text-text-quaternary">· Geöffnet</span>
+            <span className="text-text-quaternary">
+              · {t("sign.recipient.opened")}
+            </span>
           )}
           {recipient.signedAt && (
             <span className="text-text-quaternary">
-              · {formatRelative(recipient.signedAt)}
+              · {formatRelativeIso(recipient.signedAt, locale, t)}
             </span>
           )}
         </div>
@@ -1565,6 +1868,17 @@ function RecipientRow({
           </p>
         )}
       </div>
+      {canCopySignLink && (
+        <button
+          type="button"
+          onClick={() => void copyPersonalSignLink()}
+          className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary"
+          title={t("sign.recipient.copyLinkTitle")}
+        >
+          <Copy size={11} />
+          {t("sign.recipient.link")}
+        </button>
+      )}
       {canRemind && onRemind && (
         <div className="flex items-center gap-1">
           <button
@@ -1572,14 +1886,17 @@ function RecipientRow({
             onClick={onRemind}
             disabled={reminding}
             className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary disabled:opacity-60"
-            title={`Neue Signatur-Mail an ${recipient.email} verschicken.`}
+            title={t("sign.recipient.remindTitle").replace(
+              "{email}",
+              recipient.email,
+            )}
           >
             {reminding ? (
               <Loader2 size={11} className="animate-spin" />
             ) : (
               <Mail size={11} />
             )}
-            Erinnern
+            {t("sign.recipient.remind")}
           </button>
           {onRemindWithMessage && (
             <button
@@ -1587,7 +1904,10 @@ function RecipientRow({
               onClick={onRemindWithMessage}
               disabled={reminding}
               className="inline-flex items-center gap-1 px-1.5 py-1 rounded text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary disabled:opacity-60"
-              title={`Persönliche Nachricht an ${recipient.email} mitsenden.`}
+              title={t("sign.recipient.messageTitle").replace(
+                "{email}",
+                recipient.email,
+              )}
             >
               <MessageSquare size={11} />
             </button>
@@ -1595,7 +1915,7 @@ function RecipientRow({
         </div>
       )}
       <StatusPill
-        label={signingStatusLabel(recipient.signingStatus)}
+        label={signingStatusLabel(recipient.signingStatus, t)}
         tone={signingStatusTone(recipient.signingStatus)}
       />
     </div>
@@ -1629,19 +1949,25 @@ function ComposeModal({
   onClose: () => void;
   onSubmit: (input: { subject: string; message: string }) => void | Promise<void>;
 }) {
+  const { t } = useLocale();
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const isSend = kind === "send";
 
-  const ctaLabel = isSend ? "Jetzt senden" : "Erinnerung senden";
+  const ctaLabel = isSend
+    ? t("sign.compose.sendNow")
+    : t("sign.compose.remindSend");
   const headline = isSend
-    ? "Dokument versenden"
+    ? t("sign.compose.headlineSend")
     : recipientLabel
-      ? `Erinnerung an ${recipientLabel}`
-      : "Erinnerung an alle Offenen";
+      ? t("sign.compose.headlineRemindOne").replace(
+          "{email}",
+          recipientLabel,
+        )
+      : t("sign.compose.headlineRemindAll");
   const intro = isSend
-    ? "Optionaler Betreff und persönliche Nachricht — bleibt das Feld leer, schickt Documenso die Standard-Vorlage des Teams."
-    : "Wird zusätzlich zur Standard-Erinnerung mitgeschickt.";
+    ? t("sign.compose.introSend")
+    : t("sign.compose.introRemind");
 
   return (
     <div
@@ -1664,7 +1990,7 @@ function ComposeModal({
             type="button"
             onClick={onClose}
             className="p-1 rounded hover:bg-bg-overlay text-text-tertiary"
-            aria-label="Schließen"
+            aria-label={t("common.close")}
           >
             <X size={14} />
           </button>
@@ -1675,26 +2001,29 @@ function ComposeModal({
           </p>
           <div>
             <label className="block text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
-              Betreff (optional)
+              {t("sign.compose.subjectLabel")}
             </label>
             <input
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder={`z. B. „${docTitle}" – bitte unterzeichnen`}
+              placeholder={t("sign.compose.subjectPlaceholder").replace(
+                "{title}",
+                docTitle,
+              )}
               className="w-full bg-bg-elevated border border-stroke-1 rounded-md px-2.5 py-1.5 text-[12px] outline-none focus:border-stroke-2"
               maxLength={500}
             />
           </div>
           <div>
             <label className="block text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
-              Nachricht (optional)
+              {t("sign.compose.messageLabel")}
             </label>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={5}
-              placeholder="Hi Vorname, magst du noch kurz drüberschauen? Danke!"
+              placeholder={t("sign.compose.messagePlaceholder")}
               className="w-full bg-bg-elevated border border-stroke-1 rounded-md px-2.5 py-1.5 text-[12px] outline-none focus:border-stroke-2 resize-none leading-relaxed"
               maxLength={4000}
             />
@@ -1707,7 +2036,7 @@ function ComposeModal({
             disabled={submitting}
             className="px-3 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary text-[12px] disabled:opacity-60"
           >
-            Abbrechen
+            {t("common.cancel")}
           </button>
           <button
             type="button"
