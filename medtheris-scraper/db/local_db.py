@@ -250,30 +250,56 @@ class LocalDB:
         finally:
             conn.close()
 
-    def list_unpushed(
+    def _list_practices(
         self,
-        canton: str | None = None,
-        city: str | None = None,
-        plz: str | None = None,
-        profile: str | None = None,
-        limit: int | None = None,
+        only_pushed: bool,
+        canton: str | None,
+        city: str | None,
+        plz: str | None,
+        profile: str | None,
+        limit: int | None,
+        require_no_website: bool = False,
     ) -> list[dict]:
-        """
-        Cached practices that have **never** been pushed to Twenty.
+        """Internal: scoped fetch of practice rows + parsed payload.
 
-        Each row is the parsed `payload_json` plus the cached canton/city/
-        plz/profile and a sentinel `_cached_place_id` so the caller can
-        update the cache row after a successful push. Filters AND-combine.
+        ``only_pushed`` flips the WHERE on `twenty_company_id`:
+          * False → unpushed (the original list_unpushed behaviour)
+          * True  → already pushed (used by the new enrich-existing mode
+                    which re-runs `merge_company_fields` so the workspace
+                    picks up custom fields that didn't exist at the time
+                    of the original create).
+
+        ``require_no_website`` (optional) adds a filter for rows where the
+        ``website`` column is empty/null — used by the retry-no-website
+        mode that asks an LLM to find a homepage Google Maps doesn't list.
+
+        Each row also gets `_cached_place_id`, `_profile`, and — only for
+        ``only_pushed`` — `_twenty_company_id` so the caller can target
+        Twenty without re-querying.
         """
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
         try:
-            sql = (
-                "SELECT place_id, canton, city, plz, profile, payload_json "
-                "FROM practices "
-                "WHERE (twenty_company_id IS NULL OR twenty_company_id = '')"
-            )
+            if only_pushed:
+                where = (
+                    "(twenty_company_id IS NOT NULL AND twenty_company_id <> '')"
+                )
+                cols = (
+                    "place_id, canton, city, plz, profile, payload_json, "
+                    "twenty_company_id"
+                )
+            else:
+                where = (
+                    "(twenty_company_id IS NULL OR twenty_company_id = '')"
+                )
+                cols = "place_id, canton, city, plz, profile, payload_json"
+            sql = f"SELECT {cols} FROM practices WHERE {where}"
             params: list = []
+            if require_no_website:
+                # Apply the no-website filter at SQL level instead of in
+                # Python so the LIMIT actually limits useful work, not
+                # rows we'd skip anyway.
+                sql += " AND (website IS NULL OR website = '')"
             if canton:
                 sql += " AND canton = ? COLLATE NOCASE"
                 params.append(canton)
@@ -303,10 +329,61 @@ class LocalDB:
                 payload.setdefault("plz", r["plz"])
                 payload["_cached_place_id"] = r["place_id"]
                 payload["_profile"] = r["profile"] or _LEGACY_PROFILE
+                if only_pushed:
+                    payload["_twenty_company_id"] = r["twenty_company_id"]
                 out.append(payload)
             return out
         finally:
             conn.close()
+
+    def list_pushed(
+        self,
+        canton: str | None = None,
+        city: str | None = None,
+        plz: str | None = None,
+        profile: str | None = None,
+        limit: int | None = None,
+        require_no_website: bool = False,
+    ) -> list[dict]:
+        """Practices that already have a Twenty company_id — used to back-fill
+        custom fields that didn't exist at original push time.
+
+        ``require_no_website=True`` narrows to the subset that Google Maps
+        didn't supply a website for; the retry-no-website mode targets
+        these because they're the rows whose enrichment got skipped.
+        """
+        return self._list_practices(
+            only_pushed=True,
+            canton=canton, city=city, plz=plz,
+            profile=profile, limit=limit,
+            require_no_website=require_no_website,
+        )
+
+    def list_unpushed(
+        self,
+        canton: str | None = None,
+        city: str | None = None,
+        plz: str | None = None,
+        profile: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """
+        Cached practices that have **never** been pushed to Twenty.
+
+        Each row is the parsed `payload_json` plus the cached canton/city/
+        plz/profile and a sentinel `_cached_place_id` so the caller can
+        update the cache row after a successful push. Filters AND-combine.
+
+        Backed by ``_list_practices`` — kept as its own method so older
+        callers (and the runner.py trigger endpoint) don't break.
+        """
+        # Preserve historical signature; the body is just a thin wrapper
+        # around the shared scoped-fetch helper.
+        return self._list_practices(
+            only_pushed=False,
+            canton=canton, city=city, plz=plz,
+            profile=profile, limit=limit,
+        )
 
     # ------------------------ profile_runs --------------------------
 

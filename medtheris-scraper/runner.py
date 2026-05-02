@@ -151,6 +151,8 @@ def _build_args(payload: dict[str, Any]) -> tuple[list[str], Profile]:
         args += ["--no-merge"]
     if payload.get("push_cache"):
         args += ["--push-cache"]
+    if payload.get("enrich_existing"):
+        args += ["--enrich-existing"]
     if payload.get("force_rerun"):
         args += ["--force-rerun"]
     return args, profile
@@ -407,7 +409,11 @@ def _check_one_shot(profile: Profile, payload: dict[str, Any]) -> tuple[bool, st
     """
     if not profile.one_shot:
         return True, None
-    if payload.get("dry_run") or payload.get("push_cache"):
+    if (
+        payload.get("dry_run")
+        or payload.get("push_cache")
+        or payload.get("enrich_existing")
+    ):
         return True, None
     if payload.get("force_rerun"):
         return True, None
