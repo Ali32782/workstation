@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveCrmSession } from "@/lib/crm/session";
 import { isMauticConfigured, listContacts } from "@/lib/marketing/mautic";
+import { log } from "@/lib/log/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -86,7 +87,11 @@ export async function GET(req: NextRequest) {
       truncated: contacts.length >= 1000,
     });
   } catch (e) {
-    console.error("[/api/crm/companies/mautic-status] failed:", e);
+    log.error({
+      scope: "crm.companies.mautic-status",
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
       { status: 502 },

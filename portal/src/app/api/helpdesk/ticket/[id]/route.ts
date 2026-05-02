@@ -4,6 +4,7 @@ import {
   resolveHelpdeskSession,
   type HelpdeskSession,
 } from "@/lib/helpdesk/session";
+import { log } from "@/lib/log/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -120,7 +121,11 @@ export async function POST(
     });
     return NextResponse.json({ article });
   } catch (e) {
-    console.error("[/api/helpdesk/ticket POST article] failed:", e);
+    log.error({
+      scope: "helpdesk.ticket.add-article",
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
       { status: 502 },

@@ -9,6 +9,7 @@ import {
   resolveHelpdeskSession,
   type HelpdeskSession,
 } from "@/lib/helpdesk/session";
+import { log } from "@/lib/log/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -65,7 +66,11 @@ export async function GET(req: NextRequest) {
       me: { id: meId, email: g.session.email },
     });
   } catch (e) {
-    console.error("[/api/helpdesk/tickets] failed:", e);
+    log.error({
+      scope: "helpdesk.tickets.list",
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
       { status: 502 },
@@ -104,7 +109,11 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ ticket });
   } catch (e) {
-    console.error("[/api/helpdesk/tickets POST] failed:", e);
+    log.error({
+      scope: "helpdesk.tickets.create",
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
       { status: 502 },

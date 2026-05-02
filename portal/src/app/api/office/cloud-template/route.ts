@@ -4,6 +4,7 @@ import { downloadFile } from "@/lib/cloud/webdav";
 import { docxToHtml } from "@/lib/office/converter";
 import { CRM_MERGE_SCHEMA_VERSION } from "@/lib/office/merge-tokens";
 import { PROPOSAL_PRESETS_VERSION } from "@/lib/office/proposal-presets";
+import { log } from "@/lib/log/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -93,7 +94,11 @@ export async function GET(req: NextRequest) {
       mammothMessages,
     });
   } catch (e) {
-    console.error("[cloud-template]", e);
+    log.error({
+      scope: "office.cloud-template",
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
       { status: 502 },

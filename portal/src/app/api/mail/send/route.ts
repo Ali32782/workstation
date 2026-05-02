@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { sendMessage } from "@/lib/mail/smtp";
 import { resolveSessionMailbox } from "@/lib/mail/session-mailbox";
 import type { MailAddress } from "@/lib/mail/types";
+import { log } from "@/lib/log/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -107,7 +108,11 @@ export async function POST(req: NextRequest) {
     const b64 = normalizeBase64(a.base64);
     const content = Buffer.from(b64, "base64");
     if (content.length === 0 && b64.length > 0) {
-      console.warn("[mail/send] attachment decoded to 0 bytes:", a.filename);
+      log.warn({
+        scope: "mail.send.attachment",
+        message: "attachment decoded to 0 bytes",
+        filename: a.filename,
+      });
     }
     return {
       filename: a.filename,
