@@ -5,7 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:i18n:verbose": "node scripts/check-i18n.mjs --verbose",
+    "lint": "eslint --quiet src",
+    "lint:fix": "eslint --fix src",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run check:i18n && npm run typecheck && npm run lint"
   },
   "dependencies": {
     "@tiptap/extension-highlight": "^2.27.2",
@@ -53,7 +59,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.59.1"
   }
 }
