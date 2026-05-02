@@ -133,20 +133,46 @@ generierte `Kineo_Dashboard_AKTUELL.xlsx` leben auf dem Host und überleben
     └── Kineo_Dashboard_AKTUELL.xlsx
 ```
 
-## Sicherheits-TODO (offen)
+## Auth-Layer (HTTP Basic Auth via NPM)
 
-Aktuell schützt **nur** der CSP-Header `frame-ancestors` — wer die URL
-`https://dashboard.kineo360.work` direkt im Browser ansurft, sieht das
-Dashboard ohne Login. Das Hyrox-Datenmaterial enthält Umsatz- und
-Kunden-Listen. Optionen:
+Direkter Browser-Zugriff auf `dashboard.kineo360.work` ist hinter einer
+NPM-Access-List versteckt (Realm "Authorization required"). Konfiguration:
 
-1. **NPM Access-List** mit HTTP-Basic-Auth davorschalten (1 Klick im NPM-UI).
-2. **Streamlit-Auth via OAuth-Proxy** (komplexer, integriert sich mit Keycloak).
-3. **Nur über Portal-iframe öffnen** — wenn der Portal-Login-Cookie das
-   einzige Gate sein soll, dann müsste der NPM-Layer iframe-only enforcen
-   (z. B. `Sec-Fetch-Dest: iframe` als Bedingung in einem Custom-Nginx-`if`).
+| NPM-Objekt        | Wert                                |
+|-------------------|-------------------------------------|
+| Access-List Name  | "Kineo Dashboard" (id 1)            |
+| `satisfy_any`     | `1` (auth_basic ODER ip-allowlist) |
+| `pass_auth`       | `1` (Authorization-Header durchreichen) |
+| User              | `kineo` (Klartext-PW im Passwort-Manager des Admins) |
+| htpasswd-File     | `/data/access/1` (bcrypt-Hash, root-only) |
 
-In `MORGEN.md` als Punkt 2g vermerkt.
+`satisfy_any=1` ist wichtig — sonst kombiniert NPM `auth_basic` mit dem
+implizit gerenderten `deny all;` in den access rules (weil keine
+IP-Allowlist gesetzt ist), was zu hartem 403 für **alle** Requests führt.
+Mit `satisfy_any=1` reicht erfolgreiches Basic-Auth.
+
+Passwort ändern (über UI):
+
+> NPM-UI → Access Lists → "Kineo Dashboard" → Edit → Authorization →
+> Passwort ändern → Save. NPM rendert das htpasswd-File via `htpasswd -b -B`
+> neu, kein nginx-Reload nötig.
+
+Passwort ändern (headless):
+
+```bash
+docker exec npm htpasswd -b -B -C 13 /data/access/1 kineo NEUES_PASSWORT
+docker exec npm sqlite3 /data/database.sqlite \
+  "UPDATE access_list_auth SET password='NEUES_PASSWORT', \
+   modified_on=datetime('now') WHERE access_list_id=1 AND username='kineo';"
+```
+
+(Klartext-Passwort in der DB ist NPM-Standard — wird nur fürs UI-Pre-Fill
+verwendet. nginx liest ausschließlich den bcrypt-Hash aus `/data/access/1`.)
+
+Innerhalb des Portal-iframes klappt der Login transparent: einmal im Browser
+authentifiziert, hält Chrome/Safari/Firefox den Basic-Auth-Header pro Origin
+im Memory-Cache. Wenn ein "echtes" SSO über Keycloak gewünscht ist, ist
+`oauth2-proxy` der nächste Schritt — siehe `MORGEN.md` Eintrag 1c.
 
 ## Logs & Debug
 
