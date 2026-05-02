@@ -21,7 +21,11 @@ import {
   Check,
   HelpCircle,
   CalendarClock,
+  Menu as MenuIcon,
 } from "lucide-react";
+import type { Messages } from "@/lib/i18n/messages";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { useIsNarrowScreen } from "@/lib/use-is-narrow-screen";
 import type {
   Attendee,
   AttendeeStatus,
@@ -35,21 +39,22 @@ import type {
 
 type View = "month" | "week" | "day" | "scheduling";
 
-const WEEKDAYS_DE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-const MONTHS_DE = [
-  "Januar",
-  "Februar",
-  "März",
-  "April",
-  "Mai",
-  "Juni",
-  "Juli",
-  "August",
-  "September",
-  "Oktober",
-  "November",
-  "Dezember",
-];
+function mondayFirstWeekdayShort(localeTag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const ref = new Date(2024, 0, 1 + i);
+    out.push(
+      new Intl.DateTimeFormat(localeTag, { weekday: "short" }).format(ref),
+    );
+  }
+  return out;
+}
+
+function monthLong(m: number, localeTag: string): string {
+  return new Intl.DateTimeFormat(localeTag, { month: "long" }).format(
+    new Date(2024, m, 1),
+  );
+}
 
 /* ── Date helpers (existing logic preserved) ──────────────────────────── */
 
@@ -93,8 +98,13 @@ function fmtTime(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function fmtRange(a: string, b: string, allDay: boolean): string {
-  if (allDay) return "Ganztägig";
+function fmtRange(
+  a: string,
+  b: string,
+  allDay: boolean,
+  allDayLabel: string,
+): string {
+  if (allDay) return allDayLabel;
   return `${fmtTime(a)}–${fmtTime(b)}`;
 }
 
@@ -123,9 +133,9 @@ function shortTz(tz: string): string {
   return (parts[parts.length - 1] || tz).replace(/_/g, " ");
 }
 
-function fmtTimeIn(iso: string, tz: string): string {
+function fmtTimeIn(iso: string, tz: string, localeTag: string): string {
   try {
-    return new Intl.DateTimeFormat("de-DE", {
+    return new Intl.DateTimeFormat(localeTag, {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: tz,
@@ -175,31 +185,41 @@ const JITSI_BASE =
   process.env.NEXT_PUBLIC_JITSI_BASE_URL?.replace(/\/$/, "") ||
   "https://meet.kineo360.work";
 
-function freshJitsiRoom(workspace: string, title: string): string {
-  const slug = (title || "termin")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 24) || "termin";
+function freshJitsiRoom(
+  workspace: string,
+  title: string,
+  emptyTitleSlug: string,
+): string {
+  const slug =
+    (title || emptyTitleSlug)
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 24) || emptyTitleSlug;
   const rand =
     Math.random().toString(36).slice(2, 8) +
     Math.random().toString(36).slice(2, 5);
   return `${JITSI_BASE}/${workspace}-${slug}-${rand}`;
 }
 
-const REMINDER_PRESETS: Array<{ label: string; minutes: number }> = [
-  { label: "5 min vorher", minutes: 5 },
-  { label: "15 min vorher", minutes: 15 },
-  { label: "30 min vorher", minutes: 30 },
-  { label: "1 Std. vorher", minutes: 60 },
-  { label: "1 Tag vorher", minutes: 24 * 60 },
-];
+const REMINDER_MINUTES = [5, 15, 30, 60, 24 * 60] as const;
 
-const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurrence }> = [
+function reminderPresetLabel(
+  minutes: number,
+  tr: (key: keyof Messages) => string,
+): string {
+  if (minutes === 5) return tr("calendar.reminder.before5");
+  if (minutes === 15) return tr("calendar.reminder.before15");
+  if (minutes === 30) return tr("calendar.reminder.before30");
+  if (minutes === 60) return tr("calendar.reminder.before60");
+  if (minutes === 24 * 60) return tr("calendar.reminder.before1d");
+  return String(minutes);
+}
+
+const RECURRENCE_PRESETS: Array<{ id: string; build: () => Recurrence }> = [
   {
     id: "none",
-    label: "Einmalig",
     build: () => ({
       freq: "DAILY",
       interval: 1,
@@ -212,7 +232,6 @@ const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurr
   },
   {
     id: "daily",
-    label: "Täglich",
     build: () => ({
       freq: "DAILY",
       interval: 1,
@@ -225,7 +244,6 @@ const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurr
   },
   {
     id: "weekly",
-    label: "Wöchentlich",
     build: () => ({
       freq: "WEEKLY",
       interval: 1,
@@ -238,7 +256,6 @@ const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurr
   },
   {
     id: "biweekly",
-    label: "Alle 2 Wochen",
     build: () => ({
       freq: "WEEKLY",
       interval: 2,
@@ -251,7 +268,6 @@ const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurr
   },
   {
     id: "monthly",
-    label: "Monatlich",
     build: () => ({
       freq: "MONTHLY",
       interval: 1,
@@ -264,7 +280,6 @@ const RECURRENCE_PRESETS: Array<{ id: string; label: string; build: () => Recurr
   },
   {
     id: "yearly",
-    label: "Jährlich",
     build: () => ({
       freq: "YEARLY",
       interval: 1,
@@ -287,12 +302,17 @@ function recurrencePresetId(r: Recurrence | null): string {
   return "custom";
 }
 
-function recurrenceLabel(r: Recurrence): string {
+function recurrenceLabel(
+  r: Recurrence,
+  tr: (key: keyof Messages) => string,
+): string {
   const id = recurrencePresetId(r);
   if (id !== "custom") {
-    return RECURRENCE_PRESETS.find((p) => p.id === id)?.label ?? id;
+    return tr(`calendar.recurrence.${id}` as keyof Messages);
   }
-  return `${r.freq} · alle ${r.interval}`;
+  return tr("calendar.recurrence.customPattern")
+    .replace("{freq}", r.freq)
+    .replace("{interval}", String(r.interval));
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */
@@ -308,7 +328,16 @@ export function CalendarClient({
   selfEmail: string;
   selfName: string;
 }) {
-  const [view, setView] = useState<View>("month");
+  const isNarrow = useIsNarrowScreen();
+  // Outlook-ish: Day on phones, Month on desktop. We only set this once
+  // (not whenever isNarrow flips) so a user-chosen view sticks even after
+  // an orientation change.
+  const [view, setView] = useState<View>(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+      ? "day"
+      : "month",
+  );
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [hiddenCals, setHiddenCals] = useState<Set<string>>(new Set());
@@ -319,6 +348,14 @@ export function CalendarClient({
   const [compose, setCompose] = useState<ComposeState | null>(null);
   const [rsvpBusy, setRsvpBusy] = useState<string | null>(null);
   const inflight = useRef(false);
+
+  const t = useT();
+  const { locale } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const weekdayShortMonFirst = useMemo(
+    () => mondayFirstWeekdayShort(localeTag),
+    [localeTag],
+  );
 
   const range = useMemo(() => {
     if (view === "month") {
@@ -444,7 +481,7 @@ export function CalendarClient({
       : localDateTime(compose.date, compose.endTime);
     const body: EventInput = {
       calendarId: compose.calendarId,
-      title: compose.title.trim() || "(ohne Titel)",
+      title: compose.title.trim() || t("calendar.defaultTitle"),
       description: compose.description,
       location: compose.location,
       start: startIso,
@@ -472,12 +509,17 @@ export function CalendarClient({
       refresh();
     } else {
       const j = await r.json().catch(() => ({}));
-      alert(j.error ?? `Fehler beim Speichern (HTTP ${r.status})`);
+      alert(
+        typeof j.error === "string" && j.error.trim()
+          ? j.error
+          : t("calendar.save.failed").replace("{status}", String(r.status)),
+      );
     }
   };
 
   const deleteEvent = async (ev: CalendarEvent) => {
-    if (!confirm(`„${ev.title}" wirklich löschen?`)) return;
+    if (!confirm(t("calendar.delete.confirm").replace("{title}", ev.title)))
+      return;
     const r = await fetch(
       `/api/calendar/event?workspace=${encodeURIComponent(workspace)}&id=${encodeURIComponent(ev.id)}`,
       { method: "DELETE" },
@@ -486,7 +528,9 @@ export function CalendarClient({
       setActiveEvent(null);
       setEvents((es) => es.filter((e) => e.id !== ev.id));
     } else {
-      alert(`Löschen fehlgeschlagen (HTTP ${r.status})`);
+      alert(
+        t("calendar.delete.failed").replace("{status}", String(r.status)),
+      );
     }
   };
 
@@ -523,14 +567,19 @@ export function CalendarClient({
         return updated;
       });
     } catch (e) {
-      alert(`RSVP fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      alert(
+        t("calendar.rsvp.failed").replace(
+          "{message}",
+          e instanceof Error ? e.message : String(e),
+        ),
+      );
     } finally {
       setRsvpBusy(null);
     }
   };
 
   const skipOccurrence = async (ev: CalendarEvent, dateIso: string) => {
-    if (!confirm("Diesen Termin aus der Serie ausblenden?")) return;
+    if (!confirm(t("calendar.skipOccurrence.confirm"))) return;
     const r = await fetch(
       `/api/calendar/event?workspace=${encodeURIComponent(workspace)}&id=${encodeURIComponent(ev.id)}`,
       {
@@ -558,134 +607,214 @@ export function CalendarClient({
 
   const headerLabel = useMemo(() => {
     if (view === "month") {
-      return `${MONTHS_DE[anchor.getMonth()]} ${anchor.getFullYear()}`;
+      return `${monthLong(anchor.getMonth(), localeTag)} ${anchor.getFullYear()}`;
     }
     if (view === "week" || view === "scheduling") {
       const ws = startOfWeek(anchor);
       const we = endOfWeek(anchor);
       const sameMonth = ws.getMonth() === we.getMonth();
       return sameMonth
-        ? `${ws.getDate()}.–${we.getDate()}. ${MONTHS_DE[ws.getMonth()]} ${ws.getFullYear()}`
-        : `${ws.getDate()}. ${MONTHS_DE[ws.getMonth()]} – ${we.getDate()}. ${MONTHS_DE[we.getMonth()]} ${we.getFullYear()}`;
+        ? `${ws.getDate()}.–${we.getDate()}. ${monthLong(ws.getMonth(), localeTag)} ${ws.getFullYear()}`
+        : `${ws.getDate()}. ${monthLong(ws.getMonth(), localeTag)} – ${we.getDate()}. ${monthLong(we.getMonth(), localeTag)} ${we.getFullYear()}`;
     }
-    return `${WEEKDAYS_DE[(anchor.getDay() + 6) % 7]}, ${anchor.getDate()}. ${MONTHS_DE[anchor.getMonth()]} ${anchor.getFullYear()}`;
-  }, [view, anchor]);
+    return `${weekdayShortMonFirst[(anchor.getDay() + 6) % 7]}, ${anchor.getDate()}. ${monthLong(anchor.getMonth(), localeTag)} ${anchor.getFullYear()}`;
+  }, [view, anchor, localeTag, weekdayShortMonFirst]);
+
+  const sidebarContent = (
+    <>
+      <div className="p-3 border-b border-stroke-1 flex items-center gap-2">
+        <button
+          onClick={() => {
+            setSidebarOpen(false);
+            openCompose();
+          }}
+          className="flex-1 inline-flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium text-white"
+          style={{ background: accent }}
+        >
+          <Plus size={16} />
+          {t("calendar.newEvent")}
+        </button>
+        {isNarrow && (
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className="shrink-0 inline-flex items-center justify-center rounded-md border border-stroke-1 bg-bg-elevated text-text-secondary hover:text-text-primary min-h-[40px] min-w-[40px]"
+            aria-label={t("calendar.sidebar.close")}
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+      <MiniMonthCalendar
+        anchor={anchor}
+        accent={accent}
+        eventsByDay={eventsByDay}
+        weekdayShort={weekdayShortMonFirst}
+        localeTag={localeTag}
+        onPick={(d) => {
+          setAnchor(d);
+          if (view === "month") setView("day");
+          setSidebarOpen(false);
+        }}
+      />
+      <div className="p-3 text-xs uppercase tracking-wide text-text-tertiary">
+        {t("calendar.sidebar.calendars")}
+      </div>
+      <div className="px-2 pb-3 space-y-0.5 overflow-auto">
+        {calendars.length === 0 && !loading && (
+          <div className="px-2 py-1 text-xs text-text-tertiary">
+            {t("calendar.sidebar.noCalendars")}
+          </div>
+        )}
+        {calendars.map((c) => {
+          const hidden = hiddenCals.has(c.id);
+          return (
+            <button
+              key={c.id}
+              onClick={() => toggleCal(c.id)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+            >
+              <span
+                className="w-3 h-3 rounded-sm border border-stroke-2"
+                style={{ background: hidden ? "transparent" : c.color }}
+                aria-hidden
+              />
+              <span className="truncate flex-1">{c.name}</span>
+              {!c.owner && (
+                <span className="text-[10px] text-text-quaternary">
+                  {t("calendar.sidebar.shared")}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-auto p-3 border-t border-stroke-1 text-xs text-text-tertiary">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={12} />
+          <span className="truncate">{selfName}</span>
+        </div>
+        <div className="truncate font-mono mt-0.5">{selfEmail}</div>
+        <div
+          className="mt-2 flex items-center gap-1.5 text-[11px] text-text-quaternary"
+          title={t("calendar.sidebar.browserTz")}
+        >
+          <Globe size={11} />
+          {shortTz(browserTz)} · {tzOffsetLabel(browserTz)}
+        </div>
+      </div>
+    </>
+  );
 
   return (
-    <div className="h-full flex">
-      {/* ─────────────── Left rail ─────────────── */}
-      <aside className="w-64 shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col">
-        <div className="p-3 border-b border-stroke-1">
-          <button
-            onClick={() => openCompose()}
-            className="w-full flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium text-white"
-            style={{ background: accent }}
-          >
-            <Plus size={16} />
-            Neuer Termin
-          </button>
+    <div className="h-full flex relative">
+      {/* ─────────────── Left rail (desktop / tablet) ─────────────── */}
+      {!isNarrow && (
+        <aside className="w-60 lg:w-64 shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col">
+          {sidebarContent}
+        </aside>
+      )}
+
+      {/* ─────────────── Drawer (mobile) ─────────────── */}
+      {isNarrow && sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 flex"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.currentTarget === e.target) setSidebarOpen(false);
+          }}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <aside className="relative z-10 w-[80vw] max-w-[320px] h-full border-r border-stroke-1 bg-bg-chrome flex flex-col shadow-2xl pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top,0)]">
+            {sidebarContent}
+          </aside>
         </div>
-        <div className="p-3 text-xs uppercase tracking-wide text-text-tertiary">
-          Kalender
-        </div>
-        <div className="px-2 pb-3 space-y-0.5 overflow-auto">
-          {calendars.length === 0 && !loading && (
-            <div className="px-2 py-1 text-xs text-text-tertiary">
-              Keine Kalender gefunden.
-            </div>
-          )}
-          {calendars.map((c) => {
-            const hidden = hiddenCals.has(c.id);
-            return (
-              <button
-                key={c.id}
-                onClick={() => toggleCal(c.id)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
-              >
-                <span
-                  className="w-3 h-3 rounded-sm border border-stroke-2"
-                  style={{ background: hidden ? "transparent" : c.color }}
-                  aria-hidden
-                />
-                <span className="truncate flex-1">{c.name}</span>
-                {!c.owner && (
-                  <span className="text-[10px] text-text-quaternary">geteilt</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-auto p-3 border-t border-stroke-1 text-xs text-text-tertiary">
-          <div className="flex items-center gap-2">
-            <CalendarDays size={12} />
-            <span className="truncate">{selfName}</span>
-          </div>
-          <div className="truncate font-mono mt-0.5">{selfEmail}</div>
-          <div
-            className="mt-2 flex items-center gap-1.5 text-[11px] text-text-quaternary"
-            title="Browser-Zeitzone"
-          >
-            <Globe size={11} />
-            {shortTz(browserTz)} · {tzOffsetLabel(browserTz)}
-          </div>
-        </div>
-      </aside>
+      )}
 
       {/* ─────────────── Main pane ─────────────── */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="h-12 shrink-0 border-b border-stroke-1 bg-bg-chrome px-3 flex items-center gap-2">
+        <div className="shrink-0 border-b border-stroke-1 bg-bg-chrome px-2 sm:px-3 py-1.5 sm:py-0 sm:h-12 flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {isNarrow && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 rounded text-text-secondary hover:bg-bg-overlay hover:text-text-primary min-h-[36px] min-w-[36px] inline-flex items-center justify-center"
+              aria-label={t("calendar.sidebar.open")}
+            >
+              <MenuIcon size={18} />
+            </button>
+          )}
           <button
             onClick={goToday}
-            className="px-3 py-1.5 text-xs font-medium rounded border border-stroke-1 text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
+            className="px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded border border-stroke-1 text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
           >
-            Heute
+            {t("calendar.today")}
           </button>
           <button
             onClick={goPrev}
             className="p-1.5 rounded text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
-            aria-label="Zurück"
+            aria-label={t("calendar.aria.back")}
           >
             <ChevronLeft size={18} />
           </button>
           <button
             onClick={goNext}
             className="p-1.5 rounded text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
-            aria-label="Vor"
+            aria-label={t("calendar.aria.forward")}
           >
             <ChevronRight size={18} />
           </button>
-          <h1 className="ml-1 text-sm font-semibold text-text-primary">
+          <h1 className="ml-1 text-sm font-semibold text-text-primary truncate min-w-0 flex-1 sm:flex-none">
             {headerLabel}
           </h1>
           {loading && (
-            <Loader2 size={14} className="ml-2 animate-spin text-text-tertiary" />
+            <Loader2 size={14} className="ml-1 animate-spin text-text-tertiary" />
           )}
           <div className="ml-auto flex items-center gap-1">
             <button
               onClick={refresh}
               className="p-1.5 rounded text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
-              aria-label="Aktualisieren"
+              aria-label={t("calendar.aria.refresh")}
             >
               <RefreshCw size={15} />
             </button>
-            <div className="ml-2 inline-flex rounded border border-stroke-1 overflow-hidden text-xs">
-              {(["month", "week", "day", "scheduling"] as View[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`px-3 py-1.5 ${view === v ? "bg-bg-overlay text-text-primary" : "text-text-secondary hover:bg-bg-overlay hover:text-text-primary"}`}
-                  title={v === "scheduling" ? "Frei/Gebucht-Sicht über mehrere Personen" : undefined}
-                >
-                  {v === "month"
-                    ? "Monat"
-                    : v === "week"
-                      ? "Woche"
-                      : v === "day"
-                        ? "Tag"
-                        : "Planung"}
-                </button>
-              ))}
-            </div>
+            {isNarrow ? (
+              <select
+                value={view}
+                onChange={(e) => setView(e.target.value as View)}
+                className="ml-1 px-2 py-1.5 text-xs rounded border border-stroke-1 bg-bg-chrome text-text-primary"
+                aria-label={t("calendar.view.label")}
+              >
+                <option value="day">{t("calendar.day")}</option>
+                <option value="week">{t("calendar.week")}</option>
+                <option value="month">{t("calendar.month")}</option>
+                <option value="scheduling">{t("calendar.view.scheduling")}</option>
+              </select>
+            ) : (
+              <div className="ml-2 inline-flex rounded border border-stroke-1 overflow-hidden text-xs">
+                {(["month", "week", "day", "scheduling"] as View[]).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={`px-3 py-1.5 ${view === v ? "bg-bg-overlay text-text-primary" : "text-text-secondary hover:bg-bg-overlay hover:text-text-primary"}`}
+                    title={
+                      v === "scheduling"
+                        ? t("calendar.view.schedulingTooltip")
+                        : undefined
+                    }
+                  >
+                    {v === "month"
+                      ? t("calendar.month")
+                      : v === "week"
+                        ? t("calendar.week")
+                        : v === "day"
+                          ? t("calendar.day")
+                          : t("calendar.view.scheduling")}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -790,6 +919,108 @@ export function CalendarClient({
   );
 }
 
+/* ====================== Outlook-style mini calendar ===================== */
+
+function MiniMonthCalendar({
+  anchor,
+  accent,
+  eventsByDay,
+  weekdayShort,
+  localeTag,
+  onPick,
+}: {
+  anchor: Date;
+  accent: string;
+  eventsByDay: Map<string, CalendarEvent[]>;
+  weekdayShort: string[];
+  localeTag: string;
+  onPick: (d: Date) => void;
+}) {
+  const [cursor, setCursor] = useState<Date>(
+    () => new Date(anchor.getFullYear(), anchor.getMonth(), 1),
+  );
+  // Keep mini-calendar anchored to the main view's month when the user
+  // pages forward/back through the main calendar.
+  useEffect(() => {
+    setCursor(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+  }, [anchor]);
+
+  const cells = useMemo(() => buildMonthCells(cursor), [cursor]);
+  const todayKey = dayKey(new Date());
+  const anchorKey = dayKey(anchor);
+  const monthLabel = `${monthLong(cursor.getMonth(), localeTag)} ${cursor.getFullYear()}`;
+
+  return (
+    <div className="px-3 pt-2 pb-3 border-b border-stroke-1">
+      <div className="flex items-center justify-between mb-1.5">
+        <button
+          type="button"
+          onClick={() =>
+            setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))
+          }
+          className="p-1 rounded text-text-tertiary hover:bg-bg-overlay hover:text-text-primary"
+          aria-label="prev month"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <div className="text-xs font-medium text-text-primary">{monthLabel}</div>
+        <button
+          type="button"
+          onClick={() =>
+            setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))
+          }
+          className="p-1 rounded text-text-tertiary hover:bg-bg-overlay hover:text-text-primary"
+          aria-label="next month"
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 text-[10px] text-text-quaternary mb-0.5">
+        {weekdayShort.map((w) => (
+          <div key={w} className="text-center py-0.5">
+            {w.slice(0, 2)}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-px">
+        {cells.map((d) => {
+          const k = dayKey(d);
+          const inMonth = d.getMonth() === cursor.getMonth();
+          const isToday = k === todayKey;
+          const isAnchor = k === anchorKey;
+          const hasEvents = (eventsByDay.get(k) ?? []).length > 0;
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onPick(d)}
+              className={`h-7 text-[11px] rounded relative inline-flex items-center justify-center ${
+                isAnchor
+                  ? "text-white"
+                  : isToday
+                    ? "text-text-primary font-semibold"
+                    : inMonth
+                      ? "text-text-secondary hover:bg-bg-overlay"
+                      : "text-text-quaternary hover:bg-bg-overlay"
+              }`}
+              style={isAnchor ? { background: accent } : undefined}
+              aria-label={k}
+            >
+              {d.getDate()}
+              {hasEvents && !isAnchor && (
+                <span
+                  className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                  style={{ background: accent }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ============================== Month grid ============================== */
 
 function MonthGrid({
@@ -805,6 +1036,14 @@ function MonthGrid({
   onSelectEvent: (e: CalendarEvent) => void;
   onSelectDay: (d: Date) => void;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const weekdayLabels = useMemo(
+    () => mondayFirstWeekdayShort(localeTag),
+    [localeTag],
+  );
+  const allDayL = t("calendar.allDay");
   const cells = useMemo(() => buildMonthCells(anchor), [anchor]);
   const todayKey = dayKey(new Date());
   const monthIdx = anchor.getMonth();
@@ -812,7 +1051,7 @@ function MonthGrid({
   return (
     <div className="h-full flex flex-col">
       <div className="grid grid-cols-7 border-b border-stroke-1 bg-bg-chrome shrink-0">
-        {WEEKDAYS_DE.map((d) => (
+        {weekdayLabels.map((d) => (
           <div
             key={d}
             className="px-2 py-2 text-xs font-medium uppercase tracking-wide text-text-tertiary"
@@ -863,7 +1102,7 @@ function MonthGrid({
                       color: e.color,
                       borderLeft: `3px solid ${e.color}`,
                     }}
-                    title={`${e.title} · ${fmtRange(e.start, e.end, e.allDay)}`}
+                    title={`${e.title} · ${fmtRange(e.start, e.end, e.allDay, allDayL)}`}
                   >
                     {e.allDay ? "" : `${fmtTime(e.start)} `}
                     <span className="text-text-primary">{e.title}</span>
@@ -872,7 +1111,10 @@ function MonthGrid({
                 ))}
                 {more > 0 && (
                   <div className="text-[10px] text-text-tertiary px-1.5">
-                    +{more} weitere
+                    {t("calendar.moreInMonth").replace(
+                      "{count}",
+                      String(more),
+                    )}
                   </div>
                 )}
               </div>
@@ -982,9 +1224,50 @@ function CalendarWeekTimeGrid({
   onSelectEvent: (e: CalendarEvent) => void;
   onCreateRange: (start: Date, end: Date) => void;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const weekdayLabels = useMemo(
+    () => mondayFirstWeekdayShort(localeTag),
+    [localeTag],
+  );
+  const allDayL = t("calendar.allDay");
   const todayKey = dayKey(new Date());
   const hoursCount = WEEK_GRID_MAX_H - WEEK_GRID_MIN_H;
   const bodyPx = hoursCount * WEEK_PX_PER_HOUR;
+
+  // Outlook-style "now" indicator: ticks once per minute.
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const nowRel =
+    now.getHours() * 60 + now.getMinutes() - WEEK_GRID_MIN_H * 60;
+  const totalMin = totalWeekGridMinutes();
+  const nowVisible = nowRel >= 0 && nowRel <= totalMin;
+  const nowTopPct = (nowRel / totalMin) * 100;
+
+  // Outlook-style: scroll to ~1h before "now" on mount or when the visible
+  // day range changes, so the user always lands near the current time.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const daysKey = days.map((d) => dayKey(d)).join(",");
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const showsToday = days.some((d) => dayKey(d) === todayKey);
+    const target = showsToday
+      ? Math.max(
+          0,
+          (now.getHours() - WEEK_GRID_MIN_H - 1) * WEEK_PX_PER_HOUR,
+        )
+      : Math.max(0, (9 - WEEK_GRID_MIN_H) * WEEK_PX_PER_HOUR);
+    el.scrollTop = target;
+    // We deliberately depend on the day list (stringified) and todayKey, not
+    // on `now`, so the scroll snaps once per day change rather than every
+    // minute when `now` ticks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [daysKey, todayKey]);
   const dragRef = useRef<{
     pointerId: number;
     day: Date;
@@ -1057,7 +1340,7 @@ function CalendarWeekTimeGrid({
       {/* All-day row */}
       <div className="flex border-b border-stroke-1 bg-bg-chrome shrink-0">
         <div className="w-12 shrink-0 p-1.5 text-[10px] text-text-quaternary border-r border-stroke-1">
-          ganztg.
+          {t("calendar.allDayAbbrev")}
         </div>
         <div className={colsClass}>
           {days.map((d) => {
@@ -1080,7 +1363,7 @@ function CalendarWeekTimeGrid({
                     {d.getDate()}
                   </span>
                   <span className="text-[10px] font-medium text-text-secondary truncate">
-                    {WEEKDAYS_DE[(d.getDay() + 6) % 7]}
+                    {weekdayLabels[(d.getDay() + 6) % 7]}
                   </span>
                 </div>
                 <div className="space-y-0.5">
@@ -1109,7 +1392,7 @@ function CalendarWeekTimeGrid({
       </div>
 
       {/* Time grid */}
-      <div className="flex flex-1 min-h-0 overflow-auto">
+      <div ref={scrollerRef} className="flex flex-1 min-h-0 overflow-auto">
         <div className="w-12 shrink-0 border-r border-stroke-1 bg-bg-chrome sticky left-0 z-10">
           {Array.from({ length: hoursCount }, (_, i) => (
             <div
@@ -1164,6 +1447,18 @@ function CalendarWeekTimeGrid({
                     />
                   ))}
 
+                  {/* Outlook-style now indicator on today */}
+                  {isToday && nowVisible && (
+                    <div
+                      className="absolute left-0 right-0 pointer-events-none z-[2]"
+                      style={{ top: `${nowTopPct}%` }}
+                      aria-hidden
+                    >
+                      <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-rose-500 shadow" />
+                      <div className="border-t-2 border-rose-500" />
+                    </div>
+                  )}
+
                   {/* timed events */}
                   {(() => {
                     const layouts = timed
@@ -1206,7 +1501,7 @@ function CalendarWeekTimeGrid({
                             color: "var(--text-primary)",
                             borderLeft: `3px solid ${ev.color}`,
                           }}
-                          title={`${ev.title} · ${fmtRange(ev.start, ev.end, false)}`}
+                          title={`${ev.title} · ${fmtRange(ev.start, ev.end, false, allDayL)}`}
                         >
                           <span className="font-medium text-[10px] text-text-primary truncate block">
                             {ev.title}
@@ -1259,6 +1554,11 @@ function EventDrawer({
   onRsvp: (status: AttendeeStatus) => void;
   onSkipOccurrence: () => void;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const allDayL = t("calendar.allDay");
+
   const me = event.attendees.find(
     (a) => a.email.toLowerCase() === selfEmail.toLowerCase(),
   );
@@ -1275,7 +1575,7 @@ function EventDrawer({
         <button
           onClick={onClose}
           className="ml-auto p-1.5 rounded text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
-          aria-label="Schließen"
+          aria-label={t("calendar.drawer.close")}
         >
           <X size={16} />
         </button>
@@ -1290,15 +1590,17 @@ function EventDrawer({
           <div className="text-xs text-text-tertiary">{event.calendarId}</div>
           {event.recurring && (
             <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-text-tertiary uppercase tracking-wide">
-              <Repeat size={11} /> Serie
+              <Repeat size={11} /> {t("calendar.series.short")}
             </span>
           )}
         </div>
 
         <div>
-          <div className="text-xs text-text-tertiary uppercase mb-1">Wann</div>
+          <div className="text-xs text-text-tertiary uppercase mb-1">
+            {t("calendar.section.when")}
+          </div>
           <div className="text-sm text-text-primary">
-            {fmtRange(event.start, event.end, event.allDay)}
+            {fmtRange(event.start, event.end, event.allDay, allDayL)}
             {!event.allDay && (
               <span className="ml-2 text-[11px] text-text-tertiary">
                 {tzOffsetLabel(eventTz)} · {shortTz(eventTz)}
@@ -1306,7 +1608,7 @@ function EventDrawer({
             )}
           </div>
           <div className="text-xs text-text-tertiary mt-0.5">
-            {new Date(event.start).toLocaleDateString("de-DE", {
+            {new Date(event.start).toLocaleDateString(localeTag, {
               weekday: "long",
               day: "numeric",
               month: "long",
@@ -1317,12 +1619,10 @@ function EventDrawer({
             <div className="mt-2 rounded-md bg-bg-overlay/60 border border-stroke-1 px-2 py-1.5 text-[11px] text-text-secondary flex items-center gap-2">
               <Globe size={11} className="text-text-tertiary" />
               <span>
-                Bei dir:{" "}
-                <strong>
-                  {fmtTimeIn(event.start, browserTz)}–
-                  {fmtTimeIn(event.end, browserTz)}
-                </strong>{" "}
-                ({shortTz(browserTz)})
+                {t("calendar.remoteTimesForYou")
+                  .replace("{start}", fmtTimeIn(event.start, browserTz, localeTag))
+                  .replace("{end}", fmtTimeIn(event.end, browserTz, localeTag))
+                  .replace("{tz}", shortTz(browserTz))}
               </span>
             </div>
           )}
@@ -1331,14 +1631,14 @@ function EventDrawer({
         {showRsvp && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">
-              Deine Antwort
+              {t("calendar.section.yourResponse")}
             </div>
             <div className="flex items-center gap-1.5">
               {(
                 [
-                  ["accepted", "Annehmen", Check],
-                  ["tentative", "Vielleicht", HelpCircle],
-                  ["declined", "Ablehnen", X],
+                  ["accepted", t("calendar.rsvp.accept"), Check],
+                  ["tentative", t("calendar.rsvp.tentative"), HelpCircle],
+                  ["declined", t("calendar.rsvp.decline"), X],
                 ] as const
               ).map(([status, label, Icon]) => {
                 const active = me?.status === status;
@@ -1368,7 +1668,8 @@ function EventDrawer({
             </div>
             {me?.status && me.status !== "needs-action" && (
               <div className="mt-1.5 text-[11px] text-text-tertiary">
-                Aktuell: <strong>{partstatLabel(me.status)}</strong>
+                {t("calendar.rsvp.current")}{" "}
+                <strong>{partstatLabel(me.status, t)}</strong>
               </div>
             )}
           </div>
@@ -1376,7 +1677,9 @@ function EventDrawer({
 
         {event.location && (
           <div>
-            <div className="text-xs text-text-tertiary uppercase mb-1">Ort</div>
+            <div className="text-xs text-text-tertiary uppercase mb-1">
+              {t("calendar.section.where")}
+            </div>
             <div className="text-sm text-text-primary flex items-center gap-2">
               <MapPin size={14} />
               {event.location}
@@ -1386,7 +1689,7 @@ function EventDrawer({
         {event.videoUrl && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">
-              Video-Call
+              {t("calendar.section.videoCall")}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <a
@@ -1396,7 +1699,7 @@ function EventDrawer({
                 className="inline-flex items-center gap-1.5 rounded-md bg-success/15 text-success border border-success/30 hover:bg-success/25 px-3 py-1.5 text-sm font-medium"
               >
                 <Video size={14} />
-                Jetzt beitreten
+                {t("calendar.video.join")}
               </a>
               <button
                 type="button"
@@ -1404,10 +1707,10 @@ function EventDrawer({
                   void navigator.clipboard?.writeText(event.videoUrl);
                 }}
                 className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs text-text-tertiary hover:text-text-primary"
-                title="Link kopieren"
+                title={t("calendar.video.copyLink")}
               >
                 <Copy size={12} />
-                Link kopieren
+                {t("calendar.video.copyLink")}
               </button>
             </div>
             <div className="text-[11px] text-text-quaternary mt-1.5 break-all">
@@ -1418,7 +1721,7 @@ function EventDrawer({
         {event.attendees.length > 0 && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">
-              Teilnehmer
+              {t("calendar.section.attendees")}
             </div>
             <ul className="text-sm text-text-primary space-y-1">
               {event.attendees.map((a) => (
@@ -1437,13 +1740,13 @@ function EventDrawer({
         {event.reminders.length > 0 && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">
-              Erinnerungen
+              {t("calendar.section.reminders")}
             </div>
             <ul className="text-sm text-text-primary space-y-1">
               {event.reminders.map((r, i) => (
                 <li key={i} className="flex items-center gap-2 text-[12.5px]">
                   <Bell size={12} className="text-text-tertiary" />
-                  {reminderLabel(r)}
+                  {reminderLabel(r, t)}
                 </li>
               ))}
             </ul>
@@ -1452,19 +1755,23 @@ function EventDrawer({
         {event.recurrence && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">
-              Wiederholung
+              {t("calendar.section.recurrence")}
             </div>
             <div className="text-sm text-text-primary flex items-center gap-2">
               <Repeat size={13} className="text-text-tertiary" />
-              {recurrenceLabel(event.recurrence)}
+              {recurrenceLabel(event.recurrence, t)}
               {event.recurrence.until && (
                 <span className="text-[11px] text-text-tertiary">
-                  bis {event.recurrence.until}
+                  {t("calendar.recurrence.untilPrefix")}{" "}
+                  {event.recurrence.until}
                 </span>
               )}
               {event.recurrence.count != null && (
                 <span className="text-[11px] text-text-tertiary">
-                  · {event.recurrence.count} Termine
+                  {t("calendar.recurrence.countSuffix").replace(
+                    "{count}",
+                    String(event.recurrence.count),
+                  )}
                 </span>
               )}
             </div>
@@ -1474,7 +1781,7 @@ function EventDrawer({
                 onClick={onSkipOccurrence}
                 className="mt-2 text-[11.5px] text-amber-400 hover:underline"
               >
-                Diesen Termin aus Serie ausnehmen
+                {t("calendar.skipSeriesOccurrence")}
               </button>
             )}
           </div>
@@ -1482,7 +1789,7 @@ function EventDrawer({
         {event.description && (
           <div>
             <div className="text-xs text-text-tertiary uppercase mb-1">
-              Beschreibung
+              {t("calendar.section.description")}
             </div>
             <div className="text-sm text-text-primary whitespace-pre-wrap">
               {event.description}
@@ -1497,7 +1804,7 @@ function EventDrawer({
             className="w-full flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium text-danger border border-stroke-1 hover:bg-bg-overlay"
           >
             <Trash2 size={14} />
-            Löschen
+            {t("calendar.delete.action")}
           </button>
         </div>
       )}
@@ -1505,24 +1812,28 @@ function EventDrawer({
   );
 }
 
-function partstatLabel(s: AttendeeStatus): string {
+function partstatLabel(
+  s: AttendeeStatus,
+  tr: (key: keyof Messages) => string,
+): string {
   switch (s) {
     case "accepted":
-      return "Zugesagt";
+      return tr("calendar.partstat.accepted");
     case "declined":
-      return "Abgelehnt";
+      return tr("calendar.partstat.declined");
     case "tentative":
-      return "Vielleicht";
+      return tr("calendar.partstat.tentative");
     case "needs-action":
-      return "Offen";
+      return tr("calendar.partstat.needsAction");
     case "delegated":
-      return "Delegiert";
+      return tr("calendar.partstat.delegated");
     default:
-      return "—";
+      return tr("calendar.partstat.unknown");
   }
 }
 
 function PartstatPill({ status }: { status: AttendeeStatus }) {
+  const t = useT();
   const tone =
     status === "accepted"
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
@@ -1531,23 +1842,32 @@ function PartstatPill({ status }: { status: AttendeeStatus }) {
         : status === "tentative"
           ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
           : "bg-bg-overlay text-text-tertiary border-stroke-1";
+  const label = partstatLabel(status, t);
   return (
     <span
       className={`text-[10px] px-1.5 py-px rounded border ${tone}`}
-      title={partstatLabel(status)}
+      title={label}
     >
-      {partstatLabel(status)}
+      {label}
     </span>
   );
 }
 
-function reminderLabel(r: Reminder): string {
-  const m = r.minutesBefore;
-  let unit = "";
-  if (m < 60) unit = `${m} min`;
-  else if (m < 24 * 60) unit = `${Math.round(m / 60)} Std.`;
-  else unit = `${Math.round(m / (24 * 60))} Tag(e)`;
-  return `${unit} vorher · ${r.action === "EMAIL" ? "E-Mail" : "Pop-up"}`;
+function reminderLabel(
+  r: Reminder,
+  tr: (key: keyof Messages) => string,
+): string {
+  const when =
+    REMINDER_MINUTES.includes(r.minutesBefore as (typeof REMINDER_MINUTES)[number])
+      ? reminderPresetLabel(r.minutesBefore, tr)
+      : `${r.minutesBefore} min`;
+  const channel =
+    r.action === "EMAIL"
+      ? tr("calendar.reminder.channelEmail")
+      : tr("calendar.reminder.channelPopup");
+  return tr("calendar.reminder.line")
+    .replace("{when}", when)
+    .replace("{channel}", channel);
 }
 
 /* ============================== Compose ================================ */
@@ -1569,6 +1889,7 @@ function ComposeModal({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const t = useT();
   const recurrenceId = recurrencePresetId(state.recurrence);
 
   return (
@@ -1576,7 +1897,7 @@ function ComposeModal({
       <div className="w-full max-w-lg bg-bg-elevated border border-stroke-1 rounded-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="h-12 border-b border-stroke-1 px-4 flex items-center">
           <h2 className="text-sm font-semibold text-text-primary">
-            Neuer Termin
+            {t("calendar.compose.newTitle")}
           </h2>
           <button
             onClick={onCancel}
@@ -1588,20 +1909,20 @@ function ComposeModal({
         <div className="p-4 space-y-3 overflow-auto">
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
-              Titel
+              {t("calendar.title")}
             </label>
             <input
               autoFocus
               className="input"
               value={state.title}
               onChange={(e) => onChange({ ...state, title: e.target.value })}
-              placeholder="Was steht an?"
+              placeholder={t("calendar.compose.titlePlaceholder")}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-text-tertiary mb-1">
-                Kalender
+                {t("calendar.field.calendar")}
               </label>
               <select
                 className="input"
@@ -1626,13 +1947,13 @@ function ComposeModal({
                     onChange({ ...state, allDay: e.target.checked })
                   }
                 />
-                Ganztägig
+                {t("calendar.allDay")}
               </label>
             </div>
           </div>
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
-              Datum
+              {t("calendar.field.date")}
             </label>
             <input
               type="date"
@@ -1646,7 +1967,7 @@ function ComposeModal({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-text-tertiary mb-1">
-                    Beginn
+                    {t("calendar.field.start")}
                   </label>
                   <input
                     type="time"
@@ -1659,7 +1980,7 @@ function ComposeModal({
                 </div>
                 <div>
                   <label className="block text-xs text-text-tertiary mb-1">
-                    Ende
+                    {t("calendar.field.end")}
                   </label>
                   <input
                     type="time"
@@ -1672,14 +1993,16 @@ function ComposeModal({
                 </div>
               </div>
               <div className="text-[11px] text-text-quaternary flex items-center gap-1.5">
-                <Globe size={11} /> Zeiten in {shortTz(browserTz)} (
-                {tzOffsetLabel(browserTz)})
+                <Globe size={11} />{" "}
+                {t("calendar.timesInTimezone")
+                  .replace("{tz}", shortTz(browserTz))
+                  .replace("{offset}", tzOffsetLabel(browserTz))}
               </div>
             </>
           )}
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
-              Ort
+              {t("calendar.location")}
             </label>
             <input
               className="input"
@@ -1687,7 +2010,7 @@ function ComposeModal({
               onChange={(e) =>
                 onChange({ ...state, location: e.target.value })
               }
-              placeholder="Raum, Adresse oder Link"
+              placeholder={t("calendar.field.locationPlaceholder")}
             />
           </div>
 
@@ -1695,7 +2018,7 @@ function ComposeModal({
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
               <Repeat size={11} className="inline mr-1" />
-              Wiederholung
+              {t("calendar.field.recurrence")}
             </label>
             <select
               className="input"
@@ -1714,18 +2037,20 @@ function ComposeModal({
             >
               {RECURRENCE_PRESETS.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.label}
+                  {t(`calendar.recurrence.${p.id}` as keyof Messages)}
                 </option>
               ))}
               {recurrenceId === "custom" && (
-                <option value="custom">Benutzerdefiniert</option>
+                <option value="custom">
+                  {t("calendar.recurrence.custom")}
+                </option>
               )}
             </select>
             {state.recurrence && (
               <div className="mt-2 grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-text-tertiary mb-1">
-                    Endet am
+                    {t("calendar.field.endsOn")}
                   </label>
                   <input
                     type="date"
@@ -1749,13 +2074,13 @@ function ComposeModal({
                 </div>
                 <div>
                   <label className="block text-xs text-text-tertiary mb-1">
-                    Nach N Terminen
+                    {t("calendar.field.afterNOccurrences")}
                   </label>
                   <input
                     type="number"
                     min={1}
                     className="input"
-                    placeholder="optional"
+                    placeholder={t("calendar.optional")}
                     value={state.recurrence.count ?? ""}
                     onChange={(e) =>
                       onChange({
@@ -1783,26 +2108,27 @@ function ComposeModal({
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
               <Bell size={11} className="inline mr-1" />
-              Erinnerungen
+              {t("calendar.reminders.heading")}
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {REMINDER_PRESETS.map((p) => {
+              {REMINDER_MINUTES.map((minutes) => {
                 const active = state.reminders.some(
-                  (r) => r.minutesBefore === p.minutes,
+                  (r) => r.minutesBefore === minutes,
                 );
+                const label = reminderPresetLabel(minutes, t);
                 return (
                   <button
-                    key={p.minutes}
+                    key={minutes}
                     type="button"
                     onClick={() => {
                       const next = active
                         ? state.reminders.filter(
-                            (r) => r.minutesBefore !== p.minutes,
+                            (r) => r.minutesBefore !== minutes,
                           )
                         : [
                             ...state.reminders,
                             {
-                              minutesBefore: p.minutes,
+                              minutesBefore: minutes,
                               action: "DISPLAY" as const,
                             },
                           ];
@@ -1815,14 +2141,14 @@ function ComposeModal({
                         : undefined
                     }
                   >
-                    {p.label}
+                    {label}
                   </button>
                 );
               })}
             </div>
             {state.reminders.length === 0 && (
               <p className="text-[11px] text-text-quaternary mt-1">
-                Keine Erinnerung gesetzt.
+                {t("calendar.reminders.none")}
               </p>
             )}
           </div>
@@ -1831,11 +2157,12 @@ function ComposeModal({
             workspace={workspace}
             videoUrl={state.videoUrl}
             title={state.title}
+            roomSlugFallback={t("calendar.defaultRoomSlug")}
             onChange={(videoUrl) => onChange({ ...state, videoUrl })}
           />
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
-              Teilnehmer (komma-getrennt)
+              {t("calendar.attendees.label")}
             </label>
             <input
               className="input"
@@ -1843,18 +2170,17 @@ function ComposeModal({
               onChange={(e) =>
                 onChange({ ...state, attendees: e.target.value })
               }
-              placeholder="diana.matushkina@corehub.kineo360.work, …"
+              placeholder={t("calendar.attendees.placeholder")}
             />
             {state.attendees.trim() && (
               <p className="text-[11px] text-text-quaternary mt-1">
-                Teilnehmer erhalten eine Einladung mit
-                Annehmen-/Ablehnen-Buttons (RFC 5545 ATTENDEE/RSVP).
+                {t("calendar.attendees.hint")}
               </p>
             )}
           </div>
           <div>
             <label className="block text-xs text-text-tertiary mb-1">
-              Beschreibung
+              {t("calendar.description")}
             </label>
             <textarea
               className="input"
@@ -1863,7 +2189,7 @@ function ComposeModal({
               onChange={(e) =>
                 onChange({ ...state, description: e.target.value })
               }
-              placeholder="Agenda, Notizen, Links …"
+              placeholder={t("calendar.description.placeholder")}
             />
           </div>
         </div>
@@ -1872,14 +2198,14 @@ function ComposeModal({
             onClick={onCancel}
             className="px-3 py-1.5 text-sm rounded text-text-secondary hover:bg-bg-overlay hover:text-text-primary"
           >
-            Abbrechen
+            {t("common.cancel")}
           </button>
           <button
             onClick={onSubmit}
             className="px-4 py-1.5 text-sm font-medium rounded text-white"
             style={{ background: accent }}
           >
-            Speichern
+            {t("calendar.compose.save")}
           </button>
         </div>
       </div>
@@ -1893,20 +2219,23 @@ function VideoCallSection({
   workspace,
   videoUrl,
   title,
+  roomSlugFallback,
   onChange,
 }: {
   workspace: string;
   videoUrl: string;
   title: string;
+  roomSlugFallback: string;
   onChange: (videoUrl: string) => void;
 }) {
+  const t = useT();
   const enabled = !!videoUrl;
 
   function toggle() {
     if (enabled) {
       onChange("");
     } else {
-      onChange(freshJitsiRoom(workspace, title));
+      onChange(freshJitsiRoom(workspace, title, roomSlugFallback));
     }
   }
 
@@ -1919,7 +2248,7 @@ function VideoCallSection({
           ) : (
             <VideoOff size={14} className="text-text-tertiary" />
           )}
-          <span>Video-Call</span>
+          <span>{t("calendar.section.videoCall")}</span>
         </div>
         <button
           type="button"
@@ -1931,7 +2260,9 @@ function VideoCallSection({
               : "border-stroke-2 text-text-secondary hover:text-text-primary hover:bg-bg-overlay")
           }
         >
-          {enabled ? "Entfernen" : "Hinzufügen"}
+          {enabled
+            ? t("calendar.video.toggleRemove")
+            : t("calendar.video.toggleAdd")}
         </button>
       </div>
       {enabled ? (
@@ -1948,23 +2279,18 @@ function VideoCallSection({
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-text-tertiary hover:text-text-primary"
-              title="Raum testen"
+              title={t("calendar.video.testRoom")}
             >
               <ExternalLink size={12} />
             </a>
           </div>
           <p className="text-[11px] text-text-quaternary leading-snug">
-            Eindeutiger Jitsi-Raum. Wird in der Termin-Beschreibung als
-            klickbarer Link verteilt und für moderne Clients zusätzlich als
-            RFC-7986-CONFERENCE-Property gespeichert (Outlook 2024+ /
-            Apple Calendar zeigen automatisch einen „Beitreten"-Button).
+            {t("calendar.video.helpWhenOn")}
           </p>
         </>
       ) : (
         <p className="text-[11px] text-text-quaternary leading-snug">
-          Hinzufügen erzeugt einen neuen Jitsi-Raum, hängt den Beitritts-Link
-          ans Event und lädt alle Teilnehmer im iCal-Standard ein — wie eine
-          Outlook-/Teams-Termineinladung.
+          {t("calendar.video.helpWhenOff")}
         </p>
       )}
     </div>
@@ -2069,6 +2395,14 @@ function SchedulingAssistant({
   const [includeWeekends, setIncludeWeekends] = useState(initial.includeWeekends);
   /** Suggestion soft-limit; "Mehr" expands the list in steps of 6. */
   const [suggestionLimit, setSuggestionLimit] = useState(6);
+
+  const t = useT();
+  const { locale } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const weekdayShortMonFirst = useMemo(
+    () => mondayFirstWeekdayShort(localeTag),
+    [localeTag],
+  );
 
   // Persist settings whenever the user changes them so the next visit
   // reopens with their preferred working window + favourite team.
@@ -2179,14 +2513,14 @@ function SchedulingAssistant({
         status: e.status === "tentative" ? "busy-tentative" : "busy",
       }));
     const out: Array<{ user: string; slots: FreeBusySlot[]; isSelf: boolean }> = [
-      { user: selfEmail || "Du", slots: selfBusy, isSelf: true },
+      { user: selfEmail || t("calendar.sched.youFallback"), slots: selfBusy, isSelf: true },
     ];
     for (const u of users) {
       const key = u.includes("@") ? u.split("@", 1)[0].toLowerCase() : u.toLowerCase();
       out.push({ user: u, slots: slotsByUser.get(key) ?? [], isSelf: false });
     }
     return out;
-  }, [users, slotsByUser, selfEvents, selfEmail]);
+  }, [users, slotsByUser, selfEvents, selfEmail, t]);
 
   /**
    * Suggest the next 6 common-free slots of `meetingMin` length within
@@ -2270,37 +2604,39 @@ function SchedulingAssistant({
         <CalendarClock size={16} className="text-text-tertiary mt-1" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-text-primary">
-            Planungs-Assistent
+            {t("calendar.sched.title")}
           </div>
           <div className="text-[12px] text-text-tertiary mt-0.5">
-            Vergleicht freie/gebuchte Zeiten mehrerer Personen — klick eine
-            Lücke an, um direkt einen Termin zu erstellen.
+            {t("calendar.sched.intro")}
           </div>
           <div className="mt-2 flex items-center gap-2">
             <UsersIcon size={12} className="text-text-tertiary" />
             <input
               className="input flex-1 text-[12px]"
-              placeholder="Personen kommagetrennt (z.B. mara, diana.matushkina@corehub.kineo360.work)"
+              placeholder={t("calendar.sched.participantsPlaceholder")}
               value={participants}
               onChange={(e) => setParticipants(e.target.value)}
               spellCheck={false}
             />
             <label className="text-[11px] text-text-tertiary flex items-center gap-1">
-              Dauer
+              {t("calendar.sched.duration")}
               <select
                 className="input text-[11px] py-0.5"
                 value={meetingMin}
                 onChange={(e) => setMeetingMin(Number(e.target.value))}
               >
-                <option value={15}>15 min</option>
-                <option value={30}>30 min</option>
-                <option value={45}>45 min</option>
-                <option value={60}>60 min</option>
-                <option value={90}>90 min</option>
+                {[15, 30, 45, 60, 90].map((m) => (
+                  <option key={m} value={m}>
+                    {t("calendar.sched.minutesShort").replace(
+                      "{minutes}",
+                      String(m),
+                    )}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="text-[11px] text-text-tertiary flex items-center gap-1">
-              von
+              {t("calendar.sched.from")}
               <select
                 className="input text-[11px] py-0.5"
                 value={workStartH}
@@ -2309,7 +2645,7 @@ function SchedulingAssistant({
                   setWorkStartH(v);
                   if (v >= workEndH) setWorkEndH(Math.min(24, v + 1));
                 }}
-                title="Arbeitsfenster Start — Vorschläge werden auf dieses Fenster begrenzt."
+                title={t("calendar.sched.workStartTitle")}
               >
                 {Array.from({ length: 24 }, (_, h) => (
                   <option key={h} value={h}>
@@ -2317,7 +2653,7 @@ function SchedulingAssistant({
                   </option>
                 ))}
               </select>
-              bis
+              {t("calendar.sched.to")}
               <select
                 className="input text-[11px] py-0.5"
                 value={workEndH}
@@ -2326,7 +2662,7 @@ function SchedulingAssistant({
                   setWorkEndH(v);
                   if (v <= workStartH) setWorkStartH(Math.max(0, v - 1));
                 }}
-                title="Arbeitsfenster Ende"
+                title={t("calendar.sched.workEndTitle")}
               >
                 {Array.from({ length: 24 }, (_, h) => h + 1).map((h) => (
                   <option key={h} value={h}>
@@ -2337,7 +2673,7 @@ function SchedulingAssistant({
             </label>
             <label
               className="text-[11px] text-text-tertiary flex items-center gap-1 cursor-pointer select-none"
-              title="Wochenend-Vorschläge zulassen"
+              title={t("calendar.sched.weekendsTitle")}
             >
               <input
                 type="checkbox"
@@ -2345,7 +2681,7 @@ function SchedulingAssistant({
                 checked={includeWeekends}
                 onChange={(e) => setIncludeWeekends(e.target.checked)}
               />
-              Wo-End
+              {t("calendar.sched.weekendsShort")}
             </label>
             {loadingFb && <Loader2 size={12} className="animate-spin text-text-tertiary" />}
           </div>
@@ -2355,20 +2691,23 @@ function SchedulingAssistant({
           {suggestions.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="text-[10.5px] uppercase tracking-wide text-text-quaternary">
-                Vorschläge ({suggestions.length})
+                {t("calendar.sched.suggestions").replace(
+                  "{count}",
+                  String(suggestions.length),
+                )}
               </span>
               {suggestions.map((s) => {
                 const end = new Date(s.getTime() + meetingMin * 60_000);
-                const dayLabel = s.toLocaleDateString("de-DE", {
+                const dayLabel = s.toLocaleDateString(localeTag, {
                   weekday: "short",
                   day: "2-digit",
                   month: "2-digit",
                 });
                 const timeLabel = `${s
-                  .toLocaleTimeString("de-DE", {
+                  .toLocaleTimeString(localeTag, {
                     hour: "2-digit",
                     minute: "2-digit",
-                  })}–${end.toLocaleTimeString("de-DE", {
+                  })}–${end.toLocaleTimeString(localeTag, {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}`;
@@ -2379,7 +2718,9 @@ function SchedulingAssistant({
                     onClick={() => onPickSlot(s)}
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-stroke-1 hover:border-stroke-2 bg-bg-elevated transition-colors"
                     style={{ color: accent, borderColor: `${accent}40` }}
-                    title={`Termin ${dayLabel} ${timeLabel} eintragen`}
+                    title={t("calendar.sched.slotTitle")
+                      .replace("{day}", dayLabel)
+                      .replace("{time}", timeLabel)}
                   >
                     <CalendarClock size={10} />
                     <span className="font-medium">{dayLabel}</span>
@@ -2392,21 +2733,25 @@ function SchedulingAssistant({
                   type="button"
                   onClick={() => setSuggestionLimit((n) => n + 6)}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-dashed border-stroke-2 text-text-tertiary hover:text-text-primary"
-                  title="Weitere passende Lücken anzeigen"
+                  title={t("calendar.sched.moreTitle")}
                 >
-                  Mehr…
+                  {t("calendar.sched.more")}
                 </button>
               )}
             </div>
           )}
           {users.length > 0 && suggestions.length === 0 && !loadingFb && (
             <div className="mt-2 text-[11px] text-text-tertiary">
-              Kein gemeinsames {meetingMin}-min-Fenster im Arbeitszeit-Fenster
-              {" "}
-              {workStartH.toString().padStart(2, "0")}:00–
-              {workEndH.toString().padStart(2, "0")}:00
-              {includeWeekends ? " (inkl. Wochenende)" : ""} — Woche wechseln,
-              Dauer kürzen oder Fenster vergrößern.
+              {t("calendar.sched.noSlot")
+                .replace("{minutes}", String(meetingMin))
+                .replace(
+                  "{window}",
+                  `${workStartH.toString().padStart(2, "0")}:00–${workEndH.toString().padStart(2, "0")}:00`,
+                )
+                .replace(
+                  "{weekendHint}",
+                  includeWeekends ? t("calendar.sched.weekendIncluded") : "",
+                )}
             </div>
           )}
         </div>
@@ -2417,14 +2762,14 @@ function SchedulingAssistant({
           <thead className="bg-bg-chrome sticky top-0 z-10">
             <tr>
               <th className="border-b border-r border-stroke-1 px-2 py-1 text-left text-text-tertiary w-32">
-                Person
+                {t("calendar.sched.personColumn")}
               </th>
               {days.map((d) => (
                 <th
                   key={dayKey(d)}
                   className="border-b border-r border-stroke-1 px-1 py-1 text-text-tertiary text-center"
                 >
-                  {WEEKDAYS_DE[(d.getDay() + 6) % 7]} {d.getDate()}.
+                  {weekdayShortMonFirst[(d.getDay() + 6) % 7]} {d.getDate()}.
                 </th>
               ))}
             </tr>
@@ -2436,7 +2781,7 @@ function SchedulingAssistant({
                   <div className="truncate font-medium">{lane.user}</div>
                   {lane.isSelf && (
                     <div className="text-[9.5px] text-text-quaternary">
-                      du · live
+                      {t("calendar.sched.selfLive")}
                     </div>
                   )}
                 </td>
@@ -2449,6 +2794,7 @@ function SchedulingAssistant({
                       day={d}
                       slots={lane.slots}
                       accent={accent}
+                      localeTag={localeTag}
                       onPickHour={(h) => {
                         const start = new Date(d);
                         start.setHours(h, 0, 0, 0);
@@ -2465,7 +2811,7 @@ function SchedulingAssistant({
                   colSpan={1 + days.length}
                   className="border-b border-stroke-1 px-3 py-6 text-[12px] text-text-tertiary text-center"
                 >
-                  Personen oben eingeben, um deren Verfügbarkeit zu sehen.
+                  {t("calendar.sched.emptyLanes")}
                 </td>
               </tr>
             )}
@@ -2480,11 +2826,13 @@ function DayLane({
   day,
   slots,
   accent,
+  localeTag,
   onPickHour,
 }: {
   day: Date;
   slots: FreeBusySlot[];
   accent: string;
+  localeTag: string;
   onPickHour: (hour: number) => void;
 }) {
   const dayStart = new Date(day);
@@ -2525,7 +2873,7 @@ function DayLane({
             borderRight:
               h < HOUR_TO - HOUR_FROM - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
           }}
-          title={`${day.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" })} ${HOUR_FROM + h}:00`}
+          title={`${day.toLocaleDateString(localeTag, { weekday: "short", day: "numeric", month: "short" })} ${HOUR_FROM + h}:00`}
         />
       ))}
       {overlapping.map((s, i) => {
@@ -2549,7 +2897,7 @@ function DayLane({
               width: `${(width * 100) / totalMinutes}%`,
               background: bg,
             }}
-            title={`${a.toLocaleString("de-DE")} – ${b.toLocaleString("de-DE")}`}
+            title={`${a.toLocaleString(localeTag)} – ${b.toLocaleString(localeTag)}`}
           />
         );
       })}

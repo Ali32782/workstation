@@ -13,6 +13,7 @@ import {
 import type { WorkspaceId } from "@/lib/workspaces";
 import type { OpportunitySummary } from "@/lib/crm/types";
 import { OpportunityKanban } from "./opportunity-kanban";
+import { useT } from "@/components/LocaleProvider";
 
 const CRM_DEAL_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -26,6 +27,7 @@ export function CrmPipelineClient({
   workspaceName: string;
   accent: string;
 }) {
+  const t = useT();
   const searchParams = useSearchParams();
   const [deals, setDeals] = useState<OpportunitySummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,8 +71,8 @@ export function CrmPipelineClient({
   }, [workspaceId, q]);
 
   useEffect(() => {
-    const t = window.setTimeout(() => void load(), q.trim() ? 300 : 0);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => void load(), q.trim() ? 300 : 0);
+    return () => window.clearTimeout(timer);
   }, [load, q]);
 
   return (
@@ -82,7 +84,7 @@ export function CrmPipelineClient({
         <Link
           href={`/${workspaceId}/crm`}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-          title="Zurück zum CRM"
+          title={t("crm.nav.backToCrm")}
         >
           <ArrowLeft size={15} />
         </Link>
@@ -94,10 +96,10 @@ export function CrmPipelineClient({
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold leading-tight">
-            Deal-Pipeline
+            {t("crm.pipeline.title")}
           </h1>
           <p className="text-[10.5px] text-text-tertiary">
-            {workspaceName} · alle Opportunities · per Drag &amp; Drop Stage wechseln
+            {t("crm.pipeline.subtitle").replace("{workspace}", workspaceName)}
           </p>
         </div>
         <div className="relative w-full sm:w-56">
@@ -109,7 +111,7 @@ export function CrmPipelineClient({
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Deal- oder Firmenname…"
+            placeholder={t("crm.pipeline.searchPlaceholder")}
             className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
           />
         </div>
@@ -118,7 +120,7 @@ export function CrmPipelineClient({
           onClick={() => void load()}
           disabled={loading}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-50"
-          title="Neu laden"
+          title={t("projects.reloadTooltip")}
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
@@ -134,7 +136,7 @@ export function CrmPipelineClient({
         {loading && deals.length === 0 ? (
           <div className="flex-1 flex items-center justify-center gap-2 text-text-tertiary text-[13px]">
             <Loader2 className="w-5 h-5 animate-spin" style={{ color: accent }} />
-            Pipeline wird geladen…
+            {t("crm.pipeline.loading")}
           </div>
         ) : (
           <OpportunityKanban

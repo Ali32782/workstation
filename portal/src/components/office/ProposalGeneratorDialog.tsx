@@ -20,6 +20,7 @@ import {
 } from "@/lib/office/proposal-presets";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type { CloudEntry, CloudList } from "@/lib/cloud/types";
+import { useLocale } from "@/components/LocaleProvider";
 
 type Company = {
   id: string;
@@ -43,6 +44,7 @@ export function ProposalGeneratorDialog({
   accent: string;
   onClose: () => void;
 }) {
+  const { t } = useLocale();
   const [templateMode, setTemplateMode] = useState<"preset" | "cloud">(
     "preset",
   );
@@ -192,14 +194,14 @@ export function ProposalGeneratorDialog({
 
   const runPreview = useCallback(async () => {
     if (!companyId) {
-      setError("Bitte eine Firma wählen.");
+      setError(t("office.proposal.error.pickCompany"));
       return;
     }
     if (!templateReady) {
       setError(
         templateMode === "cloud"
-          ? "Bitte eine Vorlage aus /Documents auswählen."
-          : "Keine Vorlage.",
+          ? t("office.proposal.error.pickCloudTemplate")
+          : t("office.proposal.error.noPresetTemplate"),
       );
       return;
     }
@@ -243,18 +245,19 @@ export function ProposalGeneratorDialog({
     templateMode,
     templateReady,
     workspaceId,
+    t,
   ]);
 
   const downloadDocx = useCallback(async () => {
     if (!companyId) {
-      setError("Bitte eine Firma wählen.");
+      setError(t("office.proposal.error.pickCompany"));
       return;
     }
     if (!templateReady) {
       setError(
         templateMode === "cloud"
-          ? "Bitte eine Vorlage aus /Documents auswählen."
-          : "Keine Vorlage.",
+          ? t("office.proposal.error.pickCloudTemplate")
+          : t("office.proposal.error.noPresetTemplate"),
       );
       return;
     }
@@ -311,6 +314,7 @@ export function ProposalGeneratorDialog({
     templateMode,
     templateReady,
     workspaceId,
+    t,
   ]);
 
   return (
@@ -325,11 +329,15 @@ export function ProposalGeneratorDialog({
         <header className="px-4 py-2.5 border-b border-stroke-1 flex items-center gap-2">
           <PenLine size={14} style={{ color: accent }} />
           <div className="flex-1 min-w-0">
-            <h3 className="text-[12.5px] font-semibold">Angebot / Proposal</h3>
+            <h3 className="text-[12.5px] font-semibold">{t("office.proposal.title")}</h3>
             <p className="text-[10px] text-text-tertiary">
-              CRM-Merge v{CRM_MERGE_SCHEMA_VERSION} · Presets v
-              {PROPOSAL_PRESETS_VERSION}
-              {templateMode === "cloud" && cloudName ? ` · ${cloudName}` : ""}
+              {t("office.proposal.mergeVersionLine")
+                .replace("{merge}", String(CRM_MERGE_SCHEMA_VERSION))
+                .replace("{preset}", String(PROPOSAL_PRESETS_VERSION))
+                .replace(
+                  "{suffix}",
+                  templateMode === "cloud" && cloudName ? ` · ${cloudName}` : "",
+                )}
             </p>
           </div>
           <button
@@ -345,7 +353,7 @@ export function ProposalGeneratorDialog({
           <aside className="p-3 overflow-y-auto flex flex-col gap-3">
             <div>
               <h4 className="text-[10.5px] uppercase tracking-wide text-text-tertiary font-medium mb-1.5">
-                Vorlage
+                {t("office.proposal.sectionTemplate")}
               </h4>
               <div className="flex flex-col gap-1.5 mb-2">
                 <label className="flex items-center gap-2 cursor-pointer text-[11.5px]">
@@ -360,7 +368,7 @@ export function ProposalGeneratorDialog({
                     }}
                     className="accent-[#5b5fc7]"
                   />
-                  Eingebaute Vorlagen
+                  {t("office.proposal.templatePresets")}
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer text-[11.5px]">
                   <input
@@ -377,7 +385,7 @@ export function ProposalGeneratorDialog({
                     }}
                     className="accent-[#5b5fc7]"
                   />
-                  Aus Cloud (/Documents)
+                  {t("office.proposal.templateCloudDocs")}
                 </label>
               </div>
 
@@ -406,28 +414,22 @@ export function ProposalGeneratorDialog({
                   <p className="text-[10px] text-text-tertiary leading-snug flex items-start gap-1">
                     <FolderOpen size={12} className="shrink-0 mt-0.5" />
                     <span>
-                      Nur <code className="text-[9px]">.docx</code>,{" "}
-                      <code className="text-[9px]">.html</code> unter{" "}
-                      <code className="text-[9px]">{DOCS}</code>. In Word
-                      Platzhalter als{" "}
-                      <code className="text-[9px]">{"{{company.name}}"}</code>{" "}
-                      einfügen.
+                      {t("office.proposal.cloudFormatsHint").replace("{docs}", DOCS)}
                     </span>
                   </p>
                   <div className="max-h-[40vh] overflow-y-auto border border-stroke-1 rounded-md text-[11.5px]">
                     {cloudLoading ? (
                       <div className="flex items-center justify-center gap-2 py-6 text-text-tertiary">
                         <Loader2 size={14} className="animate-spin" />
-                        Vorlage wird geladen…
+                        {t("office.proposal.loadingTemplateFile")}
                       </div>
                     ) : cloudListErr ? (
                       <p className="p-2 text-red-400 text-[11px]">{cloudListErr}</p>
                     ) : cloudEntries === null ? (
-                      <div className="p-3 text-text-tertiary">Lade Liste…</div>
+                      <div className="p-3 text-text-tertiary">{t("office.proposal.loadingDocList")}</div>
                     ) : cloudEntries.length === 0 ? (
                       <p className="p-2 text-text-tertiary text-[11px]">
-                        Keine passenden Dateien. Lege z. B.{" "}
-                        <code>Angebot.docx</code> in {DOCS} ab.
+                        {t("office.proposal.noTemplatesInFolder").replace("{docs}", DOCS)}
                       </p>
                     ) : (
                       <ul>
@@ -454,12 +456,13 @@ export function ProposalGeneratorDialog({
                   </div>
                   {cloudPath && (
                     <p className="text-[10px] text-text-tertiary truncate">
-                      Aktiv: {cloudPath}
+                      {t("office.proposal.activeTemplate")} {cloudPath}
                     </p>
                   )}
                   {mammothNotes && (
                     <p className="text-[10px] text-amber-500/90 leading-snug">
-                      Hinweis Konvertierung: {mammothNotes.join(" · ")}
+                      {t("office.proposal.conversionNote")}{" "}
+                      {mammothNotes.join(" · ")}
                     </p>
                   )}
                 </div>
@@ -467,13 +470,13 @@ export function ProposalGeneratorDialog({
             </div>
             <div>
               <h4 className="text-[10.5px] uppercase tracking-wide text-text-tertiary font-medium mb-1">
-                Variablen
+                {t("office.proposal.sectionVariables")}
               </h4>
               <ul className="text-[10px] text-text-tertiary space-y-0.5 max-h-[22vh] overflow-y-auto">
-                {CRM_MERGE_TOKENS.map((t) => (
-                  <li key={t.token}>
-                    <code className="text-info">{`{{${t.token}}}`}</code> —{" "}
-                    {t.description}
+                {CRM_MERGE_TOKENS.map((tok) => (
+                  <li key={tok.token}>
+                    <code className="text-info">{`{{${tok.token}}}`}</code> —{" "}
+                    {tok.description}
                   </li>
                 ))}
               </ul>
@@ -483,11 +486,11 @@ export function ProposalGeneratorDialog({
           <main className="p-3 flex flex-col min-h-0">
             <div className="mb-2">
               <h4 className="text-[10.5px] uppercase tracking-wide text-text-tertiary font-medium mb-1">
-                Firma
+                {t("office.proposal.sectionCompany")}
               </h4>
               <input
                 type="search"
-                placeholder="Suchen…"
+                placeholder={`${t("common.search")}…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1.5 text-[12px] outline-none focus:border-stroke-2 mb-2"
@@ -495,11 +498,11 @@ export function ProposalGeneratorDialog({
               <div className="max-h-[160px] overflow-y-auto border border-stroke-1 rounded-md">
                 {companies === null ? (
                   <div className="flex items-center justify-center h-24 text-text-tertiary text-[12px]">
-                    Lade Firmen…
+                    {t("office.proposal.loadingCompanies")}
                   </div>
                 ) : filtered.length === 0 ? (
                   <p className="p-3 text-[12px] text-text-tertiary">
-                    Keine Treffer.
+                    {t("common.noResults")}
                   </p>
                 ) : (
                   <ul className="text-[12px]">
@@ -548,7 +551,7 @@ export function ProposalGeneratorDialog({
                 ) : (
                   <Eye size={14} />
                 )}
-                {busy ? "…" : "Vorschau"}
+                {busy ? "…" : t("office.proposal.preview")}
               </button>
               <button
                 type="button"
@@ -558,13 +561,13 @@ export function ProposalGeneratorDialog({
                 style={{ background: accent }}
               >
                 <Download size={14} />
-                DOCX laden
+                {t("office.proposal.downloadDocx")}
               </button>
             </div>
 
             {previewTokens && previewTokens.length > 0 && (
               <p className="text-[10px] text-text-tertiary mb-1">
-                Erkannte Platzhalter: {previewTokens.join(", ")}
+                {t("office.proposal.tokensFound")} {previewTokens.join(", ")}
               </p>
             )}
 
@@ -576,8 +579,7 @@ export function ProposalGeneratorDialog({
 
             <p className="text-[10px] text-text-tertiary mt-2 flex items-center gap-1">
               <FileText size={11} />
-              Serienbrief für viele Empfänger: Dokument im Editor öffnen → Serienbrief
-              (ZIP).
+              {t("office.proposal.footerMergeZip")}
             </p>
           </main>
         </div>

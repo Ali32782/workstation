@@ -7,6 +7,8 @@ import type {
   UtmTouchPayload,
 } from "@/lib/marketing/attribution-types";
 import type { WorkspaceId } from "@/lib/workspaces";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 function touchHasContent(t?: UtmTouchPayload | null): boolean {
   if (!t) return false;
@@ -55,26 +57,27 @@ function row(
 }
 
 function touchBlock(
-  title: string,
-  t: CompanyAttributionRecord["firstTouch"],
+  heading: string,
+  payload: CompanyAttributionRecord["firstTouch"],
+  localeFmt: string,
 ): ReactNode {
-  if (!t) return null;
+  if (!payload) return null;
   const rows = [
-    row("source", t.utm_source),
-    row("medium", t.utm_medium),
-    row("campaign", t.utm_campaign),
-    row("term", t.utm_term),
-    row("content", t.utm_content),
-    row("Referrer", t.referrer),
-    row("Landing", t.landingPath),
+    row("source", payload.utm_source),
+    row("medium", payload.utm_medium),
+    row("campaign", payload.utm_campaign),
+    row("term", payload.utm_term),
+    row("content", payload.utm_content),
+    row("Referrer", payload.referrer),
+    row("Landing", payload.landingPath),
   ].filter(Boolean);
   if (rows.length === 0) return null;
   return (
     <div className="rounded-lg border border-stroke-1/80 bg-bg-base/50 px-3 py-2 space-y-1.5">
       <p className="text-[10px] uppercase tracking-wide text-text-quaternary font-medium">
-        {title}{" "}
+        {heading}{" "}
         <span className="font-normal text-text-tertiary normal-case">
-          · {new Date(t.capturedAt).toLocaleString("de-CH")}
+          · {new Date(payload.capturedAt).toLocaleString(localeFmt)}
         </span>
       </p>
       <div className="space-y-1">{rows}</div>
@@ -91,6 +94,9 @@ export function CompanyAttributionSection({
   companyId: string;
   accent: string;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
   const [data, setData] = useState<CompanyAttributionRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -139,28 +145,33 @@ export function CompanyAttributionSection({
         </div>
         <div>
           <h2 className="text-text-primary text-sm font-semibold">
-            Kampagnen-Attribution (UTM)
+            {t("crm.attribution.heading")}
           </h2>
           <p className="text-[10.5px] text-text-tertiary">
-            Welle 3 — first / last touch unter{" "}
-            <code className="text-[10px]">/data/marketing-attribution.json</code>
+            {t("crm.attribution.subheading")}
           </p>
         </div>
       </div>
 
       {loading ? (
-        <p className="text-[12px] text-text-tertiary">Lade…</p>
+        <p className="text-[12px] text-text-tertiary">{t("crm.attribution.loading")}</p>
       ) : !hasData ? (
         <p className="text-[12px] text-text-tertiary leading-relaxed">
-          Noch keine gespeicherten UTM-Daten für diese Firma. Über{" "}
-          <code className="text-[11px]">POST /api/marketing/attribution</code>{" "}
-          (CRM-Session) oder später eingebettete Lead-Forms / Landing-Pages.
+          {t("crm.attribution.empty")}
         </p>
       ) : (
         <div className="space-y-3">
-          {touchBlock("Erstkontakt", data!.firstTouch)}
+          {touchBlock(
+            t("crm.attribution.firstTouch"),
+            data!.firstTouch,
+            localeFmt,
+          )}
           {touchesDiffer(data!.firstTouch, data!.lastTouch)
-            ? touchBlock("Letzter Kontakt", data!.lastTouch)
+            ? touchBlock(
+                t("crm.attribution.lastTouch"),
+                data!.lastTouch,
+                localeFmt,
+              )
             : null}
         </div>
       )}

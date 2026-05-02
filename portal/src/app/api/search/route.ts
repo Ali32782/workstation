@@ -17,6 +17,13 @@ import {
 } from "@/lib/sign/document-portal-access";
 import { getPortalPrivateOwners } from "@/lib/sign/document-privacy-store";
 import { isAdminUsername } from "@/lib/admin-allowlist";
+import { resolveMarketingSession } from "@/lib/marketing/session";
+import { listContacts } from "@/lib/marketing/mautic";
+import { readRecentIntegrationEvents } from "@/lib/integrations/event-feed-store";
+import {
+  integrationHitMatchesQuery,
+  toIntegrationCmdKHit,
+} from "@/lib/integrations/event-feed-cmdk";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,14 +32,13 @@ export const runtime = "nodejs";
  * GET /api/search?ws=…&q=…
  *
  * Cross-app search for Cmd+K: CRM companies/people/deals, eSign documents
- * (Documenso), Helpdesk tickets, Nextcloud filenames, Plane issues (shallow).
+ * (Documenso), Mautic contacts (Marketing), Helpdesk tickets, Nextcloud
+ * filenames, Plane issues (shallow), plus recent integration webhook events
+ * (empty query = latest only; with query = substring match prepended).
  */
 export async function GET(req: NextRequest) {
   const ws = req.nextUrl.searchParams.get("ws");
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
-  if (!q) {
-    return NextResponse.json({ results: [] });
-  }
 
   type Hit = {
     type:
@@ -40,9 +46,11 @@ export async function GET(req: NextRequest) {
       | "person"
       | "deal"
       | "sign"
+      | "marketing"
       | "ticket"
       | "file"
-      | "issue";
+      | "issue"
+      | "integration";
     id: string;
     label: string;
     sublabel?: string;
@@ -76,6 +84,25 @@ export async function GET(req: NextRequest) {
   const workspaceId =
     crm.kind === "ok" ? crm.session.workspace : (ws ?? "").toLowerCase() || "kineo";
   const sessionAuth = await auth();
+
+  /** Latest webhook/integration activity for Cmd+K (same workspace). */
+  async function integrationPaletteMatches(): Promise<Hit[]> {
+    try {
+      const recent = await readRecentIntegrationEvents(workspaceId, q ? 48 : 18);
+      const hits = recent.map((e) => toIntegrationCmdKHit(workspaceId, e));
+      if (!q) return hits as Hit[];
+      return hits.filter((h) => integrationHitMatchesQuery(h, q)).slice(0, 8) as Hit[];
+    } catch {
+      return [];
+    }
+  }
+
+  if (!q) {
+    const feedOnly = await integrationPaletteMatches();
+    return NextResponse.json({ results: feedOnly });
+  }
+
+  const feedHits = await integrationPaletteMatches();
 
   if (crm.kind === "ok") {
     const tenant = crm.session.tenant;
@@ -156,6 +183,31 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const mk = await resolveMarketingSession(ws);
+  if (mk.kind === "ok" && q.length >= 2) {
+    try {
+      const { contacts } = await listContacts({ search: q, limit: 6, start: 0 });
+      for (const c of contacts) {
+        const name =
+          `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() ||
+          c.email ||
+          `Kontakt #${c.id}`;
+        const qEnc = encodeURIComponent(q);
+        palette.push({
+          type: "marketing",
+          id: `mc-${c.id}`,
+          label: name,
+          sublabel: [c.email, c.company, c.segments?.[0]]
+            .filter(Boolean)
+            .join(" · "),
+          href: `/${workspaceId}/marketing?section=contacts&q=${qEnc}&contact=${c.id}`,
+        });
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
   const hd = await resolveHelpdeskSession(ws);
   if (hd.kind === "ok") {
     try {
@@ -225,5 +277,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ results: palette });
+  return NextResponse.json({ results: [...feedHits, ...palette] });
 }

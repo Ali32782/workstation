@@ -20,6 +20,8 @@ import {
   Plug,
   Megaphone,
 } from "lucide-react";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 type Member = {
   id: string;
@@ -60,6 +62,9 @@ export function CrmSettingsClient({
   accent: string;
   twentyUrl: string;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
   const [data, setData] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +103,7 @@ export function CrmSettingsClient({
         <Link
           href={`/${workspaceId}/crm`}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-          title="Zurück zum CRM"
+          title={t("crm.nav.backToCrm")}
         >
           <ArrowLeft size={14} />
         </Link>
@@ -110,10 +115,10 @@ export function CrmSettingsClient({
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold leading-tight">
-            CRM-Einstellungen
+            {t("crm.settingsPage.title")}
           </h1>
           <p className="text-[10.5px] text-text-tertiary truncate">
-            {workspaceName} · Twenty-Tenant, Mitglieder & Pipeline
+            {t("crm.settingsPage.subtitle").replace("{workspace}", workspaceName)}
           </p>
         </div>
         <button
@@ -121,7 +126,7 @@ export function CrmSettingsClient({
           onClick={() => void load()}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-50"
           disabled={loading}
-          title="Aktualisieren"
+          title={t("common.refresh")}
         >
           {loading ? (
             <Loader2 size={14} className="animate-spin" />
@@ -137,7 +142,7 @@ export function CrmSettingsClient({
             <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[12.5px] p-3 flex items-start gap-2">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">Konnte Einstellungen nicht laden</p>
+                <p className="font-medium">{t("crm.settingsPage.loadFailed")}</p>
                 <p className="text-[11.5px] opacity-90 mt-0.5">{error}</p>
               </div>
             </div>
@@ -155,13 +160,7 @@ export function CrmSettingsClient({
           {data && (
             <>
               <p className="text-[12px] text-text-tertiary leading-relaxed">
-                Übersicht der Twenty-Tenant-Konfiguration für{" "}
-                <strong className="text-text-secondary">
-                  {workspaceName}
-                </strong>
-                . Bearbeitung von Custom-Feldern, Pipelines und Integrationen
-                erfolgt aktuell direkt in Twenty (Buttons unten öffnen den
-                jeweiligen Bereich in einem neuen Tab).
+                {t("crm.settingsPage.intro").replace("{workspace}", workspaceName)}
               </p>
 
               {data.warnings.length > 0 && (
@@ -177,7 +176,7 @@ export function CrmSettingsClient({
 
               <Section
                 icon={<Database size={14} style={{ color: accent }} />}
-                title="API-Verbindung"
+                title={t("crm.settingsPage.sectionApi")}
                 accent={accent}
                 action={
                   <a
@@ -186,7 +185,7 @@ export function CrmSettingsClient({
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
                   >
-                    <KeyRound size={12} /> API-Keys in Twenty
+                    <KeyRound size={12} /> {t("crm.settingsPage.linkApiKeysTwenty")}
                     <ExternalLink size={10} />
                   </a>
                 }
@@ -195,23 +194,23 @@ export function CrmSettingsClient({
                   <tbody>
                     <Tr>
                       <Td className="w-[200px] text-text-tertiary uppercase text-[10.5px] tracking-wide">
-                        Status
+                        {t("common.status")}
                       </Td>
                       <Td>
                         {data.apiReachable ? (
                           <Pill tone="success">
-                            <CheckCircle2 size={10} /> erreichbar
+                            <CheckCircle2 size={10} /> {t("crm.settingsPage.apiReachable")}
                           </Pill>
                         ) : (
                           <Pill tone="warn">
-                            <AlertCircle size={10} /> nicht erreichbar
+                            <AlertCircle size={10} /> {t("crm.settingsPage.apiUnreachable")}
                           </Pill>
                         )}
                       </Td>
                     </Tr>
                     <Tr>
                       <Td className="text-text-tertiary uppercase text-[10.5px] tracking-wide">
-                        Twenty-Workspace-ID
+                        {t("crm.settingsPage.labelTwentyWorkspaceId")}
                       </Td>
                       <Td>
                         <code className="font-mono text-[11px]">
@@ -221,7 +220,7 @@ export function CrmSettingsClient({
                     </Tr>
                     <Tr>
                       <Td className="text-text-tertiary uppercase text-[10.5px] tracking-wide">
-                        Public-URL
+                        {t("crm.settingsPage.labelPublicUrl")}
                       </Td>
                       <Td>
                         <a
@@ -236,7 +235,7 @@ export function CrmSettingsClient({
                     </Tr>
                     <Tr>
                       <Td className="text-text-tertiary uppercase text-[10.5px] tracking-wide">
-                        Compose-URL
+                        {t("crm.settingsPage.labelComposeUrl")}
                       </Td>
                       <Td>
                         <code className="font-mono text-[11px] text-text-tertiary">
@@ -251,33 +250,37 @@ export function CrmSettingsClient({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <KpiCard
                   icon={<Building2 size={14} />}
-                  label="Firmen"
+                  label={t("crm.companies")}
                   value={data.totals.companies}
                   accent={accent}
+                  localeFmt={localeFmt}
                 />
                 <KpiCard
                   icon={<Users size={14} />}
-                  label="Personen"
+                  label={t("crm.people")}
                   value={data.totals.people}
                   accent={accent}
+                  localeFmt={localeFmt}
                 />
                 <KpiCard
                   icon={<Briefcase size={14} />}
-                  label="Pipeline-Stages"
+                  label={t("crm.settingsPage.kpiPipelineStages")}
                   value={data.pipeline.length}
                   accent={accent}
+                  localeFmt={localeFmt}
                 />
                 <KpiCard
                   icon={<Tag size={14} />}
-                  label="Lead-Quellen"
+                  label={t("crm.settingsPage.sectionLeadSources")}
                   value={data.leadSources.length}
                   accent={accent}
+                  localeFmt={localeFmt}
                 />
               </div>
 
               <Section
                 icon={<Users size={14} style={{ color: accent }} />}
-                title="Workspace-Mitglieder"
+                title={t("crm.settingsPage.sectionMembers")}
                 accent={accent}
                 action={
                   <a
@@ -286,17 +289,13 @@ export function CrmSettingsClient({
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
                   >
-                    <Pencil size={12} /> in Twenty bearbeiten
+                    <Pencil size={12} /> {t("crm.settingsPage.linkEditInTwenty")}
                     <ExternalLink size={10} />
                   </a>
                 }
               >
                 {data.members.length === 0 ? (
-                  <Empty>
-                    Keine Mitglieder gefunden – API-Token könnte zu eng
-                    skopt sein, oder im Workspace ist nur der Bridge-User
-                    aktiv.
-                  </Empty>
+                  <Empty>{t("crm.settingsPage.membersEmpty")}</Empty>
                 ) : (
                   <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {data.members.map((m) => (
@@ -312,7 +311,7 @@ export function CrmSettingsClient({
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[12.5px] font-medium truncate">
-                            {m.name || "(ohne Name)"}
+                            {m.name || t("crm.company.unnamed")}
                           </p>
                           <p className="text-[10.5px] text-text-tertiary truncate">
                             {m.email}
@@ -326,7 +325,7 @@ export function CrmSettingsClient({
 
               <Section
                 icon={<Briefcase size={14} style={{ color: accent }} />}
-                title="Pipeline (Deals nach Stage)"
+                title={t("crm.settingsPage.sectionPipeline")}
                 accent={accent}
                 action={
                   <a
@@ -335,24 +334,20 @@ export function CrmSettingsClient({
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
                   >
-                    <Pencil size={12} /> Datenmodell
+                    <Pencil size={12} /> {t("crm.settingsPage.linkDataModel")}
                     <ExternalLink size={10} />
                   </a>
                 }
               >
                 <p className="text-[11px] text-text-tertiary leading-relaxed mb-3">
-                  Stages mit Sales abstimmen, bevor ihr ein großes Kanban baut
-                  (siehe Playbook{" "}
+                  {t("crm.settingsPage.pipelineIntroPrefix")}
                   <code className="text-[10px] text-text-secondary">
                     docs/playbooks/TWENTY-DEAL-STAGES-ALIGNMENT.md
                   </code>
-                  ). Die Darstellung unten spiegelt nur bestehende Deals wider.
+                  {t("crm.settingsPage.pipelineIntroSuffix")}
                 </p>
                 {data.pipeline.length === 0 ? (
-                  <Empty>
-                    Noch keine Deals erfasst. Lege im CRM die Pipeline-Stages
-                    an und bewege Opportunities zwischen ihnen.
-                  </Empty>
+                  <Empty>{t("crm.settingsPage.pipelineEmpty")}</Empty>
                 ) : (
                   <div className="space-y-1.5">
                     {data.pipeline.map((p) => {
@@ -364,7 +359,7 @@ export function CrmSettingsClient({
                           <div className="flex items-center justify-between text-[11.5px]">
                             <span className="truncate">{p.stage}</span>
                             <span className="text-text-tertiary tabular-nums">
-                              {p.count}
+                              {p.count.toLocaleString(localeFmt)}
                             </span>
                           </div>
                           <div className="h-1.5 rounded bg-bg-base overflow-hidden">
@@ -386,11 +381,11 @@ export function CrmSettingsClient({
 
               <Section
                 icon={<Tag size={14} style={{ color: accent }} />}
-                title="Lead-Quellen"
+                title={t("crm.settingsPage.sectionLeadSources")}
                 accent={accent}
               >
                 {data.leadSources.length === 0 ? (
-                  <Empty>Keine Lead-Quellen erfasst.</Empty>
+                  <Empty>{t("crm.settingsPage.leadSourcesEmpty")}</Empty>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {data.leadSources.map((s) => (
@@ -407,7 +402,7 @@ export function CrmSettingsClient({
 
               <Section
                 icon={<Plug size={14} style={{ color: accent }} />}
-                title="Integrationen"
+                title={t("crm.settingsPage.sectionIntegrations")}
                 accent={accent}
               >
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -423,10 +418,10 @@ export function CrmSettingsClient({
                     />
                     <div className="min-w-0">
                       <p className="text-[12.5px] font-medium">
-                        Marketing (Mautic)
+                        {t("crm.settingsPage.integrationMauticTitle")}
                       </p>
                       <p className="text-[10.5px] text-text-tertiary truncate">
-                        Bridge-Token, Segmente, Kampagnen
+                        {t("crm.settingsPage.integrationMauticSubtitle")}
                       </p>
                     </div>
                   </Link>
@@ -442,10 +437,10 @@ export function CrmSettingsClient({
                     />
                     <div className="min-w-0">
                       <p className="text-[12.5px] font-medium">
-                        Twenty-Integrationen
+                        {t("crm.settingsPage.integrationTwentyTitle")}
                       </p>
                       <p className="text-[10.5px] text-text-tertiary truncate">
-                        Webhooks, API-Keys, externe Datenquellen
+                        {t("crm.settingsPage.integrationTwentySubtitle")}
                       </p>
                     </div>
                   </a>
@@ -494,11 +489,13 @@ function KpiCard({
   label,
   value,
   accent,
+  localeFmt,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number;
   accent: string;
+  localeFmt: string;
 }) {
   return (
     <div
@@ -512,7 +509,7 @@ function KpiCard({
         </p>
       </div>
       <p className="text-[20px] font-semibold leading-none tabular-nums">
-        {value.toLocaleString("de-DE")}
+        {value.toLocaleString(localeFmt)}
       </p>
     </div>
   );

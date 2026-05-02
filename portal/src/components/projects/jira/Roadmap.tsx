@@ -8,6 +8,8 @@ import type {
   IssueSummary,
 } from "@/lib/projects/types";
 import { CycleStatusPill, STATE_GROUP_COLOR } from "./shared";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 const DAY_MS = 86_400_000;
 
@@ -35,6 +37,8 @@ export function JiraRoadmap({
   ) => Promise<void> | void;
   accent: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const [zoom, setZoom] = useState<"weeks" | "months">("weeks");
 
   const stateById = useMemo(() => {
@@ -92,7 +96,7 @@ export function JiraRoadmap({
       );
       xs.push({
         x: offsetDays * PPD,
-        label: cursor.toLocaleDateString("de-DE", {
+        label: cursor.toLocaleDateString(localeFmt, {
           month: "short",
           year: "2-digit",
         }),
@@ -112,14 +116,17 @@ export function JiraRoadmap({
         );
         xs.push({
           x: offsetDays * PPD,
-          label: `KW ${weekNumber(w)}`,
+          label: t("projects.roadmap.weekLabel").replace(
+            "{n}",
+            String(weekNumber(w)),
+          ),
           major: false,
         });
         w.setDate(w.getDate() + 7);
       }
     }
     return xs.sort((a, b) => a.x - b.x);
-  }, [bounds, PPD, zoom]);
+  }, [bounds, PPD, zoom, localeFmt, t]);
 
   const todayX = useMemo(() => {
     const today = startOfDay(new Date()).getTime();
@@ -147,9 +154,12 @@ export function JiraRoadmap({
     <div className="flex-1 min-h-0 flex flex-col">
       <header className="shrink-0 px-3 py-2 border-b border-stroke-1 bg-bg-chrome flex items-center gap-2">
         <Calendar size={13} style={{ color: accent }} />
-        <h3 className="text-[12px] font-semibold">Roadmap</h3>
+        <h3 className="text-[12px] font-semibold">{t("projects.roadmap.title")}</h3>
         <span className="text-[10.5px] text-text-tertiary">
-          {datedCycles.length} Sprints mit Zeitfenster
+          {t("projects.roadmap.subtitle").replace(
+            "{count}",
+            String(datedCycles.length),
+          )}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <div className="inline-flex rounded-md border border-stroke-1 overflow-hidden text-[10.5px]">
@@ -165,7 +175,7 @@ export function JiraRoadmap({
                 }`}
                 style={zoom === z ? { background: accent } : undefined}
               >
-                {z === "weeks" ? "Wochen" : "Monate"}
+                {z === "weeks" ? t("projects.roadmap.weeks") : t("projects.roadmap.months")}
               </button>
             ))}
           </div>
@@ -174,7 +184,7 @@ export function JiraRoadmap({
             onClick={scrollToToday}
             className="ml-1 px-2 py-1 rounded-md border border-stroke-1 text-[10.5px] text-text-tertiary hover:text-text-primary"
           >
-            Heute
+            {t("projects.roadmap.today")}
           </button>
         </div>
       </header>
@@ -186,7 +196,7 @@ export function JiraRoadmap({
             <div
               className="h-[60px] flex items-end px-3 pb-2 border-b border-stroke-1 bg-bg-chrome text-[10.5px] uppercase tracking-wide text-text-tertiary"
             >
-              Sprint
+              {t("projects.roadmap.sprintColumn")}
             </div>
             {orderedCycles.map((c) => {
               const cnt = issues.filter((i) => i.cycle === c.id).length;
@@ -216,22 +226,22 @@ export function JiraRoadmap({
             style={{ width: totalWidth }}
           >
             <div className="h-[60px] border-b border-stroke-1 bg-bg-chrome relative">
-              {ticks.map((t, i) => (
+              {ticks.map((tick, i) => (
                 <div
                   key={i}
                   className={`absolute top-0 bottom-0 ${
-                    t.major ? "border-l border-stroke-2" : "border-l border-stroke-1/50"
+                    tick.major ? "border-l border-stroke-2" : "border-l border-stroke-1/50"
                   }`}
-                  style={{ left: t.x }}
+                  style={{ left: tick.x }}
                 >
                   <span
                     className={`absolute top-1 left-1 text-[9.5px] ${
-                      t.major
+                      tick.major
                         ? "text-text-secondary font-semibold"
                         : "text-text-tertiary"
                     }`}
                   >
-                    {t.label}
+                    {tick.label}
                   </span>
                 </div>
               ))}
@@ -239,7 +249,7 @@ export function JiraRoadmap({
                 <div
                   className="absolute top-0 bottom-0 border-l-2"
                   style={{ left: todayX, borderColor: "#ef4444" }}
-                  title="Heute"
+                  title={t("projects.roadmap.todayTooltip")}
                 />
               )}
             </div>
@@ -253,12 +263,13 @@ export function JiraRoadmap({
                 todayX={todayX}
                 onUpdateCycle={onUpdateCycle}
                 accent={accent}
+                resizeEndTooltip={t("projects.roadmap.resizeEndTooltip")}
               />
             ))}
 
             {datedCycles.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center text-text-tertiary text-[12px]">
-                Noch keine Sprints mit Start- und Enddatum.
+                {t("projects.roadmap.empty")}
               </div>
             )}
           </div>
@@ -275,6 +286,7 @@ function RoadmapRow({
   todayX,
   onUpdateCycle,
   accent,
+  resizeEndTooltip,
 }: {
   cycle: CycleSummary;
   bounds: { start: Date; end: Date };
@@ -285,6 +297,7 @@ function RoadmapRow({
     input: { startDate?: string | null; endDate?: string | null },
   ) => Promise<void> | void;
   accent: string;
+  resizeEndTooltip: string;
 }) {
   const [drag, setDrag] = useState<
     | null
@@ -402,7 +415,7 @@ function RoadmapRow({
           <span
             className="ml-1 w-1.5 self-stretch cursor-ew-resize hover:bg-white/40 rounded-r"
             onMouseDown={startMove("resize-end")}
-            title="Enddatum verschieben"
+            title={resizeEndTooltip}
           />
         </div>
       )}

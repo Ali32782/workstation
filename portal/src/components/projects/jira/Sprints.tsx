@@ -9,12 +9,15 @@ import type {
   IssueSummary,
   WorkspaceMember,
 } from "@/lib/projects/types";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
+import type { Messages } from "@/lib/i18n/messages";
 import {
   CycleStatusPill,
   IssueCard,
   STATE_GROUP_COLOR,
-  STATE_GROUP_LABEL,
   STATE_GROUP_ORDER,
+  stateGroupTitle,
 } from "./shared";
 
 /**
@@ -65,6 +68,10 @@ export function JiraSprints({
   onDeleteCycle: (cycleId: string) => Promise<void> | void;
   accent: string;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
+
   const stateById = useMemo(() => {
     const m = new Map<string, IssueState>();
     for (const s of states) m.set(s.id, s);
@@ -150,12 +157,12 @@ export function JiraSprints({
       <aside className="w-[260px] shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col min-h-0">
         <header className="shrink-0 px-3 py-2 border-b border-stroke-1 flex items-center gap-2">
           <Calendar size={13} style={{ color: accent }} />
-          <h3 className="text-[12px] font-semibold">Sprints</h3>
+          <h3 className="text-[12px] font-semibold">{t("projects.sprints.header")}</h3>
           <button
             type="button"
             onClick={() => setShowNew(true)}
             className="ml-auto p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Neuer Sprint"
+            title={t("projects.sprints.newTooltip")}
           >
             <Plus size={12} />
           </button>
@@ -168,7 +175,7 @@ export function JiraSprints({
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Sprint-Name…"
+                placeholder={t("projects.sprints.namePh")}
                 className="w-full bg-bg-base border border-stroke-1 rounded-md px-2 py-1 text-[11.5px] outline-none focus:border-stroke-2"
               />
               <div className="flex gap-1.5">
@@ -191,7 +198,7 @@ export function JiraSprints({
                   onClick={() => setShowNew(false)}
                   className="text-[10.5px] text-text-tertiary px-2 py-1"
                 >
-                  Abbrechen
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
@@ -201,14 +208,14 @@ export function JiraSprints({
                   style={{ background: accent }}
                 >
                   {creating && <Loader2 size={10} className="spin" />}
-                  Anlegen
+                  {t("projects.sprints.create")}
                 </button>
               </div>
             </div>
           )}
           {ordered.length === 0 && !showNew && (
             <div className="p-4 text-center text-[11.5px] text-text-tertiary">
-              Noch kein Sprint angelegt.
+              {t("projects.sprints.empty")}
             </div>
           )}
           <ul>
@@ -240,7 +247,7 @@ export function JiraSprints({
                       <CycleStatusPill cycle={c} />
                       {c.startDate && c.endDate && (
                         <span className="text-[9.5px] text-text-tertiary">
-                          {fmtRange(c.startDate, c.endDate)}
+                          {fmtRange(c.startDate, c.endDate, localeFmt)}
                         </span>
                       )}
                     </div>
@@ -256,7 +263,7 @@ export function JiraSprints({
       <section className="flex-1 min-w-0 flex flex-col min-h-0">
         {!active ? (
           <div className="flex-1 flex items-center justify-center text-text-tertiary text-[12.5px]">
-            Wähle einen Sprint links.
+            {t("projects.sprints.pick")}
           </div>
         ) : (
           <SprintDetail
@@ -329,6 +336,10 @@ function SprintDetail({
   onDeleteCycle: (cycleId: string) => Promise<void> | void;
   accent: string;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
+
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(cycle.name);
   const [start, setStart] = useState(cycle.startDate ?? "");
@@ -397,7 +408,7 @@ function SprintDetail({
                     className="px-2 py-1 rounded-md text-white text-[11.5px]"
                     style={{ background: accent }}
                   >
-                    Speichern
+                    {t("common.save")}
                   </button>
                   <button
                     type="button"
@@ -409,7 +420,7 @@ function SprintDetail({
                     }}
                     className="px-2 py-1 rounded-md border border-stroke-1 text-[11.5px] text-text-tertiary"
                   >
-                    Abbrechen
+                    {t("common.cancel")}
                   </button>
                 </div>
               </div>
@@ -418,9 +429,9 @@ function SprintDetail({
                 <div className="flex items-center gap-2 text-[10.5px] text-text-tertiary mb-0.5">
                   <CycleStatusPill cycle={cycle} />
                   {cycle.startDate && cycle.endDate && (
-                    <span>{fmtRange(cycle.startDate, cycle.endDate)}</span>
+                    <span>{fmtRange(cycle.startDate, cycle.endDate, localeFmt)}</span>
                   )}
-                  <span>· {daysLeftLabel(cycle)}</span>
+                  <span>· {daysLeftLabel(cycle, t)}</span>
                 </div>
                 <h2 className="text-[16px] font-semibold text-text-primary truncate">
                   {cycle.name}
@@ -434,19 +445,23 @@ function SprintDetail({
                 type="button"
                 onClick={() => setEditing(true)}
                 className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-                title="Bearbeiten"
+                title={t("projects.sprints.editTooltip")}
               >
                 <Pencil size={13} />
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm(`Sprint "${cycle.name}" wirklich löschen?`)) {
+                  if (
+                    window.confirm(
+                      t("projects.sprints.deleteConfirm").replace("{name}", cycle.name),
+                    )
+                  ) {
                     void onDeleteCycle(cycle.id);
                   }
                 }}
                 className="p-1.5 rounded-md hover:bg-red-500/10 text-text-tertiary hover:text-red-500"
-                title="Sprint löschen"
+                title={t("projects.sprints.deleteTooltip")}
               >
                 <X size={13} />
               </button>
@@ -454,15 +469,15 @@ function SprintDetail({
           )}
         </div>
         <div className="mt-3 grid grid-cols-4 gap-3">
-          <Stat label="Issues" value={String(stats.total)} />
+          <Stat label={t("projects.stat.issues")} value={String(stats.total)} />
           <Stat
-            label="Erledigt"
+            label={t("projects.stat.done")}
             value={`${stats.done} (${stats.pct}%)`}
             tone="success"
           />
-          <Stat label="In Arbeit" value={String(stats.inProgress)} tone="info" />
+          <Stat label={t("projects.stat.inProgress")} value={String(stats.inProgress)} tone="info" />
           <Stat
-            label="Story Points"
+            label={t("projects.stat.points")}
             value={
               stats.points === 0
                 ? "—"
@@ -487,6 +502,7 @@ function SprintDetail({
             <SprintColumn
               key={col.group}
               group={col.group}
+              columnTitle={stateGroupTitle(t, col.group)}
               firstStateId={col.firstStateId}
               issues={col.issues}
               subCountByParent={subCountByParent}
@@ -508,6 +524,7 @@ function SprintDetail({
 
 function SprintColumn({
   group,
+  columnTitle,
   firstStateId,
   issues,
   subCountByParent,
@@ -521,6 +538,7 @@ function SprintColumn({
   accent,
 }: {
   group: string;
+  columnTitle: string;
   firstStateId: string | null;
   issues: IssueSummary[];
   subCountByParent: Map<string, number>;
@@ -565,7 +583,7 @@ function SprintColumn({
           style={{ background: STATE_GROUP_COLOR[group] }}
         />
         <h3 className="text-[11px] font-semibold uppercase tracking-wide">
-          {STATE_GROUP_LABEL[group] ?? group}
+          {columnTitle}
         </h3>
         <span className="ml-auto text-[10.5px] font-mono text-text-tertiary">
           {issues.length}
@@ -628,12 +646,12 @@ function Stat({
   );
 }
 
-function fmtRange(start: string, end: string): string {
+function fmtRange(start: string, end: string, localeFmt: string): string {
   const s = new Date(start);
   const e = new Date(end);
   const o: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" };
-  return `${s.toLocaleDateString("de-DE", o)} – ${e.toLocaleDateString(
-    "de-DE",
+  return `${s.toLocaleDateString(localeFmt, o)} – ${e.toLocaleDateString(
+    localeFmt,
     o,
   )}`;
 }
@@ -648,14 +666,18 @@ function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function daysLeftLabel(cycle: CycleSummary): string {
-  if (cycle.status === "completed") return "abgeschlossen";
-  if (cycle.status === "draft") return "Entwurf";
-  if (!cycle.endDate) return "ohne Enddatum";
+function daysLeftLabel(
+  cycle: CycleSummary,
+  t: (key: keyof Messages, fb?: string) => string,
+): string {
+  if (cycle.status === "completed") return t("projects.sprint.closed");
+  if (cycle.status === "draft") return t("projects.cycle.draft");
+  if (!cycle.endDate) return t("projects.sprint.noEnd");
   const ms = new Date(cycle.endDate).getTime() - Date.now();
   const days = Math.ceil(ms / 86_400_000);
-  if (days < 0) return `${Math.abs(days)} Tage überfällig`;
-  if (days === 0) return "endet heute";
-  if (days === 1) return "noch 1 Tag";
-  return `noch ${days} Tage`;
+  if (days < 0)
+    return t("projects.sprint.overdueDays").replace("{n}", String(Math.abs(days)));
+  if (days === 0) return t("projects.sprint.endsToday");
+  if (days === 1) return t("projects.sprint.oneDayLeft");
+  return t("projects.sprint.daysLeft").replace("{n}", String(days));
 }

@@ -21,16 +21,20 @@ import type {
   WorkspaceMember,
 } from "@/lib/projects/types";
 import type { WorkspaceId } from "@/lib/workspaces";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 import {
   ISSUE_TYPE_META,
   ISSUE_TYPE_ORDER,
+  ISSUE_TYPE_I18N,
   IssueType,
   IssueTypeIcon,
-  PRIORITY_LABEL,
+  PRIORITY_I18N,
   PRIORITY_ORDER,
   PriorityBadge,
   StateBadge,
   deriveIssueType,
+  ISSUE_TYPE_SYNC_NAME,
 } from "./shared";
 
 /**
@@ -78,9 +82,12 @@ export function IssueDrawer({
   onClose: () => void;
   onSelectIssue: (id: string) => void;
   apiUrl: (path: string) => string;
-  /** Nach Sub-Task-Erstellung Issues neu laden (Parent-Kinderliste). */
+  /** Reload issues after creating a sub-task (parent/children list). */
   onIssuesRefresh?: () => void;
 }) {
+  const tr = useT();
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const [titleDraft, setTitleDraft] = useState(issue.name);
   const [descDraft, setDescDraft] = useState(htmlToPlain(issue.descriptionHtml));
   const [savingTitle, setSavingTitle] = useState(false);
@@ -139,7 +146,7 @@ export function IssueDrawer({
   );
 
   return (
-    <aside className="flex flex-col h-full bg-bg-base border-l border-stroke-1 shadow-xl">
+    <aside className="flex flex-col h-full min-h-0 w-full bg-bg-base border-l border-stroke-1 max-md:border-l-0 shadow-xl">
       <header
         className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-stroke-1 bg-bg-chrome"
         style={{ boxShadow: `inset 0 -1px 0 0 ${accent}30` }}
@@ -156,8 +163,8 @@ export function IssueDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="ml-auto p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-          title="Schließen"
+          className="ml-auto min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary touch-manipulation md:min-h-0 md:min-w-0"
+          title={tr("projects.issueDrawer.closeTooltip")}
         >
           <X size={14} />
         </button>
@@ -191,12 +198,12 @@ export function IssueDrawer({
               className="w-full bg-transparent border border-transparent hover:border-stroke-1 focus:border-stroke-2 rounded-md px-1.5 py-1 text-[18px] font-semibold text-text-primary outline-none"
             />
 
-            <Section title="Beschreibung" loading={savingDesc}>
+            <Section title={tr("projects.issueDrawer.descriptionSection")} loading={savingDesc}>
               <textarea
                 value={descDraft}
                 onChange={(e) => setDescDraft(e.target.value)}
                 onBlur={() => void commitDesc()}
-                placeholder="Beschreibung hinzufügen…"
+                placeholder={tr("projects.issueDrawer.descriptionPlaceholder")}
                 className="w-full min-h-[140px] bg-bg-elevated border border-stroke-1 focus:border-stroke-2 rounded-md px-3 py-2 text-[12.5px] text-text-primary outline-none resize-y leading-relaxed"
               />
             </Section>
@@ -229,18 +236,18 @@ export function IssueDrawer({
 
         <aside className="w-[260px] shrink-0 border-l border-stroke-1 bg-bg-chrome overflow-y-auto">
           <div className="p-3 space-y-4">
-            <Field label="Issue-Typ">
+            <Field label={tr("projects.issueDrawer.issueTypeLabel")}>
               <div className="flex flex-wrap gap-1">
-                {ISSUE_TYPE_ORDER.map((t) => {
-                  const meta = ISSUE_TYPE_META[t];
-                  const isSel = t === issueType;
+                {ISSUE_TYPE_ORDER.map((ty) => {
+                  const meta = ISSUE_TYPE_META[ty];
+                  const isSel = ty === issueType;
                   return (
                     <button
-                      key={t}
+                      key={ty}
                       type="button"
                       onClick={() =>
                         void changeIssueType(
-                          t,
+                          ty,
                           issue,
                           labels,
                           onUpdate,
@@ -255,15 +262,15 @@ export function IssueDrawer({
                       }`}
                       style={isSel ? { background: meta.bg } : undefined}
                     >
-                      <IssueTypeIcon type={t} size={11} />
-                      {meta.label}
+                      <IssueTypeIcon type={ty} size={11} />
+                      {tr(ISSUE_TYPE_I18N[ty])}
                     </button>
                   );
                 })}
               </div>
             </Field>
 
-            <Field label="Status">
+            <Field label={tr("common.status")}>
               <select
                 value={issue.state && stateById.has(issue.state) ? issue.state : ""}
                 onChange={(e) => void onUpdate({ state: e.target.value })}
@@ -271,7 +278,7 @@ export function IssueDrawer({
               >
                 {(!issue.state || !stateById.has(issue.state)) && (
                   <option value="" disabled>
-                    — wählen —
+                    {tr("projects.issueDrawer.selectPlaceholder")}
                   </option>
                 )}
                 {states.map((s) => (
@@ -282,7 +289,7 @@ export function IssueDrawer({
               </select>
             </Field>
 
-            <Field label="Priorität">
+            <Field label={tr("projects.issueDrawer.priorityLabel")}>
               <select
                 value={issue.priority}
                 onChange={(e) =>
@@ -292,7 +299,7 @@ export function IssueDrawer({
               >
                 {PRIORITY_ORDER.map((p) => (
                   <option key={p} value={p}>
-                    {PRIORITY_LABEL[p]}
+                    {tr(PRIORITY_I18N[p])}
                   </option>
                 ))}
               </select>
@@ -301,7 +308,7 @@ export function IssueDrawer({
               </div>
             </Field>
 
-            <Field label="Bearbeiter">
+            <Field label={tr("projects.issueDrawer.assigneesLabel")}>
               <MultiPicker
                 options={members.map((m) => ({
                   id: m.id,
@@ -310,7 +317,7 @@ export function IssueDrawer({
                 }))}
                 selected={issue.assignees}
                 onChange={(next) => void onUpdate({ assignees: next })}
-                emptyLabel="Niemand"
+                emptyLabel={tr("projects.column.nobody")}
                 renderChip={(id) => {
                   const m = memberById.get(id);
                   if (!m) return null;
@@ -331,7 +338,7 @@ export function IssueDrawer({
               />
             </Field>
 
-            <Field label="Labels">
+            <Field label={tr("projects.filter.labelsHeading")}>
               <MultiPicker
                 options={labels.map((l) => ({
                   id: l.id,
@@ -340,7 +347,7 @@ export function IssueDrawer({
                 }))}
                 selected={issue.labels}
                 onChange={(next) => void onUpdate({ labels: next })}
-                emptyLabel="Keine"
+                emptyLabel={tr("common.none")}
                 renderChip={(id) => {
                   const l = labelById.get(id);
                   if (!l) return null;
@@ -357,7 +364,7 @@ export function IssueDrawer({
               />
             </Field>
 
-            <Field label="Sprint">
+            <Field label={tr("projects.issueDrawer.sprintLabel")}>
               <select
                 value={issue.cycle ?? ""}
                 onChange={(e) =>
@@ -371,7 +378,7 @@ export function IssueDrawer({
                 }
                 className="w-full bg-bg-elevated border border-stroke-1 hover:border-stroke-2 rounded-md px-1.5 py-1 text-[11.5px] outline-none"
               >
-                <option value="">— Backlog —</option>
+                <option value="">{tr("projects.issueDrawer.backlogOption")}</option>
                 {cycles
                   .filter(
                     (c) => c.status !== "completed" || c.id === issue.cycle,
@@ -380,17 +387,17 @@ export function IssueDrawer({
                     <option key={c.id} value={c.id}>
                       {c.name}{" "}
                       {c.status === "current"
-                        ? "· Aktiv"
+                        ? tr("projects.issueDrawer.sprintActiveBadge")
                         : c.status === "upcoming"
-                          ? "· Geplant"
+                          ? tr("projects.issueDrawer.sprintPlannedBadge")
                           : ""}
                     </option>
                   ))}
               </select>
               {currentCycle && currentCycle.endDate && (
                 <p className="mt-1 text-[10px] text-text-tertiary">
-                  Endet{" "}
-                  {new Date(currentCycle.endDate).toLocaleDateString("de-DE", {
+                  {tr("projects.issueDrawer.sprintEndsPrefix")}{" "}
+                  {new Date(currentCycle.endDate).toLocaleDateString(localeFmt, {
                     day: "2-digit",
                     month: "short",
                   })}
@@ -398,7 +405,7 @@ export function IssueDrawer({
               )}
             </Field>
 
-            <Field label="Parent-Issue">
+            <Field label={tr("projects.issueDrawer.parentIssueLabel")}>
               <select
                 value={issue.parent ?? ""}
                 onChange={(e) =>
@@ -406,7 +413,7 @@ export function IssueDrawer({
                 }
                 className="w-full bg-bg-elevated border border-stroke-1 hover:border-stroke-2 rounded-md px-1.5 py-1 text-[11.5px] outline-none"
               >
-                <option value="">— keiner —</option>
+                <option value="">{tr("projects.issueDrawer.noParentOption")}</option>
                 {allIssues
                   .filter((i) => i.id !== issue.id && i.parent !== issue.id)
                   .slice(0, 200)
@@ -418,7 +425,7 @@ export function IssueDrawer({
               </select>
             </Field>
 
-            <Field label="Story Points">
+            <Field label={tr("projects.issueDrawer.storyPointsLabel")}>
               <input
                 type="number"
                 min={0}
@@ -436,7 +443,7 @@ export function IssueDrawer({
             </Field>
 
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Start">
+              <Field label={tr("projects.issueDrawer.startLabel")}>
                 <input
                   type="date"
                   value={issue.startDate ?? ""}
@@ -446,7 +453,7 @@ export function IssueDrawer({
                   className="w-full bg-bg-elevated border border-stroke-1 hover:border-stroke-2 rounded-md px-1 py-1 text-[10.5px] outline-none"
                 />
               </Field>
-              <Field label="Fällig">
+              <Field label={tr("projects.issueDrawer.dueLabel")}>
                 <input
                   type="date"
                   value={issue.targetDate ?? ""}
@@ -460,15 +467,17 @@ export function IssueDrawer({
 
             <div className="pt-3 border-t border-stroke-1 text-[10.5px] text-text-tertiary leading-relaxed">
               <p>
-                Erstellt {new Date(issue.createdAt).toLocaleString("de-DE")}
+                {tr("projects.issueDrawer.createdPrefix")}{" "}
+                {new Date(issue.createdAt).toLocaleString(localeFmt)}
               </p>
               <p>
-                Geändert {new Date(issue.updatedAt).toLocaleString("de-DE")}
+                {tr("projects.issueDrawer.updatedPrefix")}{" "}
+                {new Date(issue.updatedAt).toLocaleString(localeFmt)}
               </p>
               {issue.completedAt && (
                 <p>
-                  Erledigt{" "}
-                  {new Date(issue.completedAt).toLocaleString("de-DE")}
+                  {tr("projects.issueDrawer.completedPrefix")}{" "}
+                  {new Date(issue.completedAt).toLocaleString(localeFmt)}
                 </p>
               )}
             </div>
@@ -479,7 +488,7 @@ export function IssueDrawer({
               className="w-full inline-flex items-center justify-center gap-2 px-2 py-1.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10 text-[11.5px]"
             >
               <Trash2 size={12} />
-              Issue löschen
+              {tr("projects.issueDrawer.deleteIssue")}
             </button>
           </div>
         </aside>
@@ -533,8 +542,9 @@ async function changeIssueType(
     return;
   }
   const meta = ISSUE_TYPE_META[newType];
+  const syncName = ISSUE_TYPE_SYNC_NAME[newType];
   let typeLabel = labels.find(
-    (l) => l.name.trim().toLowerCase() === meta.label.toLowerCase(),
+    (l) => l.name.trim().toLowerCase() === syncName.toLowerCase(),
   );
   if (!typeLabel) {
     try {
@@ -543,7 +553,7 @@ async function changeIssueType(
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: meta.label, color: meta.bg }),
+          body: JSON.stringify({ name: syncName, color: meta.bg }),
         },
       );
       if (r.ok) {
@@ -562,7 +572,7 @@ async function changeIssueType(
 /** Strip any label whose name matches a known issue-type name. */
 function stripTypeLabels(ids: string[], labels: IssueLabel[]): string[] {
   const typeNames = new Set(
-    Object.values(ISSUE_TYPE_META).map((m) => m.label.toLowerCase()),
+    Object.values(ISSUE_TYPE_SYNC_NAME).map((n) => n.toLowerCase()),
   );
   return ids.filter((id) => {
     const l = labels.find((x) => x.id === id);
@@ -674,6 +684,7 @@ function SubTasks({
   accent: string;
   onCreated: () => void;
 }) {
+  const tr = useT();
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -706,20 +717,25 @@ function SubTasks({
 
   if (children.length === 0 && !adding) {
     return (
-      <Section title="Sub-Tasks">
+      <Section title={tr("projects.issueDrawer.subtasksTitle")}>
         <button
           type="button"
           onClick={() => setAdding(true)}
           className="text-[11px] text-text-tertiary hover:text-text-primary inline-flex items-center gap-1"
         >
-          <Plus size={11} /> Sub-Task hinzufügen
+          <Plus size={11} /> {tr("projects.issueDrawer.addSubtask")}
         </button>
       </Section>
     );
   }
 
   return (
-    <Section title={`Sub-Tasks (${children.length})`}>
+    <Section
+      title={tr("projects.issueDrawer.subtasksWithCount").replace(
+        "{count}",
+        String(children.length),
+      )}
+    >
       <ul className="rounded-md border border-stroke-1 bg-bg-elevated divide-y divide-stroke-1/60">
         {children.map((c) => {
           const s = stateById.get(c.state);
@@ -761,7 +777,7 @@ function SubTasks({
             type="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Sub-Task…"
+            placeholder={tr("projects.issueDrawer.subtaskPlaceholder")}
             className="flex-1 bg-bg-elevated border border-stroke-1 rounded-md px-2 py-1 text-[11.5px] outline-none"
             onKeyDown={(e) => {
               if (e.key === "Enter") void submit();
@@ -778,7 +794,7 @@ function SubTasks({
             className="px-2 py-1 text-[11px] rounded-md text-white"
             style={{ background: accent }}
           >
-            {busy ? <Loader2 size={11} className="spin" /> : "Anlegen"}
+            {busy ? <Loader2 size={11} className="spin" /> : tr("projects.issueDrawer.createButton")}
           </button>
         </div>
       ) : (
@@ -787,7 +803,7 @@ function SubTasks({
           onClick={() => setAdding(true)}
           className="mt-2 text-[11px] text-text-tertiary hover:text-text-primary inline-flex items-center gap-1"
         >
-          <Plus size={11} /> Weitere Sub-Task
+          <Plus size={11} /> {tr("projects.issueDrawer.addAnotherSubtask")}
         </button>
       )}
     </Section>
@@ -813,6 +829,7 @@ function MultiPicker({
   renderChip: (id: string) => React.ReactNode;
   accent: string;
 }) {
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
 
@@ -861,14 +878,14 @@ function MultiPicker({
               type="search"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Suchen…"
+              placeholder={tr("projects.searchIssues")}
               autoFocus
               className="w-full bg-transparent border-b border-stroke-1 px-2 py-1.5 text-[11.5px] outline-none"
             />
             <ul>
               {visibleOptions.length === 0 && (
                 <li className="px-2 py-2 text-[11px] text-text-tertiary">
-                  Keine Treffer.
+                  {tr("common.noResults")}
                 </li>
               )}
               {visibleOptions.map((o) => {
@@ -932,6 +949,9 @@ function ActivitySection({
   accent: string;
   apiUrl: (path: string) => string;
 }) {
+  const tr = useT();
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const [comments, setComments] = useState<IssueComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -982,17 +1002,29 @@ function ActivitySection({
       setComments((c) => [...c, j.comment!]);
       setDraft("");
     } catch (e) {
-      alert("Kommentar fehlgeschlagen: " + (e instanceof Error ? e.message : e));
+      alert(
+        tr("projects.issueDrawer.commentFailedPrefix") +
+          (e instanceof Error ? e.message : String(e)),
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Section title={`Aktivität${comments.length ? ` (${comments.length})` : ""}`}>
+    <Section
+      title={
+        comments.length
+          ? tr("projects.issueDrawer.activityWithCount").replace(
+              "{count}",
+              String(comments.length),
+            )
+          : tr("projects.issueDrawer.activityTitle")
+      }
+    >
       {loading && (
         <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
-          <Loader2 size={11} className="spin" /> lädt…
+          <Loader2 size={11} className="spin" /> {tr("projects.issueDrawer.loading")}
         </div>
       )}
       {error && (
@@ -1004,7 +1036,7 @@ function ActivitySection({
         {comments.map((c) => {
           const author = c.actorId ? memberById.get(c.actorId) : null;
           const name =
-            c.actorDisplayName ?? author?.displayName ?? "Unbekannt";
+            c.actorDisplayName ?? author?.displayName ?? tr("projects.issueDrawer.unknownAuthor");
           return (
             <li
               key={c.id}
@@ -1018,7 +1050,7 @@ function ActivitySection({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 text-[10.5px] text-text-tertiary mb-0.5">
                   <span className="font-medium text-text-secondary">{name}</span>
-                  <span>{new Date(c.createdAt).toLocaleString("de-DE")}</span>
+                  <span>{new Date(c.createdAt).toLocaleString(localeFmt)}</span>
                 </div>
                 <div
                   className="rounded-md border border-stroke-1 bg-bg-elevated px-3 py-2 text-[12.5px] text-text-primary leading-relaxed [&_p]:my-1 [&_a]:text-sky-400 [&_a]:underline"
@@ -1034,7 +1066,7 @@ function ActivitySection({
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Kommentar verfassen … (Strg/⌘+Enter zum Senden)"
+          placeholder={tr("projects.issueDrawer.commentPlaceholder")}
           className="w-full min-h-[80px] bg-transparent rounded-t-md px-3 py-2 text-[12.5px] outline-none resize-y leading-relaxed"
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -1056,7 +1088,7 @@ function ActivitySection({
             ) : (
               <Send size={11} />
             )}
-            Senden
+            {tr("projects.issueDrawer.sendButton")}
           </button>
         </div>
       </div>

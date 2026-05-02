@@ -31,6 +31,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import { PaneHeader } from "@/components/ui/ThreePaneLayout";
+import { useIsNarrowScreen } from "@/lib/use-is-narrow-screen";
 import { RecordList } from "@/components/ui/RecordList";
 import { useT } from "@/components/LocaleProvider";
 import type { Messages } from "@/lib/i18n/messages";
@@ -53,7 +54,7 @@ import { IssueDrawer } from "./jira/IssueDrawer";
 import {
   EMPTY_FILTER,
   IssueCard,
-  PRIORITY_LABEL,
+  PRIORITY_I18N,
   PRIORITY_ORDER,
   applyFilter,
   type IssueFilter,
@@ -77,7 +78,7 @@ const VIEW_TABS: {
   { id: "backlog", labelKey: "projects.view.backlog", fallback: "Backlog", icon: ListChecks },
   { id: "sprints", labelKey: "projects.view.sprints", fallback: "Sprints", icon: Calendar },
   { id: "roadmap", labelKey: "projects.view.roadmap", fallback: "Roadmap", icon: MapIcon },
-  { id: "list", labelKey: "projects.view.list", fallback: "Liste", icon: List },
+  { id: "list", labelKey: "projects.view.list", fallback: "List", icon: List },
 ];
 
 /**
@@ -98,6 +99,7 @@ export function ProjectsClient({
   accent: string;
 }) {
   const t = useT();
+  const isNarrow = useIsNarrowScreen();
   const apiUrl = useCallback(
     (path: string): string => {
       const sep = path.includes("?") ? "&" : "?";
@@ -332,12 +334,12 @@ export function ProjectsClient({
   /* ── Mutations ─────────────────────────────────────────────── */
 
   const onCreateProject = useCallback(async () => {
-    const name = window.prompt("Name des neuen Projekts:")?.trim();
+    const name = window.prompt(t("projects.prompt.newProjectName"))?.trim();
     if (!name) return;
     const identifier =
       window
         .prompt(
-          "Kurzkennung (Großbuchstaben, max. 5 Zeichen — optional):",
+          t("projects.prompt.projectKey"),
           name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5),
         )
         ?.trim()
@@ -354,11 +356,11 @@ export function ProjectsClient({
       await loadProjects();
       setSelectedProjectId(j.project.id);
     } catch (e) {
-      alert("Projekt anlegen fehlgeschlagen: " + (e instanceof Error ? e.message : e));
+      alert(t("projects.alert.createProject") + (e instanceof Error ? e.message : e));
     } finally {
       setBusy(false);
     }
-  }, [loadProjects, apiUrl]);
+  }, [loadProjects, apiUrl, t]);
 
   const onDeleteProject = useCallback(
     async (project: ProjectSummary) => {
@@ -413,12 +415,12 @@ export function ProjectsClient({
         setSelectedIssueId(j.issue.id);
         setShowNewIssue(false);
       } catch (e) {
-        alert("Issue anlegen fehlgeschlagen: " + (e instanceof Error ? e.message : e));
+        alert(t("projects.alert.createIssue") + (e instanceof Error ? e.message : e));
       } finally {
         setBusy(false);
       }
     },
-    [selectedProjectId, apiUrl],
+    [selectedProjectId, apiUrl, t],
   );
 
   /**
@@ -459,12 +461,10 @@ export function ProjectsClient({
         }
         setIssues((cur) => [created, ...cur]);
       } catch (e) {
-        alert(
-          "Issue anlegen fehlgeschlagen: " + (e instanceof Error ? e.message : e),
-        );
+        alert(t("projects.alert.createIssue") + (e instanceof Error ? e.message : e));
       }
     },
-    [selectedProjectId, apiUrl],
+    [selectedProjectId, apiUrl, t],
   );
 
   const onUpdateIssue = useCallback(
@@ -497,17 +497,17 @@ export function ProjectsClient({
         if (!r.ok || !j.issue) throw new Error(j.error ?? `HTTP ${r.status}`);
         setIssues((cur) => cur.map((i) => (i.id === issueId ? j.issue! : i)));
       } catch (e) {
-        alert("Speichern fehlgeschlagen: " + (e instanceof Error ? e.message : e));
+        alert(t("projects.alert.saveIssue") + (e instanceof Error ? e.message : e));
         if (selectedProjectId) void loadProjectData(selectedProjectId);
       }
     },
-    [selectedProjectId, apiUrl, loadProjectData],
+    [selectedProjectId, apiUrl, loadProjectData, t],
   );
 
   const onDeleteIssue = useCallback(
     async (issueId: string) => {
       if (!selectedProjectId) return;
-      if (!window.confirm("Issue wirklich löschen?")) return;
+      if (!window.confirm(t("projects.alert.deleteIssueConfirm"))) return;
       setBusy(true);
       try {
         const r = await fetch(
@@ -523,12 +523,12 @@ export function ProjectsClient({
         setIssues((cur) => cur.filter((i) => i.id !== issueId));
         setSelectedIssueId(null);
       } catch (e) {
-        alert("Löschen fehlgeschlagen: " + (e instanceof Error ? e.message : e));
+        alert(t("projects.alert.deleteIssue") + (e instanceof Error ? e.message : e));
       } finally {
         setBusy(false);
       }
     },
-    [selectedProjectId, apiUrl],
+    [selectedProjectId, apiUrl, t],
   );
 
   /* ── Cycle mutations ──────────────────────────────────────── */
@@ -558,12 +558,12 @@ export function ProjectsClient({
         );
       } catch (e) {
         alert(
-          "Sprint-Zuweisung fehlgeschlagen: " +
+          t("projects.alert.cycleAssign") +
             (e instanceof Error ? e.message : e),
         );
       }
     },
-    [selectedProjectId, apiUrl],
+    [selectedProjectId, apiUrl, t],
   );
 
   const onCreateCycle = useCallback(
@@ -583,12 +583,12 @@ export function ProjectsClient({
         setCycles((cur) => [...cur, j.cycle!]);
       } catch (e) {
         alert(
-          "Sprint anlegen fehlgeschlagen: " +
+          t("projects.alert.createCycle") +
             (e instanceof Error ? e.message : e),
         );
       }
     },
-    [selectedProjectId, apiUrl],
+    [selectedProjectId, apiUrl, t],
   );
 
   const onUpdateCycle = useCallback(
@@ -632,13 +632,13 @@ export function ProjectsClient({
         setCycles((cur) => cur.map((c) => (c.id === cycleId ? j.cycle! : c)));
       } catch (e) {
         alert(
-          "Sprint speichern fehlgeschlagen: " +
+          t("projects.alert.saveCycle") +
             (e instanceof Error ? e.message : e),
         );
         if (selectedProjectId) void loadProjectData(selectedProjectId);
       }
     },
-    [selectedProjectId, apiUrl, loadProjectData],
+    [selectedProjectId, apiUrl, loadProjectData, t],
   );
 
   const onDeleteCycle = useCallback(
@@ -661,34 +661,34 @@ export function ProjectsClient({
         );
       } catch (e) {
         alert(
-          "Sprint löschen fehlgeschlagen: " +
+          t("projects.alert.deleteCycle") +
             (e instanceof Error ? e.message : e),
         );
       }
     },
-    [selectedProjectId, apiUrl],
+    [selectedProjectId, apiUrl, t],
   );
 
   /* ── Render ───────────────────────────────────────────────── */
 
   const projectListPane = sidebarCollapsed ? (
-    <aside className="shrink-0 w-[44px] border-r border-stroke-1 bg-bg-chrome flex flex-col min-h-0 items-center py-2 gap-1">
+    <aside className="shrink-0 w-[44px] max-md:w-full max-md:flex-row max-md:flex-wrap max-md:justify-start max-md:items-center max-md:gap-1 max-md:py-1.5 max-md:px-2 max-md:min-h-[44px] max-md:overflow-x-auto border-r border-stroke-1 max-md:border-r-0 max-md:border-b bg-bg-chrome flex flex-col md:flex-col min-h-0 md:items-center md:py-2 md:gap-1 touch-manipulation">
       <button
         type="button"
         onClick={() => setSidebarCollapsed(false)}
-        title="Projekte einblenden"
-        className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:text-text-primary hover:bg-bg-elevated"
+        title={t("projects.sidebar.expand")}
+        className="w-8 h-8 shrink-0 rounded flex items-center justify-center text-text-tertiary hover:text-text-primary hover:bg-bg-elevated min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0"
       >
         <PanelLeft size={14} />
       </button>
-      <div className="w-7 border-t border-stroke-1 my-1" />
+      <div className="hidden md:block w-7 border-t border-stroke-1 my-1" />
       {filteredProjects.slice(0, 12).map((p) => (
         <button
           key={p.id}
           type="button"
           onClick={() => setSelectedProjectId(p.id)}
           title={p.name}
-          className={`w-8 h-8 rounded flex items-center justify-center text-[10.5px] font-semibold ${
+          className={`w-8 h-8 shrink-0 rounded flex items-center justify-center text-[10.5px] font-semibold min-h-[44px] min-w-[44px] md:min-h-[32px] md:min-w-[32px] ${
             selectedProjectId === p.id ? "ring-2" : ""
           }`}
           style={{
@@ -702,7 +702,7 @@ export function ProjectsClient({
       ))}
     </aside>
   ) : (
-    <aside className="shrink-0 w-[240px] border-r border-stroke-1 bg-bg-chrome flex flex-col min-h-0">
+    <aside className="shrink-0 w-[240px] max-md:w-full max-md:max-h-[min(40vh,320px)] max-md:min-h-0 max-md:border-r-0 max-md:border-b border-stroke-1 bg-bg-chrome flex flex-col min-h-0 touch-manipulation">
       <PaneHeader
         title={t("nav.projects")}
         subtitle={workspaceName}
@@ -730,7 +730,7 @@ export function ProjectsClient({
             <a
               href={`/${workspaceId}/projects/plane`}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Plane-Hub (Workspace-Direktzugriff)"
+              title={t("projects.link.planeHubTitle")}
             >
               <ExternalLink size={13} />
             </a>
@@ -811,54 +811,56 @@ export function ProjectsClient({
   const currentViewTab = VIEW_TABS.find((tab) => tab.id === view);
   const currentViewLabel = currentViewTab
     ? t(currentViewTab.labelKey, currentViewTab.fallback)
-    : "Board";
+    : t("projects.view.board");
 
   const viewToolbar = (
-    <header className="shrink-0 flex flex-col gap-2 px-3 py-2 border-b border-stroke-1 bg-bg-chrome">
-      <div className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
-        <span className="hover:text-text-primary cursor-default">
-          Projekte
+    <header className="shrink-0 flex flex-col gap-2 px-3 py-2 border-b border-stroke-1 bg-bg-chrome touch-manipulation min-w-0">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-text-tertiary min-w-0">
+        <span className="hover:text-text-primary cursor-default shrink-0">
+          {t("projects.crumb.projects")}
         </span>
         {selectedProject && (
           <>
-            <ChevronRight size={11} className="opacity-60" />
+            <ChevronRight size={11} className="opacity-60 shrink-0" />
             <span
-              className="inline-flex items-center justify-center w-4 h-4 rounded text-[8.5px] font-bold text-white"
+              className="inline-flex items-center justify-center w-4 h-4 rounded text-[8.5px] font-bold text-white shrink-0"
               style={{ background: accent }}
             >
               {(selectedProject.emoji || selectedProject.identifier.slice(0, 1) || "P")
                 .toString()
                 .slice(0, 1)}
             </span>
-            <span className="text-text-secondary font-medium">
+            <span className="text-text-secondary font-medium truncate max-w-[min(100%,14rem)] md:max-w-none">
               {selectedProject.name}
             </span>
-            <ChevronRight size={11} className="opacity-60" />
-            <span className="text-text-primary">{currentViewLabel}</span>
+            <ChevronRight size={11} className="opacity-60 shrink-0" />
+            <span className="text-text-primary shrink-0">{currentViewLabel}</span>
           </>
         )}
       </div>
-      <div className="flex items-center gap-2">
-        <h1 className="text-[15px] font-semibold leading-tight text-text-primary">
+      <div className="flex flex-wrap items-center gap-2 min-w-0">
+        <h1 className="text-[15px] font-semibold leading-tight text-text-primary min-w-0 flex-1 basis-[min(100%,12rem)] truncate">
           {selectedProject
             ? `${selectedProject.identifier} ${currentViewLabel}`
-            : "Projekte"}
+            : t("projects.crumb.projects")}
         </h1>
         {selectedProject && (
           <button
             type="button"
-            className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-amber-400"
-            title="Favorit"
+            className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-amber-400 shrink-0 max-md:min-h-[44px] max-md:min-w-[44px] max-md:inline-flex max-md:items-center max-md:justify-center touch-manipulation"
+            title={t("projects.starTooltip")}
           >
             <Star size={13} />
           </button>
         )}
         {selectedProject && (
-          <span className="ml-1 text-[10.5px] text-text-tertiary tabular-nums">
-            {filteredIssues.length} / {issues.length} Issues
+          <span className="text-[10.5px] text-text-tertiary tabular-nums shrink-0">
+            {t("projects.count.issuesShown")
+              .replace("{filtered}", String(filteredIssues.length))
+              .replace("{total}", String(issues.length))}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1 justify-end w-full md:w-auto md:ml-auto">
           {selectedProject && (
             <button
               type="button"
@@ -867,7 +869,7 @@ export function ProjectsClient({
                 setTimeout(() => newIssueRef.current?.focus(), 30);
               }}
               disabled={busy}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px] disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px] disabled:opacity-50 max-md:min-h-[44px] touch-manipulation"
               style={{ background: accent }}
               title="Neues Issue"
             >
@@ -879,11 +881,11 @@ export function ProjectsClient({
               type="button"
               onClick={() => setShowImport(true)}
               disabled={busy}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] disabled:opacity-50"
-              title={t("projects.import.title", "Issues aus CSV importieren")}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] disabled:opacity-50 max-md:min-h-[44px] touch-manipulation"
+              title={t("projects.import.title")}
             >
               <FileUp size={11} />
-              {t("projects.import", "Import")}
+              {t("projects.import")}
             </button>
           )}
           <button
@@ -891,8 +893,8 @@ export function ProjectsClient({
             onClick={() =>
               selectedProjectId && void loadProjectData(selectedProjectId)
             }
-            className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Neu laden"
+            className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary max-md:min-h-[44px] max-md:min-w-[44px] max-md:inline-flex max-md:items-center max-md:justify-center touch-manipulation"
+            title={t("projects.reloadTooltip")}
           >
             <RefreshCw size={13} />
           </button>
@@ -900,8 +902,8 @@ export function ProjectsClient({
             href={`/api/plane/sso?ws=${workspaceId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
-            title="In Plane öffnen"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] max-md:min-h-[44px] touch-manipulation"
+            title={t("projects.openPlaneTooltip")}
           >
             <ExternalLink size={11} />
             Plane
@@ -910,7 +912,8 @@ export function ProjectsClient({
       </div>
       {selectedProject && (
         <>
-          <div className="flex items-center gap-1 text-[11px]">
+          <div className="flex flex-col gap-2 min-w-0 md:flex-row md:items-center md:gap-1">
+            <div className="flex gap-1 overflow-x-auto overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch] py-0.5 -mx-1 px-1 min-w-0 md:flex-1 md:overflow-visible md:flex-wrap">
             {VIEW_TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = view === tab.id;
@@ -919,7 +922,7 @@ export function ProjectsClient({
                   key={tab.id}
                   type="button"
                   onClick={() => setView(tab.id)}
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md ${
+                  className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md touch-manipulation max-md:min-h-[40px] ${
                     isActive
                       ? "text-white"
                       : "text-text-tertiary hover:text-text-primary hover:bg-bg-overlay"
@@ -931,8 +934,9 @@ export function ProjectsClient({
                 </button>
               );
             })}
+            </div>
 
-            <div className="ml-auto flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1 shrink-0 justify-end md:ml-auto">
               <div className="relative">
                 <Search
                   size={12}
@@ -944,14 +948,14 @@ export function ProjectsClient({
                   onChange={(e) =>
                     setFilter((f) => ({ ...f, query: e.target.value }))
                   }
-                  placeholder="Suche…"
-                  className="bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1 text-[11.5px] outline-none focus:border-stroke-2 w-48"
+                  placeholder={t("projects.searchIssues")}
+                  className="bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1 text-[11.5px] outline-none focus:border-stroke-2 w-full min-w-[10rem] max-md:min-h-[40px] sm:w-48"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => setShowFilter((v) => !v)}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] ${
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] touch-manipulation max-md:min-h-[40px] ${
                   showFilter ||
                   filter.priorities.length > 0 ||
                   filter.assignees.length > 0 ||
@@ -961,7 +965,7 @@ export function ProjectsClient({
                 }`}
               >
                 <Filter size={11} />
-                Filter
+                {t("common.filter")}
                 {(filter.priorities.length +
                   filter.assignees.length +
                   filter.labels.length) > 0 && (
@@ -994,7 +998,7 @@ export function ProjectsClient({
   if (!selectedProject && !projectsLoading) {
     viewContent = (
       <div className="flex-1 flex items-center justify-center text-text-tertiary text-[12.5px]">
-        Wähle links ein Projekt.
+        {t("projects.empty.pickSidebar")}
       </div>
     );
   } else if (issuesError) {
@@ -1008,7 +1012,7 @@ export function ProjectsClient({
   } else if (issuesLoading || metaLoading || !meta) {
     viewContent = (
       <div className="flex-1 flex items-center justify-center text-text-tertiary text-[12.5px]">
-        <Loader2 size={16} className="spin mr-2" /> lädt…
+        <Loader2 size={16} className="spin mr-2" /> {t("projects.loadingInline")}
       </div>
     );
   } else if (view === "board") {
@@ -1101,16 +1105,16 @@ export function ProjectsClient({
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-bg-base text-text-primary text-[13px]">
+    <div className="flex flex-col md:flex-row h-full min-h-0 bg-bg-base text-text-primary text-[13px] overflow-hidden touch-manipulation">
       {projectListPane}
-      <section className="flex-1 min-w-0 flex flex-col min-h-0">
+      <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
         {viewToolbar}
         {showNewIssue && selectedProject && (
           <div className="px-3 py-2 border-b border-stroke-1 bg-bg-elevated flex items-center gap-2">
             <input
               ref={newIssueRef}
               type="text"
-              placeholder="Was ist zu tun? Enter zum Anlegen, Esc zum Abbrechen."
+              placeholder={t("projects.issueRow.placeholder")}
               className="flex-1 bg-transparent border border-stroke-1 rounded-md px-2 py-1.5 text-[12px] outline-none focus:border-stroke-2"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -1132,7 +1136,13 @@ export function ProjectsClient({
         {viewContent}
       </section>
       {selectedIssue && meta && (
-        <div className="w-[640px] shrink-0 min-h-0 flex">
+        <div
+          className={
+            isNarrow
+              ? "fixed inset-0 z-[55] flex flex-col min-h-0 bg-bg-base pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+              : "hidden md:flex w-[min(640px,46vw)] shrink-0 min-h-0 flex-col max-w-[640px]"
+          }
+        >
           <IssueDrawer
             issue={selectedIssue}
             states={meta.states}
@@ -1188,24 +1198,25 @@ function FilterBar({
   members: WorkspaceMember[];
   labels: IssueLabel[];
 }) {
+  const t = useT();
   return (
     <div className="flex flex-wrap items-center gap-2 text-[11px]">
       <FilterChips
-        label="Priorität"
-        options={PRIORITY_ORDER.map((p) => ({ id: p, label: PRIORITY_LABEL[p] }))}
+        label={t("projects.filter.priorityLabel")}
+        options={PRIORITY_ORDER.map((p) => ({ id: p, label: t(PRIORITY_I18N[p]) }))}
         selected={filter.priorities as string[]}
         onChange={(next) =>
           onChange({ ...filter, priorities: next as IssuePriority[] })
         }
       />
       <FilterChips
-        label="Bearbeiter"
+        label={t("projects.filter.assigneeLabel")}
         options={members.map((m) => ({ id: m.id, label: m.displayName }))}
         selected={filter.assignees}
         onChange={(next) => onChange({ ...filter, assignees: next })}
       />
       <FilterChips
-        label="Labels"
+        label={t("projects.filter.labelsHeading")}
         options={labels.map((l) => ({ id: l.id, label: l.name, color: l.color }))}
         selected={filter.labels}
         onChange={(next) => onChange({ ...filter, labels: next })}
@@ -1220,7 +1231,7 @@ function FilterBar({
           }
           className="text-[10.5px] text-text-tertiary hover:text-text-primary underline"
         >
-          Filter zurücksetzen
+          {t("projects.filter.reset")}
         </button>
       )}
     </div>
@@ -1253,7 +1264,7 @@ function FilterChips({
                   sel ? selected.filter((x) => x !== o.id) : [...selected, o.id],
                 )
               }
-              className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full border text-[10px] ${
+              className={`inline-flex items-center gap-1 px-1.5 py-[3px] max-md:py-1.5 max-md:min-h-[36px] rounded-full border text-[10px] touch-manipulation ${
                 sel
                   ? "border-transparent bg-bg-elevated text-text-primary"
                   : "border-stroke-1 text-text-tertiary hover:text-text-primary"

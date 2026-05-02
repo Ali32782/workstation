@@ -59,7 +59,7 @@ import {
   Pencil,
   Columns3,
 } from "lucide-react";
-import { scoreLead, scoreTier, scoreLabel } from "@/lib/crm/scoring";
+import { scoreLead, scoreTier } from "@/lib/crm/scoring";
 import { ImportCrmModal } from "./ImportCrmModal";
 import { OpportunityKanban } from "./opportunity-kanban";
 import {
@@ -77,8 +77,11 @@ import { StatusPill, toneForState } from "@/components/ui/Pills";
 import { groupByDate, shortTime } from "@/components/ui/datetime";
 import { useSearchParams } from "next/navigation";
 import { clickToCallUrl } from "@/lib/calls/click-to-call";
-import { useT } from "@/components/LocaleProvider";
+import { useLocale } from "@/components/LocaleProvider";
+import { useIsNarrowScreen } from "@/lib/use-is-narrow-screen";
 import type { WorkspaceId } from "@/lib/workspaces";
+import type { Locale, Messages } from "@/lib/i18n/messages";
+import { localeTag } from "@/lib/i18n/messages";
 import type {
   CompanyDetail,
   CompanySummary,
@@ -149,30 +152,49 @@ function activeFilterCount(f: CrmFilters): number {
   return n;
 }
 
-function relativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return "gerade";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} d`;
-  return new Date(iso).toLocaleDateString("de-DE");
+function relativeTime(
+  iso: string,
+  locale: Locale,
+  translate: (key: keyof Messages, fallback?: string) => string,
+): string {
+  const tObj = new Date(iso).getTime();
+  const diff = (Date.now() - tObj) / 1000;
+  if (diff < 60) return translate("crm.time.justNow");
+  if (diff < 3600)
+    return translate("crm.time.minutesShort").replace(
+      "{n}",
+      String(Math.floor(diff / 60)),
+    );
+  if (diff < 86400)
+    return translate("crm.time.hoursShort").replace(
+      "{n}",
+      String(Math.floor(diff / 3600)),
+    );
+  if (diff < 86400 * 7)
+    return translate("crm.time.daysShort").replace(
+      "{n}",
+      String(Math.floor(diff / 86400)),
+    );
+  const loc = locale === "en" ? "en-US" : "de-DE";
+  return new Date(iso).toLocaleDateString(loc);
 }
 
 function formatCurrency(
   amountMicros: number | null | undefined,
   currency: string | null | undefined,
+  locale: Locale,
 ): string {
   if (amountMicros == null || !currency) return "—";
   const value = amountMicros / 1_000_000;
+  const loc = locale === "en" ? "en-US" : "de-CH";
   try {
-    return new Intl.NumberFormat("de-CH", {
+    return new Intl.NumberFormat(loc, {
       style: "currency",
       currency,
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    return `${value.toLocaleString("de-CH")} ${currency}`;
+    return `${value.toLocaleString(loc)} ${currency}`;
   }
 }
 
@@ -193,7 +215,7 @@ export function CrmClient({
   /** When true, render the inline Lead-Scraper trigger in the sidebar header. */
   scraperAvailable?: boolean;
 }) {
-  const t = useT();
+  const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const [companies, setCompanies] = useState<CompanySummary[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(true);
@@ -224,11 +246,11 @@ export function CrmClient({
   // bulk-action bar only mounts once anything is selected.
   const [selectedSet, setSelectedSet] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
-  /** Cmd+K `?person=uuid` — highlightiert die Kontaktkarte in „Personen“ */
+  /** Cmd+K `?person=uuid` — highlights the contact card on People */
   const [highlightPersonId, setHighlightPersonId] = useState<string | null>(
     null,
   );
-  /** Cmd+K `?deal=uuid` — Tab Deals + Karten-Highlight */
+  /** Cmd+K `?deal=uuid` — Deals tab + card highlight */
   const [highlightOpportunityId, setHighlightOpportunityId] = useState<
     string | null
   >(null);
@@ -352,7 +374,7 @@ export function CrmClient({
     setSelectedId((prev) => (prev === raw ? prev : raw));
   }, [searchParams]);
 
-  // Deep-Link: Kontakt öffnen (Cmd+K) → gleiche Firma, Tab „Personen“.
+  // Deep link: open contact (Cmd+K) → same company, People tab.
   useEffect(() => {
     const raw = searchParams.get("person")?.trim() ?? "";
     if (!raw || !CRM_UUID_RE.test(raw)) return;
@@ -388,7 +410,7 @@ export function CrmClient({
     };
   }, [searchParams, apiUrl]);
 
-  // Deep-Link: Deal öffnen (Cmd+K) → Firma + Tab „Deals“ + Karte hervorheben.
+  // Deep link: open deal (Cmd+K) → company + Deals tab + highlight card.
   useEffect(() => {
     const raw = searchParams.get("deal")?.trim() ?? "";
     if (!raw || !CRM_UUID_RE.test(raw)) return;
@@ -491,7 +513,7 @@ export function CrmClient({
       await loadCompanies(search);
       selectCompany(j.company.id);
     } catch (e) {
-      alert(`Anlegen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      alert(`${t("crm.alert.createFailed")} ${e instanceof Error ? e.message : e}`);
     }
   };
 
@@ -534,10 +556,10 @@ export function CrmClient({
             : d,
         );
       } catch (e) {
-        alert(`Speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("crm.alert.saveFailed")} ${e instanceof Error ? e.message : e}`);
       }
     },
-    [apiUrl],
+    [apiUrl, t],
   );
 
   const onPatchCompany = useCallback(
@@ -568,15 +590,16 @@ export function CrmClient({
           ),
         );
       } catch (e) {
-        alert(`Speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("crm.alert.saveFailed")} ${e instanceof Error ? e.message : e}`);
       }
     },
-    [detail, apiUrl],
+    [detail, apiUrl, t],
   );
 
   const onDeleteCompany = useCallback(async () => {
     if (!detail) return;
-    if (!confirm(`„${detail.name}“ wirklich löschen?`)) return;
+    if (!confirm(t("crm.delete.confirmNamed").replace("{name}", detail.name)))
+      return;
     try {
       const r = await fetch(apiUrl("/api/crm/companies", { id: detail.id }), {
         method: "DELETE",
@@ -588,9 +611,9 @@ export function CrmClient({
       selectCompany(null);
       await loadCompanies(search);
     } catch (e) {
-      alert(`Löschen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      alert(`${t("crm.alert.deleteFailed")} ${e instanceof Error ? e.message : e}`);
     }
-  }, [detail, loadCompanies, search, apiUrl, selectCompany]);
+  }, [detail, loadCompanies, search, apiUrl, selectCompany, t]);
 
   const addNote = useCallback(
     async (title: string, body: string) => {
@@ -635,9 +658,16 @@ export function CrmClient({
   // immediately re-selecting them — that would feel like the UI is
   // fighting the user. After the first hop, subsequent selection is
   // entirely user-driven.
+  //
+  // On phones we *skip* the auto-select: ThreePaneLayout's mobile mode
+  // foregrounds the detail pane whenever `hasSelection` is true, which
+  // would otherwise drop the user straight into a lead instead of the
+  // company list when they open CRM on iPhone.
+  const isNarrowScreen = useIsNarrowScreen();
   const autoSelectedRef = useRef(false);
   useEffect(() => {
     if (autoSelectedRef.current) return;
+    if (isNarrowScreen) return;
     const pDeep = searchParams.get("person")?.trim() ?? "";
     if (CRM_UUID_RE.test(pDeep)) return;
     const dDeep = searchParams.get("deal")?.trim() ?? "";
@@ -652,7 +682,14 @@ export function CrmClient({
       autoSelectedRef.current = true;
       selectCompany(first.id);
     }
-  }, [filtered, companiesLoading, selectedId, searchParams, selectCompany]);
+  }, [
+    filtered,
+    companiesLoading,
+    selectedId,
+    searchParams,
+    selectCompany,
+    isNarrowScreen,
+  ]);
 
   // Trim selection when a deletion / filter shrinks the list.
   useEffect(() => {
@@ -688,7 +725,15 @@ export function CrmClient({
     if (selectedSet.size === 0) return;
     if (
       !confirm(
-        `${selectedSet.size} ${selectedSet.size === 1 ? "Firma" : "Firmen"} wirklich löschen?`,
+        selectedSet.size === 1
+          ? t("crm.bulk.deleteConfirmOne").replace(
+              "{n}",
+              String(selectedSet.size),
+            )
+          : t("crm.bulk.deleteConfirmMany").replace(
+              "{n}",
+              String(selectedSet.size),
+            ),
       )
     )
       return;
@@ -702,7 +747,11 @@ export function CrmClient({
       );
       const failed = results.filter((r) => r.status === "rejected").length;
       if (failed > 0) {
-        alert(`${failed} von ${ids.length} Löschungen schlugen fehl.`);
+        alert(
+          t("crm.bulk.deletePartialFail")
+            .replace("{failed}", String(failed))
+            .replace("{total}", String(ids.length)),
+        );
       }
       // Refresh and drop the selection regardless — partial successes still
       // mutated server state.
@@ -722,6 +771,7 @@ export function CrmClient({
     clearSelection,
     selectedId,
     selectCompany,
+    t,
   ]);
 
   const bulkSetLeadSource = useCallback(
@@ -877,7 +927,7 @@ export function CrmClient({
         );
         const j = await r.json();
         if (!r.ok) {
-          alert(`Push fehlgeschlagen: ${j.error ?? `HTTP ${r.status}`}`);
+          alert(`${t("crm.alert.pushFailed")} ${j.error ?? `HTTP ${r.status}`}`);
           return;
         }
         const summary = j.summary ?? { pushed: 0, skipped: 0, errors: 0 };
@@ -893,12 +943,12 @@ export function CrmClient({
           void refreshMauticStatus();
         }
       } catch (e) {
-        alert(`Push fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        alert(`${t("crm.alert.pushFailed")} ${e instanceof Error ? e.message : e}`);
       } finally {
         setBulkBusy(false);
       }
     },
-    [selectedSet, apiUrl, refreshMauticStatus],
+    [selectedSet, apiUrl, refreshMauticStatus, t],
   );
 
   /* ── Saved Views (Filter-Presets) ─────────────────────────────── */
@@ -940,7 +990,7 @@ export function CrmClient({
   );
 
   const saveCurrentView = useCallback(() => {
-    const name = prompt("Name für diese Ansicht:", "");
+    const name = prompt(t("crm.savedView.promptName"), "");
     if (!name || !name.trim()) return;
     const view: SavedView = {
       id: `view_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -954,7 +1004,7 @@ export function CrmClient({
       search,
     };
     persistViews([...savedViews, view]);
-  }, [filters, savedViews, persistViews, search]);
+  }, [filters, savedViews, persistViews, search, t]);
 
   const applySavedView = useCallback((v: SavedView) => {
     setFilters({
@@ -1011,7 +1061,7 @@ export function CrmClient({
             <Link
               href={`/${workspaceId}/crm/pipeline`}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="Pipeline (alle Deals)"
+              title={t("crm.toolbar.pipelineAll")}
             >
               <Columns3 size={13} />
             </Link>
@@ -1026,7 +1076,7 @@ export function CrmClient({
               type="button"
               onClick={() => setShowImport(true)}
               className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-              title="CSV-Import (Firmen / Personen)"
+              title={t("crm.toolbar.importCsv")}
             >
               <FileUp size={13} />
             </button>
@@ -1050,17 +1100,17 @@ export function CrmClient({
                 setShowNew(true);
                 setTimeout(() => newRef.current?.focus(), 30);
               }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px]"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px] max-md:min-h-[44px] max-md:px-3 touch-manipulation"
               style={{ background: accent }}
-              title="Neue Firma"
+              title={t("crm.toolbar.newCompany")}
             >
-              <Plus size={12} /> Firma
+              <Plus size={12} /> {t("crm.button.company")}
             </button>
           </>
         }
       >
-        <div className="flex items-center gap-1.5">
-          <div className="relative flex-1">
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+          <div className="relative flex-1 min-w-[120px]">
             <Search
               size={12}
               className="absolute left-2 top-1/2 -translate-y-1/2 text-text-quaternary"
@@ -1069,19 +1119,19 @@ export function CrmClient({
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Firma suchen…"
+              placeholder={t("crm.placeholder.search")}
               className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
             />
           </div>
           <button
             type="button"
             onClick={() => setFilterOpen((v) => !v)}
-            className={`shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-[11px] ${
+            className={`shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-[11px] touch-manipulation max-md:min-h-[44px] max-md:px-3 ${
               activeFilterCount(filters) > 0 || filterOpen
                 ? "border-stroke-2 bg-bg-overlay text-text-primary"
                 : "border-stroke-1 text-text-tertiary hover:text-text-primary"
             }`}
-            title="Filter"
+            title={t("common.filter")}
             aria-expanded={filterOpen}
           >
             <FilterIcon size={11} />
@@ -1186,7 +1236,7 @@ export function CrmClient({
         meta={companyMeta}
         emptyHint={
           search || activeFilterCount(filters) > 0
-            ? "Keine Treffer mit diesen Filtern"
+            ? t("crm.empty.filtered")
             : t("crm.empty.companies")
         }
         selectedSet={selectedSet}
@@ -1204,7 +1254,7 @@ export function CrmClient({
           onClick={() => void loadCompanies(search, true)}
           className="m-2 px-3 py-1.5 text-[11px] rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary"
         >
-          Mehr laden…
+          {t("crm.loadMore")}
         </button>
       )}
     </>
@@ -1214,48 +1264,52 @@ export function CrmClient({
   const totalActivity = notes.length + tasks.length + opportunities.length;
 
   const tabBar = (
-    <div className="flex items-center gap-0.5 border-b border-stroke-1 bg-bg-chrome">
+    <div className="flex flex-nowrap items-stretch gap-0.5 border-b border-stroke-1 bg-bg-chrome overflow-x-auto overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch] min-w-0">
       {[
         {
           id: "activity" as Tab,
-          label: "Activity",
+          label: t("crm.tab.activity"),
           icon: Activity,
           count: totalActivity,
         },
         {
           id: "people" as Tab,
-          label: "Personen",
+          label: t("crm.tab.people"),
           icon: UsersIcon,
           count: people.length,
         },
         {
           id: "deals" as Tab,
-          label: "Deals",
+          label: t("crm.tab.deals"),
           icon: TrendingUp,
           count: opportunities.length,
         },
         {
           id: "details" as Tab,
-          label: "Details",
+          label: t("crm.tab.details"),
           icon: Briefcase,
           count: 0,
         },
-      ].map((t) => (
+      ].map((tabItem) => (
         <button
-          key={t.id}
+          key={tabItem.id}
           type="button"
-          onClick={() => setTab(t.id)}
-          className={`px-3 py-2 text-[11.5px] flex items-center gap-1.5 border-b-2 ${
-            tab === t.id
+          onClick={() => setTab(tabItem.id)}
+          className={`shrink-0 px-3 py-2 text-[11.5px] flex items-center gap-1.5 border-b-2 touch-manipulation max-md:min-h-[44px] ${
+            tab === tabItem.id
               ? "border-current text-text-primary"
               : "border-transparent text-text-tertiary hover:text-text-secondary"
           }`}
-          style={tab === t.id ? { color: accent, borderColor: accent } : undefined}
+          style={
+            tab === tabItem.id ? { color: accent, borderColor: accent } : undefined
+          }
         >
-          <t.icon size={12} />
-          {t.label}
-          {t.count > 0 && (
-            <span className="text-[10px] text-text-quaternary">({t.count})</span>
+          <tabItem.icon size={12} />
+          {tabItem.label}
+          {tabItem.count > 0 && (
+            <span className="text-[10px] text-text-quaternary">
+              ({tabItem.count})
+            </span>
           )}
         </button>
       ))}
@@ -1266,7 +1320,7 @@ export function CrmClient({
   if (!detail) {
     secondaryBody = (
       <PaneEmptyState
-        title="Keine Firma gewählt"
+        title={t("crm.empty.noCompanySelected")}
         hint={t("crm.empty.selection")}
         icon={<Building2 size={32} />}
       />
@@ -1286,12 +1340,12 @@ export function CrmClient({
         opportunities={opportunities}
         showComposer={showQuickNote}
         onComposerClose={() => setShowQuickNote(false)}
-        onAddNote={async (t, b) => {
+        onAddNote={async (noteTitle, noteBody) => {
           try {
-            await addNote(t, b);
+            await addNote(noteTitle, noteBody);
             setShowQuickNote(false);
           } catch (e) {
-            alert(`Speichern fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+            alert(`${t("crm.alert.saveFailed")} ${e instanceof Error ? e.message : e}`);
           }
         }}
         onOpenComposer={() => setShowQuickNote(true)}
@@ -1332,11 +1386,11 @@ export function CrmClient({
   const secondary = (
     <>
       <PaneHeader
-        title={detail ? detail.name : "Verknüpfungen"}
+        title={detail ? detail.name : t("crm.hub.linksTitle")}
         subtitle={
           detail
-            ? "Activity · Personen · Deals · Details"
-            : "Wähle eine Firma"
+            ? t("crm.hub.linksSubtitleWithCompany")
+            : t("crm.hub.linksSubtitleEmpty")
         }
         accent={accent}
       />
@@ -1350,8 +1404,8 @@ export function CrmClient({
   if (!selectedId) {
     detailNode = (
       <PaneEmptyState
-        title="Native Twenty-Integration"
-        hint="Für Pipelines, Custom Views und Bulk-Edit öffne den vollen Twenty-Workspace im neuen Tab."
+        title={t("crm.twenty.nativeTitle")}
+        hint={t("crm.twenty.hint")}
         icon={<Building2 size={32} />}
       />
     );
@@ -1391,11 +1445,11 @@ export function CrmClient({
 
   const detailHeader = (
     <header
-      className="flex-1 px-3 py-2 flex items-center gap-2"
+      className="flex-1 px-3 py-2 flex flex-wrap items-center gap-2 min-w-0 touch-manipulation"
       style={{ boxShadow: `inset 0 -1px 0 0 ${accent}30` }}
     >
-      <Building2 size={14} style={{ color: accent }} />
-      <h1 className="text-[12.5px] font-semibold leading-tight">
+      <Building2 size={14} style={{ color: accent }} className="shrink-0" />
+      <h1 className="text-[12.5px] font-semibold leading-tight min-w-0">
         CRM ·{" "}
         <span className="text-text-tertiary font-normal">{workspaceName}</span>
       </h1>
@@ -1403,10 +1457,10 @@ export function CrmClient({
         href="https://crm.kineo360.work"
         target="_blank"
         rel="noopener noreferrer"
-        className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
+        className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] max-md:min-h-[44px] touch-manipulation"
       >
         <ExternalLink size={11} />
-        In Twenty öffnen
+        {t("crm.openInTwenty")}
       </a>
     </header>
   );
@@ -1475,6 +1529,7 @@ function FilterPanel({
   onApplyView?: (id: string) => void;
   onDeleteView?: (id: string) => void;
 }) {
+  const { t } = useLocale();
   const toggleSetItem = (key: "leadSources" | "cities", value: string) => {
     const next = new Set(filters[key]);
     if (next.has(value)) next.delete(value);
@@ -1489,20 +1544,20 @@ function FilterPanel({
   return (
     <div className="border-b border-stroke-1 bg-bg-elevated px-3 py-2.5 space-y-2.5">
       <div className="flex items-center justify-between text-[11px] text-text-tertiary">
-        <span className="uppercase tracking-wider font-semibold">Filter</span>
+        <span className="uppercase tracking-wider font-semibold">{t("common.filter")}</span>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onReset}
             className="text-text-tertiary hover:text-text-primary"
           >
-            Zurücksetzen
+            {t("crm.filter.reset")}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="p-0.5 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Filter schließen"
+            title={t("crm.tooltip.closeFilter")}
           >
             <X size={11} />
           </button>
@@ -1510,25 +1565,25 @@ function FilterPanel({
       </div>
 
       <TriStateRow
-        label="Telefon"
+        label={t("crm.filter.phone")}
         icon={<Phone size={10} />}
         value={filters.hasPhone}
         onChange={(v) => setTri("hasPhone", v)}
       />
       <TriStateRow
-        label="Email"
+        label={t("crm.filter.emailField")}
         icon={<Mail size={10} />}
         value={filters.hasEmail}
         onChange={(v) => setTri("hasEmail", v)}
       />
       <TriStateRow
-        label="Inhaber"
+        label={t("crm.filter.owner")}
         icon={<UserCheck size={10} />}
         value={filters.hasOwner}
         onChange={(v) => setTri("hasOwner", v)}
       />
       <TriStateRow
-        label="Booking"
+        label={t("crm.filter.booking")}
         icon={<CalendarClock size={10} />}
         value={filters.hasBooking}
         onChange={(v) => setTri("hasBooking", v)}
@@ -1536,7 +1591,7 @@ function FilterPanel({
 
       {facets.leadSources.length > 0 && (
         <FacetChips
-          label="Lead-Quelle"
+          label={t("crm.filter.leadSourceFacet")}
           values={facets.leadSources}
           selected={filters.leadSources}
           accent={accent}
@@ -1545,7 +1600,7 @@ function FilterPanel({
       )}
       {facets.cities.length > 0 && (
         <FacetChips
-          label="Stadt"
+          label={t("crm.filter.cityFacet")}
           values={facets.cities}
           selected={filters.cities}
           accent={accent}
@@ -1559,17 +1614,17 @@ function FilterPanel({
           <div className="flex items-center justify-between text-[11px]">
             <span className="uppercase tracking-wider font-semibold text-text-tertiary inline-flex items-center gap-1">
               <Bookmark size={10} />
-              Gespeicherte Ansichten
+              {t("crm.savedViews.heading")}
             </span>
             {onSaveView && (
               <button
                 type="button"
                 onClick={onSaveView}
                 className="inline-flex items-center gap-1 text-text-tertiary hover:text-text-primary"
-                title="Aktuelle Filter als neue Ansicht speichern"
+                title={t("crm.savedView.saveAsNewTitle")}
               >
                 <BookmarkPlus size={10} />
-                Speichern
+                {t("common.save")}
               </button>
             )}
           </div>
@@ -1584,7 +1639,7 @@ function FilterPanel({
                     type="button"
                     onClick={() => onApplyView?.(v.id)}
                     className="pl-2 pr-1 py-0.5 hover:text-text-primary"
-                    title="Ansicht anwenden"
+                    title={t("crm.savedView.applyTitle")}
                   >
                     {v.name}
                   </button>
@@ -1592,11 +1647,18 @@ function FilterPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm(`Ansicht „${v.name}“ löschen?`))
+                        if (
+                          confirm(
+                            t("crm.savedView.deleteConfirm").replace(
+                              "{name}",
+                              v.name,
+                            ),
+                          )
+                        )
                           onDeleteView(v.id);
                       }}
                       className="px-1 py-0.5 text-text-quaternary hover:text-red-300"
-                      title="Ansicht löschen"
+                      title={t("crm.tooltip.deleteView")}
                     >
                       <X size={9} />
                     </button>
@@ -1628,10 +1690,11 @@ function TriStateRow({
   value: "any" | "yes" | "no";
   onChange: (v: "any" | "yes" | "no") => void;
 }) {
-  const opts: { id: "any" | "yes" | "no"; label: string }[] = [
-    { id: "any", label: "Beliebig" },
-    { id: "yes", label: "Ja" },
-    { id: "no", label: "Fehlt" },
+  const { t } = useLocale();
+  const opts: { id: "any" | "yes" | "no"; labelKey: keyof Messages }[] = [
+    { id: "any", labelKey: "crm.triState.any" },
+    { id: "yes", labelKey: "crm.triState.yes" },
+    { id: "no", labelKey: "crm.triState.no" },
   ];
   return (
     <div className="flex items-center gap-2 text-[11px]">
@@ -1653,7 +1716,7 @@ function TriStateRow({
                 : "text-text-tertiary hover:text-text-primary"
             }`}
           >
-            {o.label}
+            {t(o.labelKey)}
           </button>
         ))}
       </div>
@@ -1682,6 +1745,7 @@ function FacetChips({
   onToggle: (v: string) => void;
   maxVisible?: number;
 }) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? values : values.slice(0, maxVisible);
   const hasMore = values.length > maxVisible;
@@ -1720,7 +1784,12 @@ function FacetChips({
             onClick={() => setExpanded((v) => !v)}
             className="text-[10.5px] text-text-tertiary hover:text-text-primary px-1.5"
           >
-            {expanded ? "weniger" : `+${values.length - maxVisible} mehr`}
+            {expanded
+              ? t("crm.facet.less")
+              : t("crm.facet.more").replace(
+                  "{count}",
+                  String(values.length - maxVisible),
+                )}
           </button>
         )}
       </div>
@@ -1781,30 +1850,40 @@ function BulkActionBar({
   // Push-to-Mautic dropdown state.
   const [pushOpen, setPushOpen] = useState(false);
 
+  const { t } = useLocale();
+
   const allSelected = count >= totalVisible && totalVisible > 0;
   const showPushButton = Boolean(onPushToMautic);
 
   return (
     <div
-      className="border-b border-stroke-1"
+      className="border-b border-stroke-1 touch-manipulation"
       style={{ background: `${accent}12` }}
     >
-      <div className="px-3 py-2 flex items-center gap-1.5 flex-wrap">
+      <div className="px-3 py-2 flex items-center gap-1.5 flex-wrap touch-manipulation max-md:[&_select]:min-h-[40px]">
         <button
           type="button"
           onClick={allSelected ? onClear : onSelectAll}
           className="inline-flex items-center gap-1 text-[11px] text-text-secondary hover:text-text-primary"
-          title={allSelected ? "Auswahl aufheben" : "Alle sichtbaren auswählen"}
+          title={
+            allSelected
+              ? t("crm.selection.clear")
+              : t("crm.selection.selectAllVisible")
+          }
         >
           {allSelected ? (
             <CheckSquareIcon size={12} className="text-[#5b5fc7]" />
           ) : (
             <Square size={12} />
           )}
-          {count} ausgewählt
+          {t("crm.selection.count").replace("{count}", String(count))}
         </button>
         <span className="text-text-quaternary text-[11px]">
-          / {totalVisible} sichtbar
+          /{" "}
+          {t("crm.selection.visibleTotal").replace(
+            "{n}",
+            String(totalVisible),
+          )}
         </span>
         <div className="ml-auto flex items-center gap-1 flex-wrap">
           {editing ? (
@@ -1823,14 +1902,18 @@ function BulkActionBar({
                 type="text"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder={editing === "leadSource" ? "Lead-Quelle…" : "Inhaber:in…"}
+                placeholder={
+                  editing === "leadSource"
+                    ? t("crm.bulk.placeholderLeadSource")
+                    : t("crm.bulk.placeholderOwner")
+                }
                 className="bg-bg-elevated border border-stroke-1 rounded px-2 py-1 text-[11px] outline-none focus:border-stroke-2 w-32"
               />
               <button
                 type="submit"
                 disabled={busy}
                 className="p-1 rounded text-text-secondary hover:text-text-primary disabled:opacity-40"
-                title="Speichern"
+                title={t("common.save")}
               >
                 <Check size={12} />
               </button>
@@ -1841,7 +1924,7 @@ function BulkActionBar({
                   setDraft("");
                 }}
                 className="p-1 rounded text-text-tertiary hover:text-text-primary"
-                title="Abbrechen"
+                title={t("common.cancel")}
               >
                 <X size={12} />
               </button>
@@ -1853,20 +1936,20 @@ function BulkActionBar({
                 onClick={() => setEditing("leadSource")}
                 disabled={busy}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-stroke-1 text-[11px] text-text-secondary hover:text-text-primary disabled:opacity-40"
-                title="Lead-Quelle für Auswahl setzen"
+                title={t("crm.bulk.setLeadSource")}
               >
                 <Tag size={11} />
-                Lead-Quelle
+                {t("crm.bulk.leadSourceShort")}
               </button>
               <button
                 type="button"
                 onClick={() => setEditing("owner")}
                 disabled={busy}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-stroke-1 text-[11px] text-text-secondary hover:text-text-primary disabled:opacity-40"
-                title="Inhaber:in für Auswahl setzen"
+                title={t("crm.bulk.setOwner")}
               >
                 <UserCheck size={11} />
-                Inhaber:in
+                {t("crm.bulk.ownerShort")}
               </button>
             </>
           )}
@@ -1889,17 +1972,17 @@ function BulkActionBar({
             onClick={onDelete}
             disabled={busy}
             className="inline-flex items-center gap-1 px-2 py-1 rounded border border-red-500/40 text-[11px] text-red-300 hover:bg-red-500/10 disabled:opacity-40"
-            title="Auswahl löschen"
+            title={t("crm.bulk.deleteSelection")}
           >
             {busy ? <Loader2 size={11} className="spin" /> : <Trash2 size={11} />}
-            Löschen
+            {t("crm.button.delete")}
           </button>
           <button
             type="button"
             onClick={onClear}
             disabled={busy}
             className="p-1 rounded text-text-tertiary hover:text-text-primary disabled:opacity-40"
-            title="Auswahl aufheben"
+            title={t("crm.selection.clear")}
           >
             <X size={12} />
           </button>
@@ -1909,20 +1992,36 @@ function BulkActionBar({
         <div className="px-3 pb-2 -mt-1 flex items-center gap-2 text-[11px]">
           <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
           <span className="text-text-secondary">
-            {pushResult.pushed} an Mautic gepusht
-            {pushResult.segmentName ? ` → "${pushResult.segmentName}"` : ""}
+            {t("crm.push.resultPushed").replace(
+              "{pushed}",
+              String(pushResult.pushed),
+            )}
+            {pushResult.segmentName
+              ? t("crm.push.resultToSegment").replace(
+                  "{name}",
+                  pushResult.segmentName,
+                )
+              : ""}
             {pushResult.skipped > 0 && (
               <>
                 {", "}
                 <span className="text-amber-300">
-                  {pushResult.skipped} übersprungen (keine E-Mail)
+                  {t("crm.push.skippedNoEmail").replace(
+                    "{count}",
+                    String(pushResult.skipped),
+                  )}
                 </span>
               </>
             )}
             {pushResult.errors > 0 && (
               <>
                 {", "}
-                <span className="text-red-300">{pushResult.errors} Fehler</span>
+                <span className="text-red-300">
+                  {t("crm.push.resultErrors").replace(
+                    "{errors}",
+                    String(pushResult.errors),
+                  )}
+                </span>
               </>
             )}
           </span>
@@ -1931,7 +2030,7 @@ function BulkActionBar({
               type="button"
               onClick={onDismissPushResult}
               className="ml-auto p-0.5 rounded text-text-tertiary hover:text-text-primary"
-              title="Schließen"
+              title={t("crm.modal.close")}
             >
               <X size={11} />
             </button>
@@ -1965,6 +2064,7 @@ function PushToMauticButton({
   setOpen: (v: boolean) => void;
   accent: string;
 }) {
+  const { t } = useLocale();
   return (
     <span className="relative inline-flex items-center">
       <button
@@ -1972,20 +2072,20 @@ function PushToMauticButton({
         disabled={busy}
         onClick={() => onPush(null, null)}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-l border border-stroke-1 text-[11px] font-medium text-text-primary hover:bg-bg-overlay disabled:opacity-40"
-        title="Auswahl in Mautic upserten (ohne Segment-Bindung)"
+        title={t("crm.push.titleUpsertNoSegment")}
         style={{
           background: `${accent}22`,
         }}
       >
         {busy ? <Loader2 size={11} className="spin" /> : <Send size={11} />}
-        In Funnel
+        {t("crm.push.buttonInFunnel")}
       </button>
       <button
         type="button"
         disabled={busy}
         onClick={() => setOpen(!open)}
         className="inline-flex items-center px-1 py-1 rounded-r border border-stroke-1 border-l-0 text-text-secondary hover:text-text-primary hover:bg-bg-overlay disabled:opacity-40"
-        title="Segment wählen"
+        title={t("crm.segment.pickTitle")}
         style={{
           background: `${accent}22`,
         }}
@@ -1995,7 +2095,7 @@ function PushToMauticButton({
       {open && (
         <div className="absolute top-full right-0 mt-1 w-72 max-h-80 overflow-auto bg-bg-elevated border border-stroke-1 rounded-md shadow-xl z-50">
           <div className="px-3 py-2 border-b border-stroke-1 text-[10px] uppercase tracking-wide text-text-tertiary">
-            Segment auswählen
+            {t("crm.segment.select")}
           </div>
           {segmentsError && (
             <div className="px-3 py-2 text-[11px] text-red-300">
@@ -2004,11 +2104,11 @@ function PushToMauticButton({
           )}
           {segments == null ? (
             <div className="px-3 py-2 text-[11px] text-text-tertiary">
-              Lade Segmente…
+              {t("crm.segment.loading")}
             </div>
           ) : segments.length === 0 ? (
             <div className="px-3 py-2 text-[11px] text-text-tertiary">
-              Keine Segmente in Mautic angelegt.
+              {t("crm.mautic.noSegments")}
             </div>
           ) : (
             <ul className="py-1">
@@ -2029,7 +2129,7 @@ function PushToMauticButton({
             </ul>
           )}
           <div className="border-t border-stroke-1 px-3 py-1.5 text-[10px] text-text-quaternary">
-            Tipp: Klick außerhalb der Liste = abbrechen
+            {t("crm.segment.clickOutsideHint")}
           </div>
         </div>
       )}
@@ -2053,6 +2153,7 @@ function PushToMauticButton({
  * would mislead Triage decisions.
  */
 function LeadScoreChip({ company }: { company: CompanySummary }) {
+  const { t } = useLocale();
   const score = scoreLead(company);
   const tier = scoreTier(score);
   const Icon = tier === "hot" ? Flame : tier === "warm" ? Thermometer : Snowflake;
@@ -2062,10 +2163,18 @@ function LeadScoreChip({ company }: { company: CompanySummary }) {
       : tier === "warm"
         ? { bg: "bg-amber-500/15", text: "text-amber-300", iconColor: "text-amber-400" }
         : { bg: "bg-slate-500/15", text: "text-slate-300", iconColor: "text-slate-400" };
+  const descKey =
+    tier === "hot"
+      ? "crm.leadScore.desc.hot"
+      : tier === "warm"
+        ? "crm.leadScore.desc.warm"
+        : "crm.leadScore.desc.cold";
   return (
     <span
       className={`inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9.5px] font-semibold shrink-0 ${palette.bg} ${palette.text}`}
-      title={`Lead-Score: ${score} — ${scoreLabel(score)}`}
+      title={t("crm.leadScore.title")
+        .replace("{score}", String(score))
+        .replace("{desc}", t(descKey))}
     >
       <Icon size={9} className={palette.iconColor} />
       {score}
@@ -2105,12 +2214,13 @@ function CompanyList({
   >;
   onPatchRow?: (id: string, patch: Record<string, unknown>) => void;
 }) {
+  const { locale, t } = useLocale();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: "", phone: "", email: "" });
   if (loading) {
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center text-[12px] text-text-tertiary">
-        Lade…
+        {t("common.loading")}
       </div>
     );
   }
@@ -2165,7 +2275,7 @@ function CompanyList({
                   onToggleSelect(c.id);
                 }}
                 aria-pressed={isChecked}
-                title={isChecked ? "Auswahl entfernen" : "Auswählen"}
+                title={isChecked ? t("crm.selection.removeRow") : t("crm.selection.addRow")}
                 className={`relative z-[1] mt-0.5 shrink-0 p-0.5 rounded text-text-tertiary hover:text-text-primary transition-opacity ${
                   isChecked || anyChecked
                     ? "opacity-100"
@@ -2200,7 +2310,7 @@ function CompanyList({
                           setDraft((d) => ({ ...d, name: e.target.value }))
                         }
                         className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1 text-[12px] text-text-primary"
-                        placeholder="Name"
+                        placeholder={t("crm.person.placeholder.name")}
                       />
                       <input
                         value={draft.phone}
@@ -2208,7 +2318,7 @@ function CompanyList({
                           setDraft((d) => ({ ...d, phone: e.target.value }))
                         }
                         className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1 text-[11px] text-text-primary"
-                        placeholder="Telefon"
+                        placeholder={t("crm.person.placeholder.phone")}
                       />
                       <input
                         value={draft.email}
@@ -2216,7 +2326,7 @@ function CompanyList({
                           setDraft((d) => ({ ...d, email: e.target.value }))
                         }
                         className="w-full bg-bg-base border border-stroke-1 rounded px-2 py-1 text-[11px] text-text-primary"
-                        placeholder="Allgemeine E-Mail"
+                        placeholder={t("crm.person.placeholder.emailGeneral")}
                       />
                       <div className="flex gap-2 pt-0.5">
                         <button
@@ -2224,14 +2334,14 @@ function CompanyList({
                           onClick={() => saveRowEdit(c)}
                           className="text-[10px] px-2 py-0.5 rounded bg-accent text-white"
                         >
-                          Speichern
+                          {t("common.save")}
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingId(null)}
                           className="text-[10px] px-2 py-0.5 rounded border border-stroke-1 text-text-tertiary"
                         >
-                          Abbrechen
+                          {t("common.cancel")}
                         </button>
                       </div>
                     </div>
@@ -2239,7 +2349,7 @@ function CompanyList({
                   <>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <p className="text-[12.5px] font-semibold text-text-primary truncate flex-1">
-                      {c.name || "(ohne Name)"}
+                      {c.name || t("crm.company.unnamed")}
                     </p>
                     <LeadScoreChip company={c} />
                     {(() => {
@@ -2267,8 +2377,19 @@ function CompanyList({
                           className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9.5px] font-semibold shrink-0 bg-fuchsia-500/15 text-fuchsia-300"
                           title={
                             det
-                              ? `Mautic @${dom}: ${det.count} Kontakt(e). Segmente: ${segHint || "—"}. Stage: ${stageHint || "—"}`
-                              : `In Mautic: ${hits} Kontakt${hits === 1 ? "" : "e"} @${dom}`
+                              ? t("crm.mautic.badgeDetailed")
+                                  .replace("{domain}", dom)
+                                  .replace("{count}", String(det.count))
+                                  .replace("{segments}", segHint || "—")
+                                  .replace("{stage}", stageHint || "—")
+                              : hits === 1
+                                ? t("crm.mautic.badgeSimpleOne").replace(
+                                    "{domain}",
+                                    dom,
+                                  )
+                                : t("crm.mautic.badgeSimpleMany")
+                                    .replace("{hits}", String(hits))
+                                    .replace("{domain}", dom)
                           }
                         >
                           <Megaphone size={9} className="text-fuchsia-400" />
@@ -2282,14 +2403,14 @@ function CompanyList({
                       style={{ background: dot }}
                       title={
                         tone === "fresh"
-                          ? "Aktiv (< 7 Tage)"
+                          ? t("crm.activityTone.fresh")
                           : tone === "warm"
-                            ? "Warm (< 30 Tage)"
-                            : "Kalt (> 30 Tage)"
+                            ? t("crm.activityTone.warm")
+                            : t("crm.activityTone.stale")
                       }
                     />
                     <span className="text-[10px] text-text-quaternary shrink-0">
-                      {relativeTime(c.updatedAt)}
+                      {relativeTime(c.updatedAt, locale, t)}
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-text-tertiary min-w-0">
@@ -2347,7 +2468,7 @@ function CompanyList({
                       {c.employeeCountPhysio != null && c.employeeCountPhysio > 0 && (
                         <span
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-bg-overlay text-text-secondary"
-                          title="Therapeut:innen / Mitarbeitende"
+                          title={t("crm.people.keyStaffTitle")}
                         >
                           <UsersIcon size={9} />
                           {c.employeeCountPhysio}
@@ -2395,8 +2516,8 @@ function CompanyList({
                   className="shrink-0 mt-0.5 p-1 rounded text-text-quaternary hover:text-text-primary hover:bg-bg-overlay"
                   title={
                     editingId === c.id
-                      ? "Änderungen speichern"
-                      : "Name · Telefon · E-Mail bearbeiten"
+                      ? t("crm.inlineEdit.saveTooltip")
+                      : t("crm.inlineEdit.editFieldsTooltip")
                   }
                 >
                   {editingId === c.id ? (
@@ -2442,6 +2563,8 @@ function CompanyDetailHero({
   onDelete: () => Promise<void> | void;
   onAddNote: () => void;
 }) {
+  const { locale, t } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-DE";
   const openDeals = opportunities.filter((o) => isOpenStage(o.stage));
   const openDealValue = openDeals.reduce(
     (sum, o) => sum + (o.amount?.amountMicros ?? 0),
@@ -2524,36 +2647,39 @@ function CompanyDetailHero({
                   </span>
                 )}
                 {company.idealCustomerProfile && (
-                  <StatusPill label="Ideal Customer" tone="success" />
+                  <StatusPill label={t("crm.icp.label")} tone="success" />
                 )}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void onDelete()}
-              className="p-1.5 rounded-md hover:bg-red-500/10 text-text-tertiary hover:text-red-500"
-              title="Löschen"
+              className="p-1.5 max-md:min-h-[44px] max-md:min-w-[44px] max-md:inline-flex max-md:items-center max-md:justify-center rounded-md hover:bg-red-500/10 text-text-tertiary hover:text-red-500 shrink-0 touch-manipulation"
+              title={t("common.delete")}
             >
               <Trash2 size={14} />
             </button>
           </div>
 
-          {/* Quick actions */}
-          <div className="mt-3 flex items-center gap-1.5">
+          {/* Quick actions — horizontal scroll on narrow screens (many chips) */}
+          <div className="mt-3 flex gap-2 overflow-x-auto overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch] pb-1 -mx-1 px-1 md:flex-wrap md:overflow-visible">
             <QuickAction
               icon={<PhoneCall size={11} />}
-              label="Anrufen"
+              label={t("crm.quick.call")}
               accent={accent}
               disabled={!company.phone}
               href={company.phone ? `tel:${company.phone}` : undefined}
             />
             <QuickAction
               icon={<Video size={11} />}
-              label="Video-Call"
+              label={t("crm.quick.videoCall")}
               accent={accent}
               href={clickToCallUrl({
                 workspaceId,
-                subject: `Call mit ${company.name}`,
+                subject: t("crm.call.subjectWithCompany").replace(
+                  "{name}",
+                  company.name,
+                ),
                 context: {
                   kind: "crm",
                   companyId: company.id,
@@ -2563,7 +2689,7 @@ function CompanyDetailHero({
             />
             <QuickAction
               icon={<Mail size={11} />}
-              label="Mail"
+              label={t("crm.quick.mail")}
               accent={accent}
               disabled={!company.generalEmail}
               href={
@@ -2573,13 +2699,16 @@ function CompanyDetailHero({
               }
               title={
                 company.generalEmail
-                  ? `Mail an ${company.generalEmail} (im Portal)`
-                  : "Keine E-Mail hinterlegt"
+                  ? t("crm.quick.mailToPortal").replace(
+                      "{email}",
+                      company.generalEmail,
+                    )
+                  : t("crm.person.noEmail")
               }
             />
             <QuickAction
               icon={<StickyNote size={11} />}
-              label="Notiz"
+              label={t("crm.quick.note")}
               accent={accent}
               onClick={onAddNote}
             />
@@ -2602,48 +2731,50 @@ function CompanyDetailHero({
             />
             <QuickAction
               icon={<LayoutDashboard size={11} />}
-              label="Company Hub"
+              label={t("crm.quick.companyHub")}
               accent={accent}
               href={`/${workspaceId}/crm/company/${company.id}`}
-              title="Cross-App Übersicht · Mail, Tickets, Files, Projekte"
+              title={t("crm.hub.crossAppTitle")}
             />
             <QuickAction
               icon={<CheckSquare size={11} />}
-              label="Aufgabe"
+              label={t("crm.quick.task")}
               accent={accent}
               disabled
-              title="In Twenty anlegen (bald im Portal)"
+              title={t("crm.twenty.createSoonTooltip")}
             />
           </div>
 
           {/* Stat strip */}
-          <div className="mt-3 grid grid-cols-4 gap-2">
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Stat
-              label="Offene Deals"
+              label={t("crm.stat.openDeals")}
               value={String(openDeals.length)}
               hint={openDealValue > 0
-                ? formatCurrency(openDealValue, dealCurrency)
+                ? formatCurrency(openDealValue, dealCurrency, locale)
                 : undefined}
               accent={accent}
             />
             <Stat
-              label="Kontakte"
+              label={t("crm.stat.contacts")}
               value={String(people.length)}
               hint={people[0] ? `${people[0].firstName} ${people[0].lastName}` : undefined}
               accent={accent}
             />
             <Stat
-              label="Letzter Kontakt"
-              value={lastContact ? relativeTime(lastContact) : "—"}
+              label={t("crm.stat.lastContact")}
+              value={lastContact ? relativeTime(lastContact, locale, t) : "—"}
               hint={lastContact
-                ? new Date(lastContact).toLocaleDateString("de-DE")
-                : "Keine Aktivität"}
+                ? new Date(lastContact).toLocaleDateString(
+                    locale === "en" ? "en-US" : "de-DE",
+                  )
+                : t("crm.activity.empty")}
               accent={accent}
             />
             <Stat
-              label="Offene Tasks"
+              label={t("crm.stat.openTasks")}
               value={String(openTaskCount)}
-              hint={openTaskCount > 0 ? `von ${tasks.length}` : "Alles erledigt"}
+              hint={openTaskCount > 0 ? t("crm.stat.tasksFromTotal").replace("{total}", String(tasks.length)) : t("crm.stat.tasksAllDone")}
               accent={accent}
             />
           </div>
@@ -2653,7 +2784,7 @@ function CompanyDetailHero({
         <div className="px-4 py-3 space-y-6">
           {opportunities.length > 0 && (
             <section>
-              <SectionHeader>Aktive Deals</SectionHeader>
+              <SectionHeader>{t("crm.section.activeDeals")}</SectionHeader>
               <ul className="space-y-1.5">
                 {openDeals.slice(0, 5).map((o) => (
                   <li key={o.id}>
@@ -2669,13 +2800,14 @@ function CompanyDetailHero({
                         <p className="text-[10.5px] text-text-tertiary">
                           {o.stage}
                           {o.closeDate &&
-                            ` · ${new Date(o.closeDate).toLocaleDateString("de-DE")}`}
+                            ` · ${new Date(o.closeDate).toLocaleDateString(locale === "en" ? "en-US" : "de-DE")}`}
                         </p>
                       </div>
                       <span className="text-[11.5px] font-semibold text-text-primary shrink-0">
                         {formatCurrency(
                           o.amount?.amountMicros,
                           o.amount?.currencyCode,
+                          locale,
                         )}
                       </span>
                     </article>
@@ -2684,7 +2816,7 @@ function CompanyDetailHero({
               </ul>
               {openDeals.length === 0 && (
                 <p className="text-[11.5px] text-text-tertiary">
-                  Keine offenen Deals.
+                  {t("crm.deals.noOpen")}
                 </p>
               )}
             </section>
@@ -2692,8 +2824,8 @@ function CompanyDetailHero({
 
           {people.length > 0 && (
             <section>
-              <SectionHeader>Schlüsselkontakte</SectionHeader>
-              <ul className="grid grid-cols-2 gap-2">
+              <SectionHeader>{t("crm.section.keyContacts")}</SectionHeader>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {people.slice(0, 6).map((p) => (
                   <li key={p.id}>
                     <article className="flex items-center gap-2 rounded-md border border-stroke-1 bg-bg-elevated px-2.5 py-2">
@@ -2715,7 +2847,10 @@ function CompanyDetailHero({
                           <a
                             href={`mailto:${p.email}`}
                             className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-                            title={`Mail an ${p.email}`}
+                            title={t("crm.quick.mailTo").replace(
+                              "{email}",
+                              p.email,
+                            )}
                           >
                             <Mail size={11} />
                           </a>
@@ -2724,7 +2859,10 @@ function CompanyDetailHero({
                           <a
                             href={`tel:${p.phone}`}
                             className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-                            title={`Anrufen ${p.phone}`}
+                            title={t("crm.quick.callNumber").replace(
+                              "{phone}",
+                              p.phone,
+                            )}
                           >
                             <Phone size={11} />
                           </a>
@@ -2740,11 +2878,11 @@ function CompanyDetailHero({
       }
       rightSidebar={
         <>
-          <SidebarSection title="Kontakt">
+          <SidebarSection title={t("crm.section.contact")}>
             <PropertyList
               rows={[
                 {
-                  label: "Telefon",
+                  label: t("crm.filter.phone"),
                   value: (
                     <EditableText
                       value={company.phone ?? ""}
@@ -2756,7 +2894,7 @@ function CompanyDetailHero({
                   ),
                 },
                 {
-                  label: "Email",
+                  label: t("crm.filter.emailField"),
                   value: (
                     <EditableText
                       value={company.generalEmail ?? ""}
@@ -2768,7 +2906,7 @@ function CompanyDetailHero({
                   ),
                 },
                 {
-                  label: "Inhaber",
+                  label: t("crm.filter.owner"),
                   value: (
                     <EditableText
                       value={company.ownerName ?? ""}
@@ -2779,7 +2917,7 @@ function CompanyDetailHero({
                   ),
                 },
                 {
-                  label: "Inhaber-Mail",
+                  label: t("crm.field.ownerMail"),
                   value: (
                     <EditableText
                       value={company.ownerEmail ?? ""}
@@ -2792,19 +2930,19 @@ function CompanyDetailHero({
               ]}
             />
           </SidebarSection>
-          <SidebarSection title="Klassifizierung">
+          <SidebarSection title={t("crm.section.classification")}>
             <PropertyList
               rows={[
                 {
-                  label: "ICP",
+                  label: t("crm.field.icp"),
                   value: company.idealCustomerProfile ? (
-                    <StatusPill label="Ideal Customer" tone="success" />
+                    <StatusPill label={t("crm.icp.label")} tone="success" />
                   ) : (
                     <span className="text-text-tertiary">—</span>
                   ),
                 },
                 {
-                  label: "Booking",
+                  label: t("crm.filter.booking"),
                   value: (
                     <EditableText
                       value={company.bookingSystem ?? ""}
@@ -2815,7 +2953,7 @@ function CompanyDetailHero({
                   ),
                 },
                 {
-                  label: "Lead-Quelle",
+                  label: t("crm.filter.leadSourceFacet"),
                   value: (
                     <EditableText
                       value={company.leadSource ?? ""}
@@ -2825,7 +2963,7 @@ function CompanyDetailHero({
                     />
                   ),
                 },
-                { label: "Tenant", value: company.tenant ?? "—" },
+                { label: t("crm.field.tenant"), value: company.tenant ?? "—" },
               ]}
             />
           </SidebarSection>
@@ -2835,11 +2973,17 @@ function CompanyDetailHero({
             companyName={company.name}
             accent={accent}
           />
-          <SidebarSection title="Zeitleiste">
+          <SidebarSection title={t("crm.section.timeline")}>
             <p className="text-[11px] text-text-tertiary leading-relaxed">
-              Erstellt {new Date(company.createdAt).toLocaleString("de-DE")}
+              {t("crm.timeline.created").replace(
+                "{datetime}",
+                new Date(company.createdAt).toLocaleString(localeTag),
+              )}
               <br />
-              Geändert {new Date(company.updatedAt).toLocaleString("de-DE")}
+              {t("crm.timeline.updated").replace(
+                "{datetime}",
+                new Date(company.updatedAt).toLocaleString(localeTag),
+              )}
             </p>
           </SidebarSection>
         </>
@@ -2888,6 +3032,7 @@ function MarketingSidebarSection({
   companyName: string;
   accent: string;
 }) {
+  const { locale, t } = useLocale();
   const [data, setData] = useState<CompanyMarketing | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -2940,8 +3085,15 @@ function MarketingSidebarSection({
         const errCount = j.errors?.length ?? 0;
         setSyncMsg(
           j.message ??
-            `${j.synced ?? 0} synchronisiert, ${j.skipped ?? 0} übersprungen` +
-              (errCount > 0 ? `, ${errCount} Fehler` : ""),
+            t("crm.sync.summary")
+              .replace("{synced}", String(j.synced ?? 0))
+              .replace("{skipped}", String(j.skipped ?? 0)) +
+              (errCount > 0
+                ? t("crm.sync.errorsSuffix").replace(
+                    "{errors}",
+                    String(errCount),
+                  )
+                : ""),
         );
         await load();
       }
@@ -2950,27 +3102,28 @@ function MarketingSidebarSection({
     } finally {
       setSyncing(false);
     }
-  }, [companyId, workspaceId, load]);
+  }, [companyId, workspaceId, load, t]);
 
   return (
     <SidebarSection
       title={
         <span className="inline-flex items-center gap-1.5">
           <Megaphone size={11} style={{ color: accent }} />
-          Marketing
+          {t("crm.sidebar.marketing")}
         </span>
       }
     >
       {loading && !data && (
         <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
-          <Loader2 size={11} className="animate-spin" /> Lade Mautic-Daten…
+          <Loader2 size={11} className="animate-spin" />{" "}
+          {t("crm.marketing.loadingData")}
         </div>
       )}
       {data && !data.configured && (
         <p className="text-[11px] text-text-tertiary leading-relaxed">
-          Mautic ist nicht konfiguriert.{" "}
+          {t("crm.marketing.apiNotConfigured")}{" "}
           <span className="text-text-quaternary">
-            (MAUTIC_API_USERNAME/_TOKEN fehlen)
+            {t("crm.marketing.credentialsMissing")}
           </span>
         </p>
       )}
@@ -2984,15 +3137,21 @@ function MarketingSidebarSection({
               {data.stats.total}
             </p>
             <p className="text-[10.5px] text-text-tertiary">
-              Mautic-Kontakte{data.domain ? ` @${data.domain}` : ""}
+              {t("crm.marketing.contactsLine").replace(
+                "{suffix}",
+                data.domain ? ` @${data.domain}` : "",
+              )}
             </p>
           </div>
           {data.stats.totalPoints > 0 && (
             <p className="text-[10.5px] text-text-tertiary">
               Σ {data.stats.totalPoints} Punkte ·{" "}
               {data.stats.lastActivity
-                ? `letzte Aktivität ${relativeTime(data.stats.lastActivity)}`
-                : "keine Aktivität"}
+                ? t("crm.stats.lastActivity").replace(
+                    "{time}",
+                    relativeTime(data.stats.lastActivity, locale, t),
+                  )
+                : t("crm.stats.noActivityShort")}
             </p>
           )}
           {data.stats.segments.length > 0 && (
@@ -3001,7 +3160,9 @@ function MarketingSidebarSection({
                 <span
                   key={s.name}
                   className="px-1.5 py-0.5 rounded text-[10.5px] border border-stroke-1 text-text-secondary"
-                  title={`${s.count} Kontakt(e) in „${s.name}"`}
+                  title={t("crm.marketing.segmentTooltip")
+                    .replace("{count}", String(s.count))
+                    .replace("{name}", s.name)}
                 >
                   {s.name}
                   <span className="ml-1 text-text-quaternary">{s.count}</span>
@@ -3022,7 +3183,10 @@ function MarketingSidebarSection({
                       : c.email ?? `#${c.id}`}
                   </span>
                   <span className="text-text-quaternary tabular-nums shrink-0">
-                    {c.points} pts
+                    {t("crm.marketing.pointsAbbrev").replace(
+                      "{n}",
+                      String(c.points),
+                    )}
                   </span>
                 </li>
               ))}
@@ -3034,7 +3198,10 @@ function MarketingSidebarSection({
               onClick={() => void syncPeople()}
               disabled={syncing}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:bg-bg-overlay text-text-secondary hover:text-text-primary disabled:opacity-50"
-              title={`Personen von „${companyName}" in Mautic anlegen / aktualisieren`}
+              title={t("crm.mautic.syncPeopleTitle").replace(
+                "{company}",
+                companyName,
+              )}
             >
               {syncing ? (
                 <Loader2 size={11} className="animate-spin" />
@@ -3049,7 +3216,7 @@ function MarketingSidebarSection({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:bg-bg-overlay text-text-secondary hover:text-text-primary"
-                title="In Mautic öffnen"
+                title={t("crm.openInMautic")}
               >
                 <ExternalLink size={11} /> Mautic
               </a>
@@ -3059,7 +3226,7 @@ function MarketingSidebarSection({
               onClick={() => void load()}
               disabled={loading}
               className="ml-auto p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-40"
-              title="Aktualisieren"
+              title={t("common.refresh")}
             >
               <RefreshCw size={11} />
             </button>
@@ -3124,6 +3291,7 @@ function AiClassifyQuickAction({
   workspaceId: WorkspaceId;
   companyId: string;
 }) {
+  const { t } = useLocale();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
     tier: "hot" | "warm" | "cold";
@@ -3179,7 +3347,7 @@ function AiClassifyQuickAction({
         type="button"
         onClick={onClick}
         disabled={busy}
-        title="AI-Klassifizieren (Claude)"
+        title={t("crm.ai.classifyTooltip")}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary disabled:opacity-40"
         style={{ borderColor: accent + "30" }}
       >
@@ -3188,7 +3356,7 @@ function AiClassifyQuickAction({
         ) : (
           <Sparkles size={11} className="text-fuchsia-400" />
         )}
-        AI-Lead
+        {t("crm.ai.leadButton")}
         {result && (
           <span
             className={`ml-1 px-1 py-0.5 rounded text-[9px] font-bold uppercase ${tierPalette[result.tier].bg} ${tierPalette[result.tier].text}`}
@@ -3207,7 +3375,9 @@ function AiClassifyQuickAction({
         >
           {error ? (
             <div className="text-red-300">
-              <div className="font-semibold mb-1">Klassifizierung fehlgeschlagen</div>
+              <div className="font-semibold mb-1">
+                {t("crm.ai.classifyFailedHeading")}
+              </div>
               <div className="text-text-tertiary">{error}</div>
             </div>
           ) : result ? (
@@ -3219,13 +3389,13 @@ function AiClassifyQuickAction({
                   {result.tier}
                 </span>
                 <span className="text-text-tertiary text-[10px]">
-                  Claude-Einschätzung
+                  {t("crm.claude.heading")}
                 </span>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
                   className="ml-auto text-text-quaternary hover:text-text-primary"
-                  title="Schließen"
+                  title={t("crm.modal.close")}
                 >
                   <X size={11} />
                 </button>
@@ -3239,7 +3409,7 @@ function AiClassifyQuickAction({
                   style={{ background: `${accent}15` }}
                 >
                   <span className="text-text-tertiary text-[9.5px] uppercase tracking-wide">
-                    Next-Step
+                    {t("crm.ai.nextStepLabel")}
                   </span>
                   <p className="mt-0.5 text-text-primary">{result.nextStep}</p>
                 </div>
@@ -3275,6 +3445,7 @@ function AiSalesBriefAction({
   companyId: string;
   companyDomain: string | null;
 }) {
+  const { t } = useLocale();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3342,7 +3513,7 @@ function AiSalesBriefAction({
         type="button"
         onClick={onClick}
         disabled={busy}
-        title="AI-Sales-Brief erstellen (Website + News + Workspace-Knowledge)"
+        title={t("crm.ai.salesBriefTooltip")}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary disabled:opacity-40"
         style={{ borderColor: accent + "30" }}
       >
@@ -3351,7 +3522,7 @@ function AiSalesBriefAction({
         ) : (
           <Sparkles size={11} className="text-cyan-300" />
         )}
-        Sales-Brief
+        {t("crm.ai.salesBriefButton")}
       </button>
       {open && (result || error) && (
         <div
@@ -3360,7 +3531,7 @@ function AiSalesBriefAction({
           <div className="flex items-center gap-2 mb-2">
             <Sparkles size={12} className="text-cyan-300" />
             <span className="text-text-primary font-medium text-[12px]">
-              AI-Sales-Brief
+              {t("crm.ai.salesBriefModalHeading")}
             </span>
             {result?.websiteFetched && (
               <span
@@ -3368,12 +3539,12 @@ function AiSalesBriefAction({
                 style={{ background: `${accent}20`, color: accent }}
                 title={result.websiteUrl ?? undefined}
               >
-                Website OK
+                {t("crm.ai.websiteOkBadge")}
               </span>
             )}
             {result?.usedKnowledge && (
               <span className="text-[9.5px] uppercase tracking-wide px-1 py-0.5 rounded bg-info/15 text-info">
-                Knowledge
+                {t("crm.ai.knowledgeBadge")}
               </span>
             )}
             <button
@@ -3386,7 +3557,9 @@ function AiSalesBriefAction({
           </div>
           {error ? (
             <div className="text-red-300">
-              <div className="font-semibold mb-1">Brief fehlgeschlagen</div>
+              <div className="font-semibold mb-1">
+                {t("crm.ai.briefFailedHeading")}
+              </div>
               <div className="text-text-tertiary">{error}</div>
             </div>
           ) : result ? (
@@ -3405,7 +3578,7 @@ function AiSalesBriefAction({
                   onClick={() => void copy()}
                   className="text-[11px] text-text-tertiary hover:text-text-primary"
                 >
-                  {copied ? "✓ kopiert" : "In Zwischenablage"}
+                  {copied ? t("crm.ai.copied") : t("crm.ai.copyToClipboard")}
                 </button>
                 <button
                   type="button"
@@ -3415,7 +3588,7 @@ function AiSalesBriefAction({
                   }}
                   className="ml-auto text-[11px] text-text-tertiary hover:text-text-primary"
                 >
-                  Neu generieren
+                  {t("crm.ai.regenerate")}
                 </button>
               </div>
             </>
@@ -3428,16 +3601,9 @@ function AiSalesBriefAction({
 
 type PitchChannel = "cold_email" | "linkedin" | "followup" | "call_opener";
 
-const PITCH_LABELS: Record<PitchChannel, string> = {
-  cold_email: "Erst-Mail",
-  linkedin: "LinkedIn",
-  followup: "Nachfass",
-  call_opener: "Anruf",
-};
-
 /**
- * Kanal-spezifischer Verkaufstext — kürzer als der volle Sales-Brief,
- * copy-paste-ready (E-Mail, LinkedIn, Nachfass, Call-Hook).
+ * Channel-specific outreach copy — shorter than the full sales brief,
+ * ready to paste (email, LinkedIn, follow-up, call opener).
  */
 function AiPitchTailorAction({
   accent,
@@ -3450,6 +3616,17 @@ function AiPitchTailorAction({
   companyId: string;
   companyDomain: string | null;
 }) {
+  const { t } = useLocale();
+  const pitchLabels = useMemo(
+    () =>
+      ({
+        cold_email: t("crm.pitch.cold_email"),
+        linkedin: t("crm.pitch.linkedin"),
+        followup: t("crm.pitch.followup"),
+        call_opener: t("crm.pitch.call_opener"),
+      }) satisfies Record<PitchChannel, string>,
+    [t],
+  );
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [channel, setChannel] = useState<PitchChannel>("cold_email");
@@ -3510,7 +3687,7 @@ function AiPitchTailorAction({
         type="button"
         onClick={() => void run()}
         disabled={busy}
-        title="AI: Pitch-Text passend zum Kanal (E-Mail · LinkedIn · …)"
+        title={t("crm.ai.pitchTooltip")}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary disabled:opacity-40"
         style={{ borderColor: accent + "30" }}
       >
@@ -3519,16 +3696,16 @@ function AiPitchTailorAction({
         ) : (
           <Megaphone size={11} className="text-violet-300" />
         )}
-        Pitch-Text
+        {t("crm.ai.pitchButton")}
       </button>
       {open && (
         <div className="absolute top-full right-0 mt-1 w-[380px] max-h-[480px] bg-bg-elevated border border-stroke-1 rounded-md shadow-xl z-50 p-3 text-[11.5px] flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <Megaphone size={12} className="text-violet-300" />
             <span className="text-text-primary font-medium text-[12px]">
-              Kanal
+              {t("crm.ai.channelLabel")}
             </span>
-            {(Object.keys(PITCH_LABELS) as PitchChannel[]).map((c) => (
+            {(Object.keys(pitchLabels) as PitchChannel[]).map((c) => (
               <button
                 key={c}
                 type="button"
@@ -3539,7 +3716,7 @@ function AiPitchTailorAction({
                     : "border-stroke-1 text-text-tertiary hover:border-stroke-2"
                 }`}
               >
-                {PITCH_LABELS[c]}
+                {pitchLabels[c]}
               </button>
             ))}
             <button
@@ -3557,7 +3734,7 @@ function AiPitchTailorAction({
             className="text-[11px] self-start px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary"
             style={{ borderColor: accent + "35" }}
           >
-            Neu generieren
+            {t("crm.ai.regenerate")}
           </button>
           {error ? (
             <div className="text-red-300 text-[11px]">{error}</div>
@@ -3575,7 +3752,7 @@ function AiPitchTailorAction({
                   onClick={() => void copy()}
                   className="text-[11px] text-text-tertiary hover:text-text-primary"
                 >
-                  {copied ? "✓ kopiert" : "In Zwischenablage"}
+                  {copied ? t("crm.ai.copied") : t("crm.ai.copyToClipboard")}
                 </button>
               </div>
             </>
@@ -3585,8 +3762,7 @@ function AiPitchTailorAction({
             </div>
           ) : (
             <div className="text-text-tertiary text-[11px]">
-              Kanal wählen und nochmal auf „Pitch-Text“ klicken oder
-              „Neu generieren“ nutzen.
+              {t("crm.ai.pitchEmptyHint")}
             </div>
           )}
         </div>
@@ -3669,7 +3845,7 @@ function QuickAction({
   disabled?: boolean;
   title?: string;
 }) {
-  const cls = `inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border ${
+  const cls = `inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[11px] border shrink-0 touch-manipulation max-md:min-h-[40px] ${
     disabled
       ? "border-stroke-1 text-text-quaternary cursor-not-allowed"
       : "border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary"
@@ -3725,11 +3901,24 @@ function ActivityFeed({
   onAddNote: (title: string, body: string) => Promise<void>;
   onOpenComposer: () => void;
 }) {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
+  const dateGroupLabels = useMemo(
+    () => ({
+      unknown: t("common.dateUnknown"),
+      today: t("common.today"),
+      yesterday: t("common.yesterday"),
+    }),
+    [t],
+  );
   const items = useMemo<FeedItem[]>(() => {
     const all: FeedItem[] = [
       ...notes.map<FeedItem>((n) => ({ kind: "note", ts: n.createdAt, data: n })),
-      ...tasks.map<FeedItem>((t) => ({ kind: "task", ts: t.createdAt, data: t })),
+      ...tasks.map<FeedItem>((task) => ({
+        kind: "task",
+        ts: task.createdAt,
+        data: task,
+      })),
       ...opportunities.map<FeedItem>((o) => ({
         kind: "deal",
         ts: o.updatedAt,
@@ -3741,36 +3930,39 @@ function ActivityFeed({
     );
   }, [notes, tasks, opportunities]);
 
-  const grouped = useMemo(() => groupByDate(items, (i) => i.ts), [items]);
+  const grouped = useMemo(
+    () => groupByDate(items, (i) => i.ts, localeFmt, dateGroupLabels),
+    [items, localeFmt, dateGroupLabels],
+  );
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="shrink-0 border-b border-stroke-1 bg-bg-elevated px-3 py-1.5 flex items-center gap-1.5">
         <span className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mr-2">
-          Hinzufügen:
+          {t("crm.label.add")}
         </span>
         <button
           type="button"
           onClick={onOpenComposer}
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary text-[10.5px]"
         >
-          <StickyNote size={11} /> Notiz
+          <StickyNote size={11} /> {t("crm.quick.note")}
         </button>
         <button
           type="button"
           disabled
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 text-text-quaternary text-[10.5px] cursor-not-allowed"
-          title="In Twenty anlegen (bald im Portal)"
+          title={t("crm.twenty.createSoonTooltip")}
         >
-          <CheckSquare size={11} /> Aufgabe
+          <CheckSquare size={11} /> {t("crm.quick.task")}
         </button>
         <button
           type="button"
           disabled
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 text-text-quaternary text-[10.5px] cursor-not-allowed"
-          title="Wird mit Calls-UI verknüpft"
+          title={t("crm.calls.linkedTitle")}
         >
-          <PhoneCall size={11} /> Anruf
+          <PhoneCall size={11} /> {t("crm.quick.call")}
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-auto px-3 py-3 space-y-4">
@@ -3812,6 +4004,7 @@ function getId(it: FeedItem): string {
 }
 
 function FeedRow({ item, accent }: { item: FeedItem; accent: string }) {
+  const { locale, t } = useLocale();
   if (item.kind === "note") {
     return (
       <li className="relative pl-7">
@@ -3819,10 +4012,10 @@ function FeedRow({ item, accent }: { item: FeedItem; accent: string }) {
         <article className="rounded-md border border-stroke-1 bg-bg-elevated p-2.5">
           <header className="flex items-baseline justify-between gap-2 mb-1">
             <h5 className="text-[12px] font-semibold text-text-primary truncate">
-              {item.data.title || "(ohne Titel)"}
+              {item.data.title || t("crm.feed.noTitle")}
             </h5>
             <time className="text-[10px] text-text-quaternary shrink-0">
-              {shortTime(item.data.createdAt)}
+              {shortTime(item.data.createdAt, localeTag(locale))}
             </time>
           </header>
           {item.data.bodyV2Markdown && (
@@ -3851,10 +4044,10 @@ function FeedRow({ item, accent }: { item: FeedItem; accent: string }) {
                   : "text-text-primary"
               }`}
             >
-              {item.data.title || "(ohne Titel)"}
+              {item.data.title || t("crm.feed.noTitle")}
             </h5>
             <time className="text-[10px] text-text-quaternary shrink-0">
-              {shortTime(item.data.createdAt)}
+              {shortTime(item.data.createdAt, localeTag(locale))}
             </time>
           </header>
           <div className="mt-1 flex items-center gap-2 text-[10.5px] text-text-tertiary">
@@ -3865,7 +4058,7 @@ function FeedRow({ item, accent }: { item: FeedItem; accent: string }) {
             {item.data.dueAt && (
               <span className="inline-flex items-center gap-1">
                 <Calendar size={10} />
-                {new Date(item.data.dueAt).toLocaleDateString("de-DE")}
+                {new Date(item.data.dueAt).toLocaleDateString(localeTag(locale))}
               </span>
             )}
             {item.data.assigneeName && (
@@ -3886,10 +4079,10 @@ function FeedRow({ item, accent }: { item: FeedItem; accent: string }) {
       <article className="rounded-md border border-stroke-1 bg-bg-elevated p-2.5">
         <header className="flex items-baseline justify-between gap-2">
           <h5 className="text-[12px] font-medium text-text-primary truncate">
-            {item.data.name || "(ohne Name)"}
+            {item.data.name || t("crm.feed.noName")}
           </h5>
           <time className="text-[10px] text-text-quaternary shrink-0">
-            {shortTime(item.data.updatedAt)}
+            {shortTime(item.data.updatedAt, localeTag(locale))}
           </time>
         </header>
         <div className="mt-1 flex items-center gap-2 text-[10.5px] text-text-tertiary">
@@ -3898,6 +4091,7 @@ function FeedRow({ item, accent }: { item: FeedItem; accent: string }) {
             {formatCurrency(
               item.data.amount?.amountMicros,
               item.data.amount?.currencyCode,
+              locale,
             )}
           </span>
         </div>
@@ -3930,7 +4124,7 @@ function PeopleGrid({
   accent: string;
   highlightPersonId?: string | null;
 }) {
-  const t = useT();
+  const { t } = useLocale();
   if (people.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary px-6 text-center">
@@ -3954,7 +4148,7 @@ function PeopleGrid({
             />
             <div className="min-w-0 flex-1">
               <p className="text-[12.5px] font-semibold text-text-primary truncate">
-                {`${p.firstName} ${p.lastName}`.trim() || "(ohne Name)"}
+                {`${p.firstName} ${p.lastName}`.trim() || t("crm.company.unnamed")}
               </p>
               {p.jobTitle && (
                 <p className="text-[11px] text-text-tertiary truncate">
@@ -4003,14 +4197,15 @@ function CompanyDetailsTab({
   accent: string;
   onPatch: (patch: Record<string, unknown>) => Promise<void> | void;
 }) {
+  const { t } = useLocale();
   return (
     <div className="flex-1 min-h-0 overflow-auto px-3 py-3 space-y-5">
       <section>
-        <SectionHeader>Praxis-Stammdaten</SectionHeader>
+        <SectionHeader>{t("crm.details.practiceSection")}</SectionHeader>
         <PropertyList
           rows={[
             {
-              label: "Booking",
+              label: t("crm.filter.booking"),
               value: (
                 <EditableText
                   value={company.bookingSystem ?? ""}
@@ -4021,7 +4216,7 @@ function CompanyDetailsTab({
               ),
             },
             {
-              label: "Lead-Quelle",
+              label: t("crm.filter.leadSourceFacet"),
               value: (
                 <EditableText
                   value={company.leadSource ?? ""}
@@ -4032,7 +4227,7 @@ function CompanyDetailsTab({
               ),
             },
             {
-              label: "Spezialisierung",
+              label: t("crm.field.specialization"),
               value: (
                 <EditableText
                   value={company.specializations ?? ""}
@@ -4044,7 +4239,7 @@ function CompanyDetailsTab({
               ),
             },
             {
-              label: "Sprachen",
+              label: t("crm.field.languages"),
               value: (
                 <EditableText
                   value={company.languages ?? ""}
@@ -4055,7 +4250,7 @@ function CompanyDetailsTab({
               ),
             },
             {
-              label: "Therapeut:innen",
+              label: t("crm.people.therapistsColumn"),
               value: company.employeeCountPhysio ?? "—",
             },
           ]}
@@ -4063,15 +4258,15 @@ function CompanyDetailsTab({
       </section>
 
       <section>
-        <SectionHeader>Adresse</SectionHeader>
+        <SectionHeader>{t("crm.details.addressSection")}</SectionHeader>
         <PropertyList
           rows={[
             {
-              label: "Strasse",
+              label: t("crm.field.street"),
               value: company.address?.addressStreet1 ?? "—",
             },
             {
-              label: "PLZ / Ort",
+              label: t("crm.field.zipCity"),
               value:
                 [
                   company.address?.addressPostcode,
@@ -4081,7 +4276,7 @@ function CompanyDetailsTab({
                   .join(" ") || "—",
             },
             {
-              label: "Land",
+              label: t("crm.field.country"),
               value: company.address?.addressCountry ?? "—",
             },
           ]}
@@ -4089,11 +4284,11 @@ function CompanyDetailsTab({
       </section>
 
       <section>
-        <SectionHeader>Lead-Therapeut</SectionHeader>
+        <SectionHeader>{t("crm.people.leadTherapistSection")}</SectionHeader>
         <PropertyList
           rows={[
             {
-              label: "Name",
+              label: t("crm.field.leadName"),
               value: (
                 <EditableText
                   value={company.leadTherapistName ?? ""}
@@ -4104,7 +4299,7 @@ function CompanyDetailsTab({
               ),
             },
             {
-              label: "Email",
+              label: t("crm.filter.emailField"),
               value: (
                 <EditableText
                   value={company.leadTherapistEmail ?? ""}
@@ -4204,6 +4399,7 @@ function NoteComposer({
   onSave: (title: string, body: string) => Promise<void>;
   onCancel?: () => void;
 }) {
+  const { t } = useLocale();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
@@ -4214,14 +4410,14 @@ function NoteComposer({
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="Titel der Notiz"
+        placeholder={t("crm.notes.titlePlaceholder")}
         className="w-full bg-transparent border border-stroke-1 rounded px-2 py-1 text-[12px] outline-none focus:border-stroke-2"
         autoFocus
       />
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="Inhalt (Markdown unterstützt)"
+        placeholder={t("crm.notes.placeholder")}
         rows={4}
         className="w-full bg-transparent border border-stroke-1 rounded px-2 py-1 text-[11.5px] outline-none focus:border-stroke-2 resize-y"
       />
@@ -4232,7 +4428,7 @@ function NoteComposer({
             onClick={onCancel}
             className="px-2 py-1 text-[11px] text-text-tertiary hover:text-text-primary"
           >
-            Abbrechen
+            {t("common.cancel")}
           </button>
         )}
         <button
@@ -4252,7 +4448,7 @@ function NoteComposer({
           style={{ background: accent }}
         >
           {saving ? <Loader2 size={10} className="spin" /> : <Save size={10} />}
-          Speichern
+          {t("common.save")}
         </button>
       </div>
     </div>
@@ -4287,6 +4483,8 @@ function ScraperLauncher({
   onClose: () => void;
   onFinished?: () => void;
 }) {
+  const { locale, t } = useLocale();
+  const localeTag = locale === "en" ? "en-US" : "de-CH";
   const [city, setCity] = useState("Basel");
   const [canton, setCanton] = useState("");
   const [limit, setLimit] = useState("10");
@@ -4376,7 +4574,7 @@ function ScraperLauncher({
         <div className="flex items-center gap-1.5">
           <Sparkles size={13} style={{ color: accent }} />
           <span className="text-[12px] font-medium text-text-primary">
-            Lead-Scraper
+            {t("crm.scraper.launcherHeading")}
           </span>
           {status && (
             <ScraperStatusChip
@@ -4389,7 +4587,7 @@ function ScraperLauncher({
           type="button"
           onClick={onClose}
           className="text-text-tertiary hover:text-text-primary"
-          title="Schließen"
+          title={t("crm.modal.close")}
         >
           <X size={13} />
         </button>
@@ -4398,7 +4596,7 @@ function ScraperLauncher({
       <div className="px-3 pb-2.5 grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-0.5">
           <span className="text-[10px] uppercase tracking-wide text-text-quaternary">
-            Stadt
+            {t("crm.filter.cityFacet")}
           </span>
           <input
             type="text"
@@ -4411,20 +4609,20 @@ function ScraperLauncher({
         </label>
         <label className="flex flex-col gap-0.5">
           <span className="text-[10px] uppercase tracking-wide text-text-quaternary">
-            Kanton (optional)
+            {t("crm.scraper.cantonOptionalLabel")}
           </span>
           <input
             type="text"
             value={canton}
             onChange={(e) => setCanton(e.target.value.toUpperCase())}
             disabled={isRunning}
-            placeholder="z.B. BS"
+            placeholder={t("crm.scraper.cantonPlaceholder")}
             className="bg-bg-base border border-stroke-1 rounded-md px-2 py-1 text-[12px] outline-none focus:border-stroke-2 disabled:opacity-50"
           />
         </label>
         <label className="flex flex-col gap-0.5">
           <span className="text-[10px] uppercase tracking-wide text-text-quaternary">
-            Limit
+            {t("crm.scraper.limitLabel")}
           </span>
           <input
             type="number"
@@ -4442,7 +4640,7 @@ function ScraperLauncher({
             onChange={(e) => setDryRun(e.target.checked)}
             disabled={isRunning}
           />
-          Dry-Run (kein CRM-Push)
+          {t("crm.scraper.dryRunCheckbox")}
         </label>
       </div>
 
@@ -4455,33 +4653,34 @@ function ScraperLauncher({
             </span>
           ) : status?.state === "running" ? (
             <span className="text-[11px] text-info">
-              Läuft seit{" "}
+              {t("crm.scraper.runningSince")}{" "}
               {status.started_at
-                ? new Date(status.started_at).toLocaleTimeString("de-CH")
+                ? new Date(status.started_at).toLocaleTimeString(localeTag)
                 : "–"}{" "}
               · {humanScraperParams(status.params)}
             </span>
           ) : status?.state === "done" ? (
             <span className="text-[11px] text-text-tertiary">
-              Letzter Lauf ok · {humanScraperParams(status.params)}
+              {t("crm.scraper.lastRunOkPrefix")}
+              {humanScraperParams(status.params)}
             </span>
           ) : status?.state === "error" ? (
             <span className="text-[11px] text-warning">
-              Letzter Lauf: exit {status.exit_code ?? "?"}
+              {t("crm.scraper.lastRunExitPrefix")}
+              {status.exit_code ?? "?"}
             </span>
           ) : (
             <span className="text-[11px] text-text-quaternary">
-              Trigger startet einen einzelnen Scraper-Lauf für die angegebene
-              Stadt.
+              {t("crm.scraper.triggerIntro")}
             </span>
           )}
         </div>
         <a
           href="/admin/onboarding/scraper"
           className="text-[11px] text-text-tertiary hover:text-text-primary inline-flex items-center gap-1"
-          title="Vollständiges Scraper-Panel"
+          title={t("crm.scraper.fullPanelTitle")}
         >
-          <ExternalLink size={11} /> Erweitert
+          <ExternalLink size={11} /> {t("crm.scraper.advancedShort")}
         </a>
         <button
           type="button"
@@ -4492,15 +4691,16 @@ function ScraperLauncher({
         >
           {isRunning ? (
             <>
-              <Loader2 size={11} className="spin" /> Läuft…
+              <Loader2 size={11} className="spin" /> {t("crm.scraper.running")}
             </>
           ) : submitting ? (
             <>
-              <Loader2 size={11} className="spin" /> Startet…
+              <Loader2 size={11} className="spin" />{" "}
+              {t("crm.scraper.startingButton")}
             </>
           ) : (
             <>
-              <Sparkles size={11} /> Lauf starten
+              <Sparkles size={11} /> {t("crm.scraper.triggerRun")}
             </>
           )}
         </button>
@@ -4516,10 +4716,11 @@ function ScraperStatusChip({
   state: ScraperState["state"];
   reachable?: boolean;
 }) {
+  const { t } = useLocale();
   if (reachable === false) {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border border-warning/30 bg-warning/5 text-warning">
-        <AlertCircle size={9} /> offline
+        <AlertCircle size={9} /> {t("crm.scraper.offlineBadge")}
       </span>
     );
   }
@@ -4527,19 +4728,19 @@ function ScraperStatusChip({
     case "running":
       return (
         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border border-info/30 bg-info/5 text-info">
-          <Loader2 size={9} className="spin" /> läuft
+          <Loader2 size={9} className="spin" /> {t("crm.scraper.runningShort")}
         </span>
       );
     case "done":
       return (
         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border border-success/30 bg-success/5 text-success">
-          <CheckCircle2 size={9} /> ok
+          <CheckCircle2 size={9} /> {t("crm.scraper.okBadge")}
         </span>
       );
     case "error":
       return (
         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md border border-warning/30 bg-warning/5 text-warning">
-          <AlertCircle size={9} /> Fehler
+          <AlertCircle size={9} /> {t("crm.scraper.errorBadge")}
         </span>
       );
     default:

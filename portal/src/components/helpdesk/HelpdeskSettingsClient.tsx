@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useT } from "@/components/LocaleProvider";
 import {
   ArrowLeft,
   Settings as SettingsIcon,
@@ -67,6 +68,7 @@ export function HelpdeskSettingsClient({
   /** @deprecated Kept for backwards compat with the page wrapper. */
   zammadUrl?: string;
 }) {
+  const t = useT();
   const [data, setData] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +137,7 @@ export function HelpdeskSettingsClient({
         <Link
           href={`/${workspaceId}/helpdesk`}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-          title="Zurück zum Helpdesk"
+          title={t("helpdesk.settings.backTitle")}
         >
           <ArrowLeft size={14} />
         </Link>
@@ -147,10 +149,13 @@ export function HelpdeskSettingsClient({
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold leading-tight">
-            Helpdesk-Einstellungen
+            {t("helpdesk.settings.title")}
           </h1>
           <p className="text-[10.5px] text-text-tertiary truncate">
-            {workspaceName} · Gruppen, Absender und E-Mail-Kanäle
+            {t("helpdesk.settings.subtitle").replace(
+              "{workspace}",
+              workspaceName,
+            )}
           </p>
         </div>
         <button
@@ -158,7 +163,7 @@ export function HelpdeskSettingsClient({
           onClick={() => void load()}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-50"
           disabled={loading}
-          title="Aktualisieren"
+          title={t("helpdesk.settings.refreshTitle")}
         >
           {loading ? (
             <Loader2 size={14} className="animate-spin" />
@@ -174,7 +179,7 @@ export function HelpdeskSettingsClient({
             <div className="rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[12.5px] p-3 flex items-start gap-2">
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">Konnte Einstellungen nicht laden</p>
+                <p className="font-medium">{t("helpdesk.settings.loadError")}</p>
                 <p className="text-[11.5px] opacity-90 mt-0.5">{error}</p>
               </div>
             </div>
@@ -192,27 +197,23 @@ export function HelpdeskSettingsClient({
           {data && (
             <>
               <p className="text-[12px] text-text-tertiary leading-relaxed">
-                Konfiguration für{" "}
-                <strong className="text-text-secondary">{workspaceName}</strong>.
-                Gruppen, Mitglieder, Absender-Adressen und E-Mail-Kanäle
-                (IMAP/SMTP) werden direkt hier verwaltet — die Aktionen
-                schreiben live in den Helpdesk-Kern zurück. Verbindungs-Tests
-                vor dem Speichern verhindern fehlerhafte Postfach-Konfiguration.
+                {t("helpdesk.settings.introBefore")}{" "}
+                <strong className="text-text-secondary">{workspaceName}</strong>
+                {t("helpdesk.settings.introAfter")}
               </p>
 
               <Section
                 icon={<Users size={14} style={{ color: accent }} />}
-                title="Gruppen"
+                title={t("helpdesk.settings.groupsTitle")}
                 accent={accent}
               >
                 {data.groups.length === 0 ? (
                   <Empty>
-                    Für diesen Workspace sind keine Gruppen konfiguriert.
-                    Lege sie im Zammad-Admin an und ergänze sie unter
+                    {t("helpdesk.settings.groupsEmptyBefore")}{" "}
                     <code className="mx-1 text-[11px] bg-bg-base px-1 py-0.5 rounded">
                       HELPDESK_TENANT_{workspaceId.toUpperCase()}_GROUPS
-                    </code>
-                    in der `.env`.
+                    </code>{" "}
+                    {t("helpdesk.settings.groupsEmptyAfter")}
                   </Empty>
                 ) : (
                   <div className="space-y-2">
@@ -232,7 +233,7 @@ export function HelpdeskSettingsClient({
 
               <Section
                 icon={<AtSign size={14} style={{ color: accent }} />}
-                title="Absender-Adressen"
+                title={t("helpdesk.settings.emailsTitle")}
                 accent={accent}
                 action={
                   <button
@@ -240,16 +241,12 @@ export function HelpdeskSettingsClient({
                     onClick={() => setEmailAddDialog(true)}
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-info/10 hover:bg-info/15 text-info border border-info/20 text-[11.5px]"
                   >
-                    <Plus size={11} /> Adresse hinzufügen
+                    <Plus size={11} /> {t("helpdesk.settings.emailsAdd")}
                   </button>
                 }
               >
                 {data.emailAddresses.length === 0 ? (
-                  <Empty>
-                    Keine Absender-Adressen konfiguriert. Lege oben eine
-                    Adresse an, um Tickets von dieser Adresse aus beantworten
-                    zu können.
-                  </Empty>
+                  <Empty>{t("helpdesk.settings.emailsEmpty")}</Empty>
                 ) : (
                   <div className="space-y-2">
                     {data.emailAddresses.map((e) => (
@@ -269,7 +266,7 @@ export function HelpdeskSettingsClient({
 
               <Section
                 icon={<Mail size={14} style={{ color: accent }} />}
-                title="E-Mail-Kanäle (Inbox / Outbound)"
+                title={t("helpdesk.settings.channelsTitle")}
                 accent={accent}
                 action={
                   <button
@@ -279,19 +276,16 @@ export function HelpdeskSettingsClient({
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-info/10 hover:bg-info/15 text-info border border-info/20 text-[11.5px] disabled:opacity-50"
                     title={
                       data.groups.length === 0
-                        ? "Mindestens eine Gruppe erforderlich"
-                        : "Neuen IMAP/SMTP-Kanal einrichten"
+                        ? t("helpdesk.settings.channelsNeedGroup")
+                        : t("helpdesk.settings.channelsNewHint")
                     }
                   >
-                    <Plus size={11} /> Kanal hinzufügen
+                    <Plus size={11} /> {t("helpdesk.settings.channelsAdd")}
                   </button>
                 }
               >
                 {data.channels.length === 0 ? (
-                  <Empty>
-                    Keine E-Mail-Kanäle eingerichtet. Klick „Kanal hinzufügen"
-                    oben, um IMAP/SMTP-Zugang einzurichten.
-                  </Empty>
+                  <Empty>{t("helpdesk.settings.channelsEmpty")}</Empty>
                 ) : (
                   <div className="space-y-2">
                     {data.channels.map((c) => (
@@ -311,14 +305,14 @@ export function HelpdeskSettingsClient({
 
               <Section
                 icon={<Users size={14} style={{ color: accent }} />}
-                title="Tenant-Konfiguration"
+                title={t("helpdesk.settings.tenantTitle")}
                 accent={accent}
               >
                 <table className="w-full text-[12px]">
                   <tbody>
                     <Tr>
                       <Td className="w-[200px] text-text-tertiary uppercase text-[10.5px] tracking-wide">
-                        Workspace
+                        {t("helpdesk.settings.tenantWorkspace")}
                       </Td>
                       <Td>
                         <span className="font-mono">{data.workspace}</span>
@@ -326,7 +320,7 @@ export function HelpdeskSettingsClient({
                     </Tr>
                     <Tr>
                       <Td className="text-text-tertiary uppercase text-[10.5px] tracking-wide">
-                        Erlaubte Zammad-Gruppen
+                        {t("helpdesk.settings.tenantGroups")}
                       </Td>
                       <Td>
                         <div className="flex flex-wrap gap-1">
@@ -340,11 +334,11 @@ export function HelpdeskSettingsClient({
                           ))}
                         </div>
                         <p className="text-[10.5px] text-text-quaternary mt-1.5">
-                          Konfiguriert via{" "}
+                          {t("helpdesk.settings.tenantEnvHint")}{" "}
                           <code className="bg-bg-base px-1 rounded">
                             HELPDESK_TENANT_{workspaceId.toUpperCase()}_GROUPS
-                          </code>
-                          {" "}in der `.env` auf dem Server.
+                          </code>{" "}
+                          {t("helpdesk.settings.tenantEnvSuffix")}
                         </p>
                       </Td>
                     </Tr>
@@ -428,6 +422,7 @@ function ChannelCard({
   onDelete: () => void;
   onUpdate: () => void;
 }) {
+  const t = useT();
   const inbound = (channel.options as { inbound?: Record<string, unknown> })
     ?.inbound;
   const outbound = (channel.options as { outbound?: Record<string, unknown> })
@@ -443,7 +438,10 @@ function ChannelCard({
   const onConfirmDelete = useCallback(async () => {
     if (
       !window.confirm(
-        `Kanal #${channel.id} wirklich löschen? Eingehende Mails werden nicht mehr abgeholt.`,
+        t("helpdesk.settings.channelDeleteConfirm").replace(
+          "{id}",
+          String(channel.id),
+        ),
       )
     )
       return;
@@ -462,7 +460,7 @@ function ChannelCard({
     } finally {
       setBusy(false);
     }
-  }, [channel.id, workspaceId, onDelete]);
+  }, [channel.id, workspaceId, onDelete, t]);
 
   const onToggleActive = useCallback(async () => {
     setBusy(true);
@@ -492,7 +490,10 @@ function ChannelCard({
         <div className="flex items-center gap-2">
           <Server size={12} className="text-text-tertiary" />
           <span className="text-[12.5px] font-semibold">
-            Kanal #{channel.id}
+            {t("helpdesk.settings.channelId").replace(
+              "{id}",
+              String(channel.id),
+            )}
           </span>
           <span className="text-[10.5px] text-text-tertiary uppercase tracking-wide">
             {channel.area}
@@ -500,9 +501,9 @@ function ChannelCard({
         </div>
         <div className="flex items-center gap-1.5">
           {channel.active ? (
-            <Pill tone="success">aktiv</Pill>
+            <Pill tone="success">{t("helpdesk.settings.active")}</Pill>
           ) : (
-            <Pill tone="muted">inaktiv</Pill>
+            <Pill tone="muted">{t("helpdesk.settings.inactive")}</Pill>
           )}
           <button
             type="button"
@@ -512,7 +513,7 @@ function ChannelCard({
             }}
             disabled={busy}
             className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary disabled:opacity-50"
-            title="Bearbeiten"
+            title={t("helpdesk.settings.edit")}
           >
             <Pencil size={11} />
           </button>
@@ -521,16 +522,22 @@ function ChannelCard({
             onClick={onToggleActive}
             disabled={busy}
             className="px-1.5 py-0.5 rounded-md text-[10.5px] text-text-tertiary hover:text-text-primary hover:bg-bg-overlay disabled:opacity-50"
-            title={channel.active ? "Deaktivieren" : "Aktivieren"}
+            title={
+              channel.active
+                ? t("helpdesk.settings.deactivate")
+                : t("helpdesk.settings.activate")
+            }
           >
-            {channel.active ? "Pausieren" : "Aktivieren"}
+            {channel.active
+              ? t("helpdesk.settings.pause")
+              : t("helpdesk.settings.activate")}
           </button>
           <button
             type="button"
             onClick={onConfirmDelete}
             disabled={busy}
             className="p-1 rounded-md text-text-tertiary hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50"
-            title="Löschen"
+            title={t("helpdesk.settings.delete")}
           >
             {busy ? (
               <Loader2 size={11} className="animate-spin" />
@@ -549,13 +556,13 @@ function ChannelCard({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <div className="text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
-            Inbound (IMAP/POP3)
+            {t("helpdesk.settings.inboundShort")}
           </div>
           <KvList opts={inboundOpts} />
         </div>
         <div>
           <div className="text-[10.5px] uppercase tracking-wide text-text-tertiary mb-1">
-            Outbound (SMTP)
+            {t("helpdesk.settings.outboundShort")}
           </div>
           <KvList opts={outboundOpts} />
         </div>
@@ -578,10 +585,11 @@ function ChannelCard({
 }
 
 function KvList({ opts }: { opts: Record<string, unknown> | undefined }) {
+  const t = useT();
   if (!opts || typeof opts !== "object") {
     return (
       <span className="text-[11.5px] text-text-quaternary">
-        nicht konfiguriert
+        {t("helpdesk.settings.notConfigured")}
       </span>
     );
   }
@@ -589,7 +597,9 @@ function KvList({ opts }: { opts: Record<string, unknown> | undefined }) {
   const entries = Object.entries(opts).filter(([k]) => interesting.includes(k));
   if (entries.length === 0) {
     return (
-      <span className="text-[11.5px] text-text-quaternary">— keine Felder —</span>
+      <span className="text-[11.5px] text-text-quaternary">
+        {t("helpdesk.settings.noFields")}
+      </span>
     );
   }
   return (
@@ -702,6 +712,7 @@ function GroupCard({
   accent: string;
   onChange: (g: GroupSetting) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [draftName, setDraftName] = useState(group.name);
   const [draftActive, setDraftActive] = useState(group.active);
@@ -842,19 +853,27 @@ function GroupCard({
               {group.name}
             </span>
             {group.active ? (
-              <Pill tone="success">aktiv</Pill>
+              <Pill tone="success">{t("helpdesk.settings.active")}</Pill>
             ) : (
-              <Pill tone="muted">inaktiv</Pill>
+              <Pill tone="muted">{t("helpdesk.settings.inactive")}</Pill>
             )}
             {group.memberCount != null && (
               <span className="text-[10.5px] text-text-tertiary tabular-nums">
-                {group.memberCount} Mitglied{group.memberCount === 1 ? "" : "er"}
+                {group.memberCount === 1
+                  ? t("helpdesk.settings.memberCountOne").replace(
+                      "{n}",
+                      String(group.memberCount),
+                    )
+                  : t("helpdesk.settings.memberCountMany").replace(
+                      "{n}",
+                      String(group.memberCount),
+                    )}
               </span>
             )}
           </div>
           <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[11.5px] text-text-tertiary">
             <div>
-              Default Absender:{" "}
+              {t("helpdesk.settings.defaultSender")}{" "}
               {ea ? (
                 <span className="font-mono text-text-secondary">{ea.email}</span>
               ) : (
@@ -862,7 +881,9 @@ function GroupCard({
               )}
             </div>
             {group.note && (
-              <div className="truncate">Notiz: {group.note}</div>
+              <div className="truncate">
+                {t("helpdesk.settings.noteLabel")} {group.note}
+              </div>
             )}
           </div>
         </div>
@@ -872,7 +893,7 @@ function GroupCard({
             onClick={startEdit}
             className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary text-[11.5px]"
           >
-            <Pencil size={11} /> Bearbeiten
+            <Pencil size={11} /> {t("helpdesk.settings.edit")}
           </button>
         )}
       </div>
@@ -1061,6 +1082,7 @@ function EmailAddressCard({
   onChange: (e: EmailAddressSetting) => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [draftName, setDraftName] = useState(email.name);
   const [draftActive, setDraftActive] = useState(email.active);
@@ -1160,7 +1182,7 @@ function EmailAddressCard({
               onClick={startEdit}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary text-[11.5px]"
             >
-              <Pencil size={11} /> Bearbeiten
+              <Pencil size={11} /> {t("helpdesk.settings.edit")}
             </button>
             <button
               type="button"
@@ -1990,6 +2012,7 @@ function ChannelEditPanel({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatePasswords, setUpdatePasswords] = useState(false);
+  const t = useT();
 
   const test = useCallback(async () => {
     setTesting(true);
@@ -2068,9 +2091,9 @@ function ChannelEditPanel({
               <AlertCircle size={11} className="text-red-400" />
             )}
             <span>
-              Inbound:{" "}
+              {t("helpdesk.settings.inboundColon")}{" "}
               {testResult.inbound?.ok
-                ? "OK"
+                ? t("helpdesk.settings.testOk")
                 : testResult.inbound?.message ?? "—"}
             </span>
           </div>
@@ -2081,9 +2104,9 @@ function ChannelEditPanel({
               <AlertCircle size={11} className="text-red-400" />
             )}
             <span>
-              Outbound:{" "}
+              {t("helpdesk.settings.outboundColon")}{" "}
               {testResult.outbound?.ok
-                ? "OK"
+                ? t("helpdesk.settings.testOk")
                 : testResult.outbound?.message ?? "—"}
             </span>
           </div>
@@ -2096,7 +2119,7 @@ function ChannelEditPanel({
           onChange={(e) => setUpdatePasswords(e.target.checked)}
           className="accent-info"
         />
-        Passwörter überschreiben (sonst werden bestehende behalten)
+        {t("helpdesk.settings.overridePasswords")}
       </label>
       <ChannelEditor draft={draft} setDraft={setDraft} showSender={false} />
       <div className="flex items-center gap-2 justify-end pt-1">
@@ -2111,7 +2134,7 @@ function ChannelEditPanel({
           ) : (
             <ShieldCheck size={11} />
           )}
-          Testen
+          {t("helpdesk.settings.testShort")}
         </button>
         <button
           type="button"
@@ -2119,7 +2142,7 @@ function ChannelEditPanel({
           disabled={busy}
           className="px-3 py-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-overlay text-[11.5px]"
         >
-          Abbrechen
+          {t("common.cancel")}
         </button>
         <button
           type="button"
@@ -2133,7 +2156,7 @@ function ChannelEditPanel({
           ) : (
             <Save size={11} />
           )}
-          Speichern
+          {t("common.save")}
         </button>
       </div>
     </div>

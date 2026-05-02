@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { StatusPill, toneForState } from "@/components/ui/Pills";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type { OpportunitySummary } from "@/lib/crm/types";
 import { DEFAULT_OPPORTUNITY_KANBAN_STAGES } from "@/lib/crm/opportunity-stages";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 export { DEFAULT_OPPORTUNITY_KANBAN_STAGES };
 
@@ -44,6 +46,9 @@ export function OpportunityKanban({
   /** Scrolls this card into view and outlines it (Cmd+K / `?deal=` deep-links). */
   highlightDealId?: string | null;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -58,34 +63,31 @@ export function OpportunityKanban({
     el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
   }, [highlightDealId, deals]);
 
-  if (deals.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary px-6 text-center">
-        Keine Deals.
-      </div>
-    );
-  }
-
-  const stageMap = new Map<string, { id: string; label: string }>();
-  DEFAULT_OPPORTUNITY_KANBAN_STAGES.forEach((s) => stageMap.set(s.id, s));
-  for (const d of deals) {
-    const key = d.stage || "(unset)";
-    if (!stageMap.has(key)) {
-      stageMap.set(key, {
-        id: key,
-        label: key === "(unset)" ? "Ohne Stage" : key,
-      });
+  const columns = useMemo(() => {
+    const stageMap = new Map<string, { id: string; label: string }>();
+    DEFAULT_OPPORTUNITY_KANBAN_STAGES.forEach((s) => stageMap.set(s.id, s));
+    for (const d of deals) {
+      const key = d.stage || "(unset)";
+      if (!stageMap.has(key)) {
+        stageMap.set(key, {
+          id: key,
+          label: key === "(unset)" ? t("crm.opportunity.stageUnset") : key,
+        });
+      }
     }
-  }
-  const columns = [...stageMap.values()];
+    return [...stageMap.values()];
+  }, [deals, t]);
 
-  const byStage = new Map<string, OpportunitySummary[]>();
-  for (const d of deals) {
-    const key = d.stage || "(unset)";
-    const list = byStage.get(key) ?? [];
-    list.push(d);
-    byStage.set(key, list);
-  }
+  const byStage = useMemo(() => {
+    const m = new Map<string, OpportunitySummary[]>();
+    for (const d of deals) {
+      const key = d.stage || "(unset)";
+      const list = m.get(key) ?? [];
+      list.push(d);
+      m.set(key, list);
+    }
+    return m;
+  }, [deals]);
 
   const moveDeal = async (dealId: string, toStage: string) => {
     const deal = deals.find((d) => d.id === dealId);
@@ -93,9 +95,7 @@ export function OpportunityKanban({
     const fromStage = deal.stage || "(unset)";
     if (fromStage === toStage) return;
     if (toStage === "(unset)") {
-      setError(
-        "In »Ohne Stage« kann nichts gezogen werden — wähle eine echte Stage.",
-      );
+      setError(t("crm.opportunity.alertDropUnset"));
       return;
     }
     setError(null);
@@ -119,6 +119,14 @@ export function OpportunityKanban({
     }
   };
 
+  if (deals.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary px-6 text-center">
+        {t("crm.opportunity.emptyBoard")}
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {error && (
@@ -126,7 +134,10 @@ export function OpportunityKanban({
           {error}
         </div>
       )}
-      <div ref={boardScrollRef} className="flex-1 min-h-0 overflow-auto p-3">
+      <div
+        ref={boardScrollRef}
+        className="flex-1 min-h-0 overflow-auto overscroll-x-contain touch-pan-x p-3 [-webkit-overflow-scrolling:touch]"
+      >
         <div className="flex gap-3 min-w-max">
           {columns.map((col) => {
             const list = byStage.get(col.id) ?? [];
@@ -205,7 +216,7 @@ export function OpportunityKanban({
                                 }
                               : undefined
                           }
-                          title="Ziehen, um die Stage zu ändern."
+                          title={t("crm.opportunity.dragToChangeStage")}
                         >
                           <div className="flex items-start gap-2">
                             <TrendingUp
@@ -214,7 +225,7 @@ export function OpportunityKanban({
                             />
                             <div className="min-w-0 flex-1">
                               <p className="text-[12px] font-medium text-text-primary leading-snug break-words">
-                                {d.name || "(ohne Name)"}
+                                {d.name || t("crm.company.unnamed")}
                               </p>
                               {d.companyName && (
                                 <p className="text-[10.5px] text-text-tertiary truncate">
@@ -228,7 +239,7 @@ export function OpportunityKanban({
                                     className="text-[10px] text-info hover:underline"
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                    Im CRM öffnen
+                                    {t("crm.opportunity.openInFullCrm")}
                                   </Link>
                                 </p>
                               )}
@@ -236,7 +247,7 @@ export function OpportunityKanban({
                                 <span className="text-text-tertiary">
                                   {d.closeDate
                                     ? new Date(d.closeDate).toLocaleDateString(
-                                        "de-DE",
+                                        localeFmt,
                                       )
                                     : "—"}
                                 </span>
@@ -255,7 +266,7 @@ export function OpportunityKanban({
                   })}
                   {list.length === 0 && (
                     <li className="text-[10.5px] text-text-quaternary text-center py-4">
-                      hier reinziehen
+                      {t("crm.opportunity.dropHere")}
                     </li>
                   )}
                 </ul>

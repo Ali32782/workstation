@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -6,7 +9,6 @@ import {
   Mail,
   HeadphonesIcon,
   FolderOpen,
-  Kanban,
   ExternalLink,
   PenLine,
   FileText,
@@ -15,11 +17,11 @@ import type { WorkspaceId } from "@/lib/workspaces";
 import type { CompanyDetail } from "@/lib/crm/types";
 import { companyFilesSearchHint, companySiteDomain } from "@/lib/crm/company-domain";
 import { CompanyAttributionSection } from "@/components/crm/CompanyAttributionSection";
+import { useT } from "@/components/LocaleProvider";
 
 /**
- * Cross-app „Company Hub“ — eine Übersichtsseite mit Tieflinks in Mail,
- * Helpdesk, Files und Projekte. CRM bleibt Quelle der Wahrheit; hier nur
- * Navigation + Kontext.
+ * Cross-app company hub — shortcuts into Mail, Helpdesk, Files, Office, Sign,
+ * and Twenty. CRM remains source of truth; this surface is navigation + context.
  */
 export function CompanyHubView({
   workspaceId,
@@ -35,6 +37,7 @@ export function CompanyHubView({
   /** Public Twenty origin (TWENTY_URL), no trailing slash */
   twentyPublicUrl: string;
 }) {
+  const t = useT();
   const domain = companySiteDomain(company);
   const crmBack = `/${workspaceId}/crm?company=${encodeURIComponent(company.id)}`;
 
@@ -57,66 +60,85 @@ export function CompanyHubView({
     ? `/${workspaceId}/files?q=${encodeURIComponent(filesHint)}`
     : `/${workspaceId}/files`;
 
-  const tiles: {
-    title: string;
-    description: string;
-    href: string;
-    icon: typeof Mail;
-    external?: boolean;
-  }[] = [
-    {
-      title: "CRM · Detail",
-      description: "Gleiche Firma im dreispaltigen CRM öffnen.",
-      href: crmBack,
-      icon: Building2,
-    },
-    {
-      title: "Mail",
-      description: email
-        ? "Entwurf im Portal mit der hinterlegten Adresse starten."
-        : domain
-          ? `Liste filtern nach „@${domain}“ (nach dem Öffnen aktiv).`
-          : "Postfach öffnen — Suchfeld manuell nutzen.",
-      href: mailHref,
-      icon: Mail,
-    },
-    {
-      title: "Helpdesk",
-      description:
-        "Tickets mit Suchwort (Firmenname) laden — genauer in der Ticketliste.",
-      href: helpdeskHref,
-      icon: HeadphonesIcon,
-    },
-    {
-      title: "Files",
-      description: filesHint
-        ? `Vollsuche mit „${filesHint.length > 36 ? `${filesHint.slice(0, 36)}…` : filesHint}“.`
-        : "Cloud öffnen — Suche manuell.",
-      href: filesHref,
-      icon: FolderOpen,
-    },
-    {
-      title: "Office",
-      description:
-        "Vorlagen & Texte bearbeiten; PDF aus Office exportieren und zu Sign bringen.",
-      href: `/${workspaceId}/office?crmCompany=${encodeURIComponent(company.id)}`,
-      icon: FileText,
-    },
-    {
-      title: "Unterschrift (Sign)",
-      description:
-        "PDF hochladen oder aus Office bringen — Verknüpfung mit dieser Firma für Nachvollziehbarkeit.",
-      href: `/${workspaceId}/sign?crmCompany=${encodeURIComponent(company.id)}`,
-      icon: PenLine,
-    },
-    {
-      title: "Twenty (CRM Roh)",
-      description: "Native Twenty-Oberfläche.",
-      href: twentyPublicUrl,
-      icon: ExternalLink,
-      external: true,
-    },
-  ];
+  const tiles = useMemo(() => {
+    const mailDesc = email
+      ? t("crm.companyHub.tileMailDescCompose")
+      : domain
+        ? t("crm.companyHub.tileMailDescDomain").replace("{domain}", domain)
+        : t("crm.companyHub.tileMailDescInbox");
+
+    const filesDesc = filesHint
+      ? t("crm.companyHub.tileFilesDescSearch").replace(
+          "{hint}",
+          filesHint.length > 36 ? `${filesHint.slice(0, 36)}…` : filesHint,
+        )
+      : t("crm.companyHub.tileFilesDescManual");
+
+    const tileList: {
+      title: string;
+      description: string;
+      href: string;
+      icon: typeof Mail;
+      external?: boolean;
+    }[] = [
+      {
+        title: t("crm.companyHub.tileCrmTitle"),
+        description: t("crm.companyHub.tileCrmDesc"),
+        href: crmBack,
+        icon: Building2,
+      },
+      {
+        title: t("nav.mail"),
+        description: mailDesc,
+        href: mailHref,
+        icon: Mail,
+      },
+      {
+        title: t("nav.helpdesk"),
+        description: t("crm.companyHub.tileHelpdeskDesc"),
+        href: helpdeskHref,
+        icon: HeadphonesIcon,
+      },
+      {
+        title: t("nav.files"),
+        description: filesDesc,
+        href: filesHref,
+        icon: FolderOpen,
+      },
+      {
+        title: t("nav.office"),
+        description: t("crm.companyHub.tileOfficeDesc"),
+        href: `/${workspaceId}/office?crmCompany=${encodeURIComponent(company.id)}`,
+        icon: FileText,
+      },
+      {
+        title: t("crm.companyHub.tileSignTitle"),
+        description: t("crm.companyHub.tileSignDesc"),
+        href: `/${workspaceId}/sign?crmCompany=${encodeURIComponent(company.id)}`,
+        icon: PenLine,
+      },
+      {
+        title: t("crm.companyHub.tileTwentyTitle"),
+        description: t("crm.companyHub.tileTwentyDesc"),
+        href: twentyPublicUrl,
+        icon: ExternalLink,
+        external: true,
+      },
+    ];
+    return tileList;
+  }, [
+    t,
+    crmBack,
+    mailHref,
+    helpdeskHref,
+    filesHref,
+    filesHint,
+    twentyPublicUrl,
+    email,
+    domain,
+    workspaceId,
+    company.id,
+  ]);
 
   return (
     <div className="min-h-full px-4 py-6 max-w-3xl mx-auto">
@@ -126,7 +148,7 @@ export function CompanyHubView({
           className="inline-flex items-center gap-1 hover:text-text-primary"
         >
           <ArrowLeft size={12} />
-          Zurück zum CRM
+          {t("crm.nav.backToCrm")}
         </Link>
         <span className="opacity-40">·</span>
         <span>{workspaceName}</span>
@@ -148,7 +170,7 @@ export function CompanyHubView({
               {company.name}
             </h1>
             <p className="text-text-tertiary text-[13px] mt-1">
-              Company-Hub · Querschnitt Mail, Tickets, Files, Sign, Projekte
+              {t("crm.companyHub.tagline")}
             </p>
             {domain && (
               <p className="text-[12px] text-text-secondary mt-2 inline-flex items-center gap-1.5">
@@ -158,7 +180,11 @@ export function CompanyHubView({
             )}
             {(company.phone || company.generalEmail) && (
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-text-secondary">
-                {company.phone && <span>Tel. {company.phone}</span>}
+                {company.phone && (
+                  <span>
+                    {t("crm.companyHub.phoneShort")} {company.phone}
+                  </span>
+                )}
                 {company.generalEmail && (
                   <a
                     href={`mailto:${company.generalEmail}`}
@@ -180,11 +206,11 @@ export function CompanyHubView({
       />
 
       <h2 className="text-text-primary text-sm font-semibold mb-3">
-        Schnellzugriff
+        {t("crm.companyHub.quickLinksHeading")}
       </h2>
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {tiles.map((t) => {
-          const Icon = t.icon;
+        {tiles.map((tile) => {
+          const Icon = tile.icon;
           const inner = (
             <>
               <div
@@ -195,13 +221,13 @@ export function CompanyHubView({
               </div>
               <div className="min-w-0">
                 <div className="text-text-primary text-[13px] font-medium flex items-center gap-1">
-                  {t.title}
-                  {t.external && (
+                  {tile.title}
+                  {tile.external && (
                     <ExternalLink size={11} className="text-text-tertiary" />
                   )}
                 </div>
                 <p className="text-text-tertiary text-[11.5px] mt-0.5 leading-snug">
-                  {t.description}
+                  {tile.description}
                 </p>
               </div>
             </>
@@ -209,10 +235,10 @@ export function CompanyHubView({
           const className =
             "flex items-start gap-3 rounded-lg border border-stroke-1 bg-bg-elevated px-4 py-3 hover:border-stroke-2 transition-colors text-left w-full";
           return (
-            <li key={t.href + t.title}>
-              {t.external ? (
+            <li key={tile.href + tile.title}>
+              {tile.external ? (
                 <a
-                  href={t.href}
+                  href={tile.href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={className}
@@ -220,7 +246,7 @@ export function CompanyHubView({
                   {inner}
                 </a>
               ) : (
-                <Link href={t.href} className={className}>
+                <Link href={tile.href} className={className}>
                   {inner}
                 </Link>
               )}

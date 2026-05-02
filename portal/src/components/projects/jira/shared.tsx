@@ -19,6 +19,9 @@ import {
   GitBranch,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
+import { localeTag } from "@/lib/i18n/messages";
 import type {
   CycleSummary,
   IssueLabel,
@@ -48,12 +51,12 @@ export const PRIORITY_COLOR: Record<IssuePriority, string> = {
   none: "#64748b",
 };
 
-export const PRIORITY_LABEL: Record<IssuePriority, string> = {
-  urgent: "Dringend",
-  high: "Hoch",
-  medium: "Mittel",
-  low: "Niedrig",
-  none: "Keine",
+export const PRIORITY_I18N: Record<IssuePriority, keyof Messages> = {
+  urgent: "projects.priority.urgent",
+  high: "projects.priority.high",
+  medium: "projects.priority.medium",
+  low: "projects.priority.low",
+  none: "projects.priority.none",
 };
 
 export const PRIORITY_ICON: Record<
@@ -79,13 +82,22 @@ export const STATE_GROUP_ORDER = [
   "cancelled",
 ] as const;
 
-export const STATE_GROUP_LABEL: Record<string, string> = {
-  backlog: "Backlog",
-  unstarted: "To Do",
-  started: "In Arbeit",
-  completed: "Erledigt",
-  cancelled: "Abgebrochen",
-};
+export const STATE_GROUP_I18N: Record<(typeof STATE_GROUP_ORDER)[number], keyof Messages> =
+  {
+    backlog: "projects.stateGroup.backlog",
+    unstarted: "projects.stateGroup.unstarted",
+    started: "projects.stateGroup.started",
+    completed: "projects.stateGroup.completed",
+    cancelled: "projects.stateGroup.cancelled",
+  };
+
+export function stateGroupTitle(
+  t: (key: keyof Messages, fallback?: string) => string,
+  group: string,
+): string {
+  const k = STATE_GROUP_I18N[group as keyof typeof STATE_GROUP_I18N];
+  return k ? t(k) : group;
+}
 
 export const STATE_GROUP_COLOR: Record<string, string> = {
   backlog: "#94a3b8",
@@ -118,45 +130,56 @@ export const STATE_GROUP_COLOR: Record<string, string> = {
  */
 export type IssueType = "story" | "task" | "bug" | "epic" | "subtask";
 
+export const ISSUE_TYPE_I18N: Record<IssueType, keyof Messages> = {
+  story: "projects.issueType.story",
+  task: "projects.issueType.task",
+  bug: "projects.issueType.bug",
+  epic: "projects.issueType.epic",
+  subtask: "projects.issueType.subtask",
+};
+
 export const ISSUE_TYPE_META: Record<
   IssueType,
   {
-    label: string;
     color: string;
     bg: string;
     Icon: React.ComponentType<{ size?: number; className?: string }>;
   }
 > = {
   story: {
-    label: "Story",
     color: "#22c55e",
     bg: "#16a34a",
     Icon: Bookmark,
   },
   task: {
-    label: "Task",
     color: "#3b82f6",
     bg: "#2563eb",
     Icon: CheckSquare,
   },
   bug: {
-    label: "Bug",
     color: "#ef4444",
     bg: "#dc2626",
     Icon: Bug,
   },
   epic: {
-    label: "Epic",
     color: "#a855f7",
     bg: "#9333ea",
     Icon: Zap,
   },
   subtask: {
-    label: "Sub-Task",
     color: "#06b6d4",
     bg: "#0891b2",
     Icon: GitBranch,
   },
+};
+
+/** English canonical names for Plane label sync (stable regardless of UI locale). */
+export const ISSUE_TYPE_SYNC_NAME: Record<IssueType, string> = {
+  story: "Story",
+  task: "Task",
+  bug: "Bug",
+  epic: "Epic",
+  subtask: "Sub-Task",
 };
 
 export const ISSUE_TYPE_ORDER: IssueType[] = [
@@ -199,8 +222,10 @@ export function IssueTypeIcon({
   size?: number;
   title?: string;
 }) {
+  const t = useT();
   const meta = ISSUE_TYPE_META[type];
   const Icon = meta.Icon;
+  const label = t(ISSUE_TYPE_I18N[type]);
   return (
     <span
       className="inline-flex items-center justify-center rounded-[3px] shrink-0"
@@ -209,8 +234,8 @@ export function IssueTypeIcon({
         width: size,
         height: size,
       }}
-      title={title ?? meta.label}
-      aria-label={meta.label}
+      title={title ?? label}
+      aria-label={label}
     >
       <Icon size={Math.round(size * 0.7)} className="text-white" />
     </span>
@@ -251,17 +276,19 @@ export function PriorityBadge({
   priority: IssuePriority;
   showLabel?: boolean;
 }) {
+  const t = useT();
   const Icon = PRIORITY_ICON[priority];
+  const label = t(PRIORITY_I18N[priority]);
   return (
     <span
       className="inline-flex items-center gap-1"
       style={{ color: PRIORITY_COLOR[priority] }}
-      title={PRIORITY_LABEL[priority]}
+      title={label}
     >
       <Icon size={12} />
       {showLabel && (
         <span className="text-[10.5px] font-medium">
-          {PRIORITY_LABEL[priority]}
+          {label}
         </span>
       )}
     </span>
@@ -284,21 +311,30 @@ export function StateBadge({ state }: { state: IssueState }) {
 }
 
 export function CycleStatusPill({ cycle }: { cycle: CycleSummary }) {
+  const t = useT();
   const map: Record<
     CycleSummary["status"],
-    { bg: string; fg: string; label: string }
+    { bg: string; fg: string; labelKey: keyof Messages }
   > = {
-    current: { bg: "rgba(16,185,129,0.18)", fg: "#10b981", label: "Aktiv" },
-    upcoming: { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6", label: "Geplant" },
+    current: {
+      bg: "rgba(16,185,129,0.18)",
+      fg: "#10b981",
+      labelKey: "projects.cycle.current",
+    },
+    upcoming: {
+      bg: "rgba(59,130,246,0.18)",
+      fg: "#3b82f6",
+      labelKey: "projects.cycle.upcoming",
+    },
     completed: {
       bg: "rgba(100,116,139,0.18)",
       fg: "#94a3b8",
-      label: "Abgeschlossen",
+      labelKey: "projects.cycle.completed",
     },
     draft: {
       bg: "rgba(234,179,8,0.18)",
       fg: "#eab308",
-      label: "Entwurf",
+      labelKey: "projects.cycle.draft",
     },
   };
   const tone = map[cycle.status];
@@ -307,7 +343,7 @@ export function CycleStatusPill({ cycle }: { cycle: CycleSummary }) {
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold uppercase tracking-wide"
       style={{ background: tone.bg, color: tone.fg }}
     >
-      {tone.label}
+      {t(tone.labelKey)}
     </span>
   );
 }
@@ -322,12 +358,13 @@ export function CycleStatusPill({ cycle }: { cycle: CycleSummary }) {
  * there's a consistent place for the eye to land.
  */
 export function StoryPointsPill({ points }: { points: number | null }) {
+  const t = useT();
   if (points == null) return null;
   return (
     <span
       className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold text-white tabular-nums"
       style={{ background: "#16a34a" }}
-      title={`${points} Story Points`}
+      title={t("projects.card.pointsTooltip").replace("{n}", String(points))}
     >
       {points}
     </span>
@@ -398,6 +435,9 @@ export function IssueCard({
   /** Direkte Kinder (Plane parent → child). */
   subIssueCount?: number;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
   const assignedMembers = issue.assignees
     .map((id) => members.get(id))
     .filter((m): m is WorkspaceMember => Boolean(m));
@@ -473,7 +513,7 @@ export function IssueCard({
         <IssueTypeIcon
           type={issueType}
           size={isCompact ? 13 : 14}
-          title={`${ISSUE_TYPE_META[issueType].label} · ${identifier}-${issue.sequenceId}`}
+          title={`${t(ISSUE_TYPE_I18N[issueType])} · ${identifier}-${issue.sequenceId}`}
         />
         <span className="font-mono text-[10.5px] text-text-tertiary">
           {identifier}-{issue.sequenceId}
@@ -484,9 +524,12 @@ export function IssueCard({
             className={`inline-flex items-center gap-1 text-[10px] ${
               overdue ? "text-red-400 font-semibold" : "text-text-tertiary"
             }`}
-            title={`Fällig: ${new Date(issue.targetDate).toLocaleDateString("de-DE")}`}
+            title={t("projects.card.due").replace(
+              "{date}",
+              new Date(issue.targetDate).toLocaleDateString(localeFmt),
+            )}
           >
-            {new Date(issue.targetDate).toLocaleDateString("de-DE", {
+            {new Date(issue.targetDate).toLocaleDateString(localeFmt, {
               day: "2-digit",
               month: "short",
             })}
@@ -499,7 +542,10 @@ export function IssueCard({
           {subIssueCount > 0 && (
             <span
               className="inline-flex items-center gap-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold tabular-nums bg-bg-overlay border border-stroke-1 text-text-secondary"
-              title={`${subIssueCount} Sub‑Issues`}
+              title={t("projects.card.subIssues").replace(
+                "{n}",
+                String(subIssueCount),
+              )}
             >
               <GitBranch size={10} aria-hidden />
               {subIssueCount}
@@ -517,7 +563,7 @@ export function IssueCard({
             {assignedMembers.length === 0 && (
               <span
                 className="inline-block w-[18px] h-[18px] rounded-full border border-dashed border-stroke-2"
-                title="Niemand zugewiesen"
+                title={t("projects.card.unassigned")}
               />
             )}
           </span>

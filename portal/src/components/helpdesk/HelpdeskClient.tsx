@@ -71,6 +71,7 @@ import {
 import { groupByDate, shortTime } from "@/components/ui/datetime";
 import { clickToCallUrl } from "@/lib/calls/click-to-call";
 import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 import type { Messages } from "@/lib/i18n/messages";
 import type { WorkspaceId } from "@/lib/workspaces";
 import type {
@@ -118,6 +119,7 @@ function saveCanned(workspaceId: string, list: CannedResponse[]): void {
 
 function relativeTime(
   iso: string | null,
+  localeFmt: string,
   tr: (key: keyof Messages) => string,
 ): string {
   if (!iso) return "";
@@ -127,7 +129,11 @@ function relativeTime(
   if (diff < 3600) return `${Math.floor(diff / 60)} ${tr("helpdesk.time.mins")}`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} ${tr("helpdesk.time.hours")}`;
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} ${tr("helpdesk.time.days")}`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString(localeFmt, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function channelIcon(type: string | null | undefined, size = 11) {
@@ -200,7 +206,8 @@ export function HelpdeskClient({
   workspaceName: string;
   accent: string;
 }) {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   /** Threads `ws=<workspaceId>` through every helpdesk call so the server
    * resolves the right Zammad tenant and never leaks tickets across portals. */
   const apiUrl = useCallback(
@@ -531,7 +538,7 @@ export function HelpdeskClient({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              body: `<p><strong>Lösung / Abschluss (intern)</strong></p><p>${esc.replace(/\n/g, "<br/>")}</p>`,
+              body: `<p><strong>${t("helpdesk.composer.solutionHtmlHeading")}</strong></p><p>${esc.replace(/\n/g, "<br/>")}</p>`,
               type: "note",
               internal: true,
             }),
@@ -548,7 +555,7 @@ export function HelpdeskClient({
         alert(`${t("helpdesk.error.send")}: ${e instanceof Error ? e.message : e}`);
       }
     },
-    [detail, apiUrl, loadDetail, onPatchTicket],
+    [detail, apiUrl, loadDetail, onPatchTicket, t],
   );
 
   /* ── Tags ─────────────────────────────────────────────────────── */
@@ -749,7 +756,7 @@ export function HelpdeskClient({
                 setShowNew(true);
                 setTimeout(() => newTitleRef.current?.focus(), 30);
               }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px]"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11.5px] max-md:min-h-[44px] max-md:px-3 touch-manipulation"
               style={{ background: accent }}
               title={t("helpdesk.newTicket")}
             >
@@ -773,7 +780,7 @@ export function HelpdeskClient({
               className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
             />
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 min-w-0">
             <ScopeButton
               label={t("helpdesk.scope.all")}
               count={scopeCounts.all}
@@ -800,7 +807,7 @@ export function HelpdeskClient({
               type="button"
               title={t("helpdesk.slaRisk.title")}
               onClick={() => setSlaRiskOnly((v) => !v)}
-              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-medium transition-colors ${
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-medium transition-colors touch-manipulation max-md:min-h-[44px] max-md:px-2.5 ${
                 slaRiskOnly
                   ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
                   : "border-stroke-1 text-text-tertiary hover:border-stroke-2 hover:text-text-secondary"
@@ -829,7 +836,7 @@ export function HelpdeskClient({
               accent={accent}
             />
           ) : null}
-          <div className="flex items-center gap-2 border-b border-stroke-1 -mx-3 px-3">
+          <div className="flex flex-wrap items-center gap-2 border-b border-stroke-1 -mx-3 px-3 touch-manipulation">
             <StateTab
               label={t("helpdesk.filter.open")}
               count={counts.open}
@@ -945,10 +952,21 @@ export function HelpdeskClient({
 
   /* ── Pane 2 — conversation ──────────────────────────────────── */
 
+  const dateGroupLabels = useMemo(
+    () => ({
+      unknown: t("common.dateUnknown"),
+      today: t("common.today"),
+      yesterday: t("common.yesterday"),
+    }),
+    [t],
+  );
+
   const grouped = useMemo(
     () =>
-      detail ? groupByDate(detail.articles, (a) => a.createdAt) : [],
-    [detail],
+      detail
+        ? groupByDate(detail.articles, (a) => a.createdAt, localeFmt, dateGroupLabels)
+        : [],
+    [detail, localeFmt, dateGroupLabels],
   );
 
   const secondary = (
@@ -957,19 +975,21 @@ export function HelpdeskClient({
         title={detail ? detail.title : t("helpdesk.conversation.title")}
         subtitle={
           detail
-            ? `#${detail.number} · ${detail.articles.length} Beiträge`
+            ? t("helpdesk.conversation.articlesCount")
+                .replace("{number}", String(detail.number))
+                .replace("{count}", String(detail.articles.length))
             : t("helpdesk.conversation.pickTicket")
         }
         accent={accent}
         right={
           detail && meta ? (
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1 justify-end min-w-0 max-md:[&>button]:min-h-[44px] max-md:[&>button]:inline-flex max-md:[&>button]:items-center touch-manipulation">
               <SlaIndicator ticket={detail} />
               <button
                 type="button"
                 onClick={() => void onMintPortalLink()}
                 disabled={portalLinkBusy}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] disabled:opacity-60"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] disabled:opacity-60 max-md:min-h-[44px] touch-manipulation"
                 title={t("helpdesk.portalLink.mintTitle")}
               >
                 {portalLinkBusy ? (
@@ -1106,7 +1126,7 @@ export function HelpdeskClient({
             {detail.note && (
               <section>
                 <h3 className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mb-1.5">
-                  Interne Notiz zur Kundenkarte
+                  {t("helpdesk.detail.customerInternalNoteHeading")}
                 </h3>
                 <p className="text-[11.5px] text-text-secondary whitespace-pre-wrap rounded-md bg-amber-500/5 border border-amber-500/30 p-2">
                   {detail.note}
@@ -1116,7 +1136,10 @@ export function HelpdeskClient({
             {customerTickets.length > 1 && (
               <section>
                 <h3 className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mb-1.5">
-                  Verlauf · {customerTickets.length} Tickets
+                  {t("helpdesk.detail.historyTickets").replace(
+                    "{count}",
+                    String(customerTickets.length),
+                  )}
                 </h3>
                 <ul className="space-y-1">
                   {customerTickets.slice(0, 8).map((t) => (
@@ -1147,11 +1170,11 @@ export function HelpdeskClient({
         }
         rightSidebar={
           <>
-            <SidebarSection title="Status & Zuordnung">
+            <SidebarSection title={t("helpdesk.sidebar.statusAssignment")}>
               <PropertyList
                 rows={[
                   {
-                    label: "Status",
+                    label: t("common.status"),
                     value: (
                       <ColoredSelect
                         value={detail.stateId}
@@ -1165,7 +1188,7 @@ export function HelpdeskClient({
                     ),
                   },
                   {
-                    label: "Priorität",
+                    label: t("common.priority"),
                     value: (
                       <select
                         value={detail.priorityId}
@@ -1185,7 +1208,7 @@ export function HelpdeskClient({
                     ),
                   },
                   {
-                    label: "Gruppe",
+                    label: t("helpdesk.group"),
                     value: (
                       <select
                         value={detail.groupId}
@@ -1205,7 +1228,7 @@ export function HelpdeskClient({
                     ),
                   },
                   {
-                    label: "Bearbeiter",
+                    label: t("helpdesk.field.assignee"),
                     value: (
                       <OwnerPicker
                         agents={meta?.agents ?? []}
@@ -1236,21 +1259,29 @@ export function HelpdeskClient({
                 <SlaPanel ticket={detail} />
               </SidebarSection>
             )}
-            <SidebarSection title="Aktivität">
+            <SidebarSection title={t("common.activity")}>
               <ul className="space-y-1.5 text-[11px] text-text-tertiary">
                 <li className="flex items-start gap-1.5">
                   <Plus size={11} className="mt-[1px] text-text-quaternary shrink-0" />
-                  Erstellt {new Date(detail.createdAt).toLocaleString("de-DE")}
+                  {t("helpdesk.detail.createdAt").replace(
+                    "{datetime}",
+                    new Date(detail.createdAt).toLocaleString(localeFmt),
+                  )}
                 </li>
                 <li className="flex items-start gap-1.5">
                   <RefreshCw size={11} className="mt-[1px] text-text-quaternary shrink-0" />
-                  Geändert {new Date(detail.updatedAt).toLocaleString("de-DE")}
+                  {t("helpdesk.detail.updatedAt").replace(
+                    "{datetime}",
+                    new Date(detail.updatedAt).toLocaleString(localeFmt),
+                  )}
                 </li>
                 {detail.lastContactAt && (
                   <li className="flex items-start gap-1.5">
                     <Mail size={11} className="mt-[1px] text-text-quaternary shrink-0" />
-                    Letzter Kontakt{" "}
-                    {new Date(detail.lastContactAt).toLocaleString("de-DE")}
+                    {t("helpdesk.detail.lastContactAt").replace(
+                      "{datetime}",
+                      new Date(detail.lastContactAt).toLocaleString(localeFmt),
+                    )}
                   </li>
                 )}
               </ul>
@@ -1275,10 +1306,10 @@ export function HelpdeskClient({
         type="button"
         onClick={() => setShowShortcuts(true)}
         className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
-        title="Tastenkürzel anzeigen (?)"
+        title={t("helpdesk.header.shortcutsTooltip")}
       >
         <Keyboard size={11} />
-        Shortcuts
+        {t("helpdesk.header.shortcutsLabel")}
       </button>
       <a
         href={
@@ -1290,7 +1321,7 @@ export function HelpdeskClient({
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px]"
       >
         <ExternalLink size={11} />
-        In Zammad öffnen
+        {t("helpdesk.openInZammad")}
       </a>
     </header>
   );
@@ -1442,7 +1473,7 @@ function ScopeButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md border text-[10.5px] disabled:opacity-50 ${
+      className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md border text-[10.5px] touch-manipulation max-md:min-h-[44px] disabled:opacity-50 ${
         active
           ? "border-transparent text-white"
           : "border-stroke-1 text-text-tertiary hover:border-stroke-2"
@@ -1478,7 +1509,7 @@ function StateTab({
     <button
       type="button"
       onClick={onClick}
-      className={`relative px-1 py-2 text-[11px] inline-flex items-center gap-1.5 transition-colors ${
+      className={`relative px-2 py-2 max-md:min-h-[44px] text-[11px] inline-flex items-center gap-1.5 transition-colors touch-manipulation ${
         active
           ? "text-text-primary font-semibold"
           : "text-text-tertiary hover:text-text-secondary"
@@ -1532,7 +1563,7 @@ function TicketCardList({
     );
   }
   return (
-    <ul className="flex-1 min-h-0 overflow-auto">
+    <ul className="flex-1 min-h-0 overflow-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] touch-manipulation">
       {tickets.map((t) => (
         <TicketCard
           key={t.id}
@@ -1567,6 +1598,8 @@ function TicketCard({
   bulkActive: boolean;
 }) {
   const tr = useT();
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   // Heuristic "unread": last contact is from a customer (the article count
   // grew since you last touched it). Zammad doesn't expose per-user read state
   // via REST, so we approximate with `articleCount > 1` AND state === "new".
@@ -1612,7 +1645,7 @@ function TicketCard({
                 {t.title || tr("helpdesk.card.noTitle")}
               </p>
               <span className="text-[10px] text-text-quaternary shrink-0">
-                {relativeTime(t.lastContactAt ?? t.updatedAt, tr)}
+                {relativeTime(t.lastContactAt ?? t.updatedAt, localeFmt, tr)}
               </span>
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
@@ -1670,6 +1703,8 @@ function ArticleBubble({
   accent: string;
 }) {
   const tr = useT();
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const isCustomer = /customer/i.test(article.senderName);
   const isInternal = article.internal;
   const chLabel = channelLabel(article.type, tr);
@@ -1690,9 +1725,9 @@ function ArticleBubble({
           </div>
           <time
             className="text-[10px] text-text-quaternary shrink-0"
-            title={new Date(article.createdAt).toLocaleString("de-DE")}
+            title={new Date(article.createdAt).toLocaleString(localeFmt)}
           >
-            {shortTime(article.createdAt)}
+            {shortTime(article.createdAt, localeFmt)}
           </time>
         </header>
         <ArticleBody html={article.bodyHtml} accent={accent} />
@@ -1734,8 +1769,8 @@ function ArticleBubble({
           <span className="font-semibold text-text-tertiary">
             {article.fromName || article.senderName || tr("helpdesk.customer.unknown")}
           </span>
-          <time title={new Date(article.createdAt).toLocaleString("de-DE")}>
-            {shortTime(article.createdAt)}
+          <time title={new Date(article.createdAt).toLocaleString(localeFmt)}>
+            {shortTime(article.createdAt, localeFmt)}
           </time>
           {isCustomer && (
             <span
@@ -2037,8 +2072,8 @@ function Composer({
   };
 
   return (
-    <div className="shrink-0 border-t border-stroke-1 bg-bg-elevated">
-      <div className="px-3 pt-2 flex items-center gap-1">
+    <div className="shrink-0 border-t border-stroke-1 bg-bg-elevated pb-[max(0.35rem,env(safe-area-inset-bottom))] touch-manipulation">
+      <div className="px-3 pt-2 flex flex-wrap items-center gap-1">
         <ComposerTab
           label={tr("helpdesk.composer.answerTab")}
           icon={<Mail size={11} />}
@@ -2053,7 +2088,7 @@ function Composer({
           onClick={() => setTab("note")}
           accent={"#f59e0b"}
         />
-        <span className="ml-auto text-[10px] text-text-quaternary">
+        <span className="ml-auto hidden md:inline text-[10px] text-text-quaternary shrink-0">
           {tr("helpdesk.composer.sendShortcut")}
         </span>
       </div>
@@ -2072,8 +2107,8 @@ function Composer({
               ? tr("helpdesk.composer.placeholderNote")
               : tr("helpdesk.composer.placeholderReply")
           }
-          rows={3}
-          className="w-full bg-transparent px-2.5 py-2 text-[12px] outline-none resize-y"
+          rows={4}
+          className="w-full bg-transparent px-2.5 py-2 text-[12px] outline-none resize-y min-h-[7rem] max-md:text-[13px]"
         />
         {showCloseSolution && (
           <div className="px-2.5 pb-2 border-t border-stroke-1 pt-2 space-y-1">
@@ -2089,11 +2124,11 @@ function Composer({
             />
           </div>
         )}
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-stroke-1">
-          <div className="flex items-center gap-1 relative">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2 px-2 py-2 border-t border-stroke-1">
+          <div className="relative flex flex-wrap items-center gap-1 min-w-0">
             <button
               type="button"
-              className="inline-flex items-center gap-1 text-[10.5px] text-text-tertiary hover:text-text-primary"
+              className="inline-flex items-center justify-center gap-1 px-2 py-2 max-md:min-h-[40px] rounded text-[10.5px] text-text-tertiary hover:text-text-primary touch-manipulation"
               title={tr("helpdesk.composer.attachmentSoon")}
               disabled
             >
@@ -2102,7 +2137,7 @@ function Composer({
             <button
               type="button"
               onClick={() => setShowCanned((v) => !v)}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] hover:bg-bg-overlay ${
+              className={`inline-flex items-center justify-center gap-1 px-2 py-2 max-md:min-h-[40px] rounded text-[10.5px] hover:bg-bg-overlay touch-manipulation ${
                 showCanned ? "text-text-primary bg-bg-overlay" : "text-text-tertiary"
               }`}
               title={tr("helpdesk.composer.templatesTitle")}
@@ -2121,16 +2156,16 @@ function Composer({
                 if (next && aiVariants.length === 0) void aiGenerate();
               }}
               disabled={!aiAvailable}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] hover:bg-bg-overlay disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`inline-flex items-center justify-center gap-1 px-2 py-2 max-md:min-h-[40px] rounded text-[10.5px] hover:bg-bg-overlay disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation ${
                 aiOpen ? "text-text-primary bg-bg-overlay" : "text-text-tertiary"
               }`}
               title={
                 aiAvailable
-                  ? "AI-Antwortvorschläge mit Firmen-Wissensbasis"
-                  : "Kein Kunden-Beitrag — AI-Antwort nur im Antwort-Tab"
+                  ? tr("helpdesk.ai.tooltipWithKb")
+                  : tr("helpdesk.ai.tooltipReplyOnly")
               }
             >
-              <Sparkles size={11} /> AI-Antwort
+              <Sparkles size={11} /> {tr("helpdesk.ai.replyToggle")}
             </button>
             {showCanned && (
               <CannedResponsesPopover
@@ -2144,14 +2179,14 @@ function Composer({
               />
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:items-center sm:justify-end shrink-0">
             {!isNote && (
-              <label className="inline-flex items-center gap-1.5 text-[10.5px] text-text-tertiary">
-                {tr("helpdesk.composer.statusAfterSend")}
+              <label className="flex flex-col gap-1 text-[10.5px] text-text-tertiary sm:inline-flex sm:flex-row sm:items-center sm:gap-1.5 min-w-0">
+                <span className="shrink-0">{tr("helpdesk.composer.statusAfterSend")}</span>
                 <select
                   value={nextStateId}
                   onChange={(e) => setNextStateId(parseInt(e.target.value, 10))}
-                  className="bg-bg-base border border-stroke-1 rounded px-1.5 py-0.5 text-[11px] outline-none focus:border-stroke-2"
+                  className="bg-bg-base border border-stroke-1 rounded px-2 py-2 sm:py-0.5 text-[11px] outline-none focus:border-stroke-2 w-full sm:w-auto max-md:min-h-[44px]"
                 >
                   {states
                     .filter((s) => s.active)
@@ -2167,7 +2202,7 @@ function Composer({
               type="button"
               onClick={() => void submit()}
               disabled={!body.trim()}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-white text-[11.5px] disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1 px-3 py-2 max-md:min-h-[44px] rounded-md text-white text-[11.5px] disabled:opacity-50 touch-manipulation w-full sm:w-auto"
               style={{ background: isNote ? "#f59e0b" : accent }}
             >
               <Send size={11} />
@@ -2178,37 +2213,39 @@ function Composer({
       </div>
       {aiOpen && aiAvailable && (
         <div className="border-t border-info/30 bg-info/5">
-          <div className="px-3 py-2 flex items-center gap-2 border-b border-info/20">
-            <Sparkles size={11} className="text-info" />
-            <span className="text-[11.5px] font-medium">
-              AI-Antwortvorschläge
+          <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-info/20">
+            <Sparkles size={11} className="text-info shrink-0" />
+            <span className="text-[11.5px] font-medium min-w-0">
+              {tr("mail.aiReply.title")}
             </span>
             {aiKnowledgeSections.length > 0 && (
               <span
-                className="text-[10px] text-text-tertiary truncate max-w-[280px]"
-                title={`Wissensbasis: ${aiKnowledgeSections.join(", ")}`}
+                className="text-[10px] text-text-tertiary truncate max-w-[min(100%,280px)]"
+                title={`${tr("mail.aiReply.knowledgeTooltip")} ${aiKnowledgeSections.join(", ")}`}
               >
-                · {aiKnowledgeSections.length} Wissens-Abschnitt
-                {aiKnowledgeSections.length === 1 ? "" : "e"} genutzt
+                {aiKnowledgeSections.length === 1
+                  ? ` · ${tr("mail.aiReply.knowledgeCountOne")}`
+                  : ` · ${tr("mail.aiReply.knowledgeCountMany").replace("{n}", String(aiKnowledgeSections.length))}`}
               </span>
             )}
             <button
               type="button"
               onClick={() => setAiOpen(false)}
-              className="ml-auto p-1 rounded-md hover:bg-bg-overlay text-text-tertiary"
-              aria-label="Schliessen"
+              className="ml-auto min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center p-2 rounded-md hover:bg-bg-overlay text-text-tertiary touch-manipulation"
+              aria-label={tr("helpdesk.ai.closeAria")}
             >
               <XIcon size={11} />
             </button>
           </div>
-          <div className="px-3 py-2 flex items-center gap-2 border-b border-info/20">
+          <div className="px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center border-b border-info/20">
             <input
               type="text"
               value={aiIntent}
               onChange={(e) => setAiIntent(e.target.value)}
-              placeholder={"Optional: Steuerung („Termin Mi 14:00 bestätigen“)"}
-              className="flex-1 px-2 py-1 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[11.5px] outline-none"
+              placeholder={tr("mail.aiReply.intentPlaceholder")}
+              className="flex-1 min-w-0 px-2 py-2 max-md:min-h-[44px] rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[11.5px] outline-none"
             />
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
             <select
               value={aiTone}
               onChange={(e) =>
@@ -2220,40 +2257,43 @@ function Composer({
                     | "empathisch",
                 )
               }
-              className="px-1.5 py-1 rounded-md bg-bg-base border border-stroke-1 text-[11.5px] outline-none"
+              className="px-2 py-2 max-md:min-h-[44px] rounded-md bg-bg-base border border-stroke-1 text-[11.5px] outline-none touch-manipulation"
             >
-              <option value="freundlich">Freundlich</option>
-              <option value="formell">Formell</option>
-              <option value="kurz">Kurz</option>
-              <option value="empathisch">Empathisch</option>
+              <option value="freundlich">{tr("mail.compose.tone.friendly")}</option>
+              <option value="formell">{tr("mail.compose.tone.formal")}</option>
+              <option value="kurz">{tr("mail.compose.tone.short")}</option>
+              <option value="empathisch">{tr("mail.aiReply.tone.empathic")}</option>
             </select>
             <button
               type="button"
               onClick={() => void aiGenerate()}
               disabled={aiBusy}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-info hover:bg-info/90 text-white text-[11px] disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1 px-3 py-2 max-md:min-h-[44px] rounded-md bg-info hover:bg-info/90 text-white text-[11px] disabled:opacity-50 touch-manipulation"
             >
               {aiBusy ? (
                 <Loader2 size={10} className="animate-spin" />
               ) : (
                 <RefreshCw size={10} />
               )}
-              {aiVariants.length === 0 ? "Generieren" : "Neu"}
+              {aiVariants.length === 0
+                ? tr("mail.aiReply.generate")
+                : tr("mail.aiReply.regenerate")}
             </button>
+            </div>
           </div>
           {aiError && (
             <div className="mx-3 my-2 rounded-md border border-red-500/40 bg-red-500/10 text-red-400 text-[11px] p-2">
               {aiError}
               {/not.?configured/i.test(aiError) && (
                 <p className="mt-0.5 text-text-tertiary">
-                  Tipp:{" "}
+                  {tr("mail.aiReply.notConfiguredIntro")}
                   <Link
                     href={`/${workspaceId}/ai-knowledge`}
                     className="underline text-info"
                   >
-                    Wissensbasis befüllen
+                    {tr("mail.aiReply.knowledgeBase")}
                   </Link>
-                  .
+                  {tr("mail.aiReply.notConfiguredOutro")}
                 </p>
               )}
             </div>
@@ -2268,7 +2308,7 @@ function Composer({
           {aiBusy && aiVariants.length === 0 && (
             <div className="px-3 py-4 text-[11.5px] text-text-tertiary flex items-center gap-2">
               <Loader2 size={12} className="animate-spin" />
-              Generiere Vorschläge mit Firmen-Wissensbasis …
+              {tr("mail.aiReply.generating")}
             </div>
           )}
           <div className="max-h-[280px] overflow-y-auto px-3 pb-3 space-y-2">
@@ -2285,9 +2325,9 @@ function Composer({
                   <button
                     type="button"
                     onClick={() => aiPick(v)}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-info hover:bg-info/90 text-white text-[10.5px] font-medium"
+                    className="inline-flex items-center justify-center gap-1 px-2 py-2 max-md:min-h-[40px] rounded-md bg-info hover:bg-info/90 text-white text-[10.5px] font-medium touch-manipulation shrink-0"
                   >
-                    Übernehmen
+                    {tr("mail.aiReply.apply")}
                   </button>
                 </header>
                 <pre className="px-2.5 py-2 text-[11.5px] whitespace-pre-wrap font-sans leading-relaxed text-text-primary">
@@ -2330,7 +2370,7 @@ function ComposerTab({
     <button
       type="button"
       onClick={onClick}
-      className={`relative inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-t-md border-x border-t ${
+      className={`relative inline-flex items-center gap-1 px-3 py-2 md:px-2 md:py-1 min-h-[44px] md:min-h-0 text-[11px] rounded-t-md border-x border-t touch-manipulation ${
         active
           ? "border-stroke-1 bg-bg-base font-semibold text-text-primary -mb-px"
           : "border-transparent text-text-tertiary hover:text-text-secondary"
@@ -2388,7 +2428,7 @@ function CustomerCard({
           <button
             type="button"
             onClick={onOpenProfile}
-            className="text-left text-[13px] font-semibold text-text-primary truncate hover:text-blue-400 inline-flex items-center gap-1.5"
+            className="text-left text-[13px] font-semibold text-text-primary truncate hover:text-blue-400 inline-flex items-center gap-1.5 max-md:min-h-[44px] max-md:w-full max-md:py-1 rounded-md max-md:hover:bg-bg-overlay touch-manipulation"
             title={tr("helpdesk.customer.profileTitle")}
           >
             <UserCircle2 size={12} className="text-text-quaternary" />
@@ -2412,10 +2452,10 @@ function CustomerCard({
           </div>
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-1.5">
+      <div className="mt-3 flex gap-2 overflow-x-auto overscroll-x-contain touch-pan-x [-webkit-overflow-scrolling:touch] pb-1 -mx-1 px-1 flex-nowrap md:flex-wrap md:overflow-visible">
         <a
           href={callHref}
-          className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary"
+          className="inline-flex items-center justify-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-3 py-2 text-[11px] text-text-secondary shrink-0 max-md:min-h-[44px] touch-manipulation"
           title={tr("helpdesk.customer.videoCall")}
         >
           <Video size={11} />
@@ -2424,7 +2464,7 @@ function CustomerCard({
         {email && (
           <a
             href={`mailto:${email}`}
-            className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary"
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-3 py-2 text-[11px] text-text-secondary shrink-0 max-md:min-h-[44px] touch-manipulation"
           >
             <Mail size={11} />
             {tr("helpdesk.customer.mailAction")}
@@ -2435,7 +2475,7 @@ function CustomerCard({
             href={crmPersonUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary"
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-3 py-2 text-[11px] text-text-secondary shrink-0 max-md:min-h-[44px] touch-manipulation"
             title={tr("helpdesk.customer.crmTitle")}
           >
             <ExternalLink size={11} />
@@ -2446,7 +2486,7 @@ function CustomerCard({
           <button
             type="button"
             onClick={onOpenProfile}
-            className="inline-flex items-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-2 py-1 text-[11px] text-text-secondary ml-auto"
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-stroke-1 bg-bg-base hover:bg-bg-overlay px-3 py-2 text-[11px] text-text-secondary shrink-0 max-md:min-h-[44px] touch-manipulation md:ml-auto"
             title={tr("helpdesk.customer.profile360")}
           >
             <Users size={11} />
@@ -2613,7 +2653,7 @@ function SlaIndicator({
 }) {
   const tr = useT();
   const { locale } = useLocale();
-  const locStr = locale === "en" ? "en-US" : "de-DE";
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   // The "next" relevant deadline is whichever escalates first.
   const candidates: { label: string; iso: string | null }[] = [
     { label: tr("helpdesk.sla.firstResponse"), iso: ticket.firstResponseEscalationAt },
@@ -2637,7 +2677,7 @@ function SlaIndicator({
         compact ? "px-1.5 py-[1px] text-[9.5px]" : "px-2 py-0.5 text-[10.5px]"
       }`}
       style={{ background: tone.bg, color: tone.fg, borderColor: tone.bd }}
-      title={`${next.label} ${tr("helpdesk.sla.due")} ${new Date(next.iso!).toLocaleString(locStr)}`}
+      title={`${next.label} ${tr("helpdesk.sla.due")} ${new Date(next.iso!).toLocaleString(localeFmt)}`}
     >
       {state === "breached" ? (
         <AlertCircle size={compact ? 9 : 11} />
@@ -2653,7 +2693,7 @@ function SlaIndicator({
 function SlaPanel({ ticket }: { ticket: TicketSummary }) {
   const tr = useT();
   const { locale } = useLocale();
-  const locStr = locale === "en" ? "en-US" : "de-DE";
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const rows: { label: string; iso: string | null; state: SlaState }[] = [];
   if (ticket.firstResponseEscalationAt)
     rows.push({
@@ -2691,7 +2731,7 @@ function SlaPanel({ ticket }: { ticket: TicketSummary }) {
                   ? "text-amber-400"
                   : "text-emerald-400"
             }`}
-            title={r.iso ? new Date(r.iso).toLocaleString(locStr) : ""}
+            title={r.iso ? new Date(r.iso).toLocaleString(localeFmt) : ""}
           >
             {formatRemaining(r.iso)}
           </span>
@@ -2725,6 +2765,7 @@ function TagsRow({
   apiUrl: ApiUrlFn;
   ticketId: number;
 }) {
+  const tr = useT();
   // Compact horizontal row — only renders when tags exist or user wants to add.
   const [adding, setAdding] = useState(false);
   if (!tags.length && !adding) {
@@ -2735,7 +2776,7 @@ function TagsRow({
         className="inline-flex items-center gap-1 mt-1 text-[10.5px] text-text-tertiary hover:text-text-primary"
       >
         <TagIcon size={11} />
-        Tag hinzufügen
+        {tr("helpdesk.tags.add")}
       </button>
     );
   }
@@ -2804,6 +2845,7 @@ function TagPill({
   onRemove: () => void;
   accent: string;
 }) {
+  const tr = useT();
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px]"
@@ -2819,7 +2861,7 @@ function TagPill({
         type="button"
         onClick={onRemove}
         className="opacity-60 hover:opacity-100"
-        title="Tag entfernen"
+        title={tr("helpdesk.tags.remove")}
       >
         <XIcon size={10} />
       </button>
@@ -2953,6 +2995,7 @@ function MacrosMenu({
   onApply: (id: number) => Promise<void> | void;
   accent: string;
 }) {
+  const tr = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -2972,7 +3015,7 @@ function MacrosMenu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary text-[11px]"
-        title="Macro anwenden"
+        title={tr("helpdesk.macro.menuTitle")}
       >
         <Zap size={11} style={{ color: accent }} />
         Macros
@@ -2996,7 +3039,8 @@ function MacrosMenu({
                     <span className="block text-text-primary truncate">{m.name}</span>
                     {m.affects.length > 0 && (
                       <span className="block text-[9.5px] text-text-tertiary">
-                        Setzt: {m.affects.join(", ")}
+                        {tr("helpdesk.macro.setsPrefix")}{" "}
+                        {m.affects.join(", ")}
                       </span>
                     )}
                   </span>
@@ -3033,6 +3077,7 @@ function BulkActionsBar({
   onPatch: (patch: Record<string, number>) => Promise<void> | void;
   accent: string;
 }) {
+  const tr = useT();
   const [stateId, setStateId] = useState<number | "">("");
   const [priorityId, setPriorityId] = useState<number | "">("");
   const [groupId, setGroupId] = useState<number | "">("");
@@ -3059,11 +3104,11 @@ function BulkActionsBar({
 
   return (
     <div
-      className="border-b border-stroke-1 bg-bg-overlay/80 backdrop-blur px-3 py-2 flex items-center gap-2 flex-wrap"
+      className="border-b border-stroke-1 bg-bg-overlay/80 backdrop-blur px-3 py-2 flex items-center gap-2 flex-wrap touch-manipulation max-md:[&_select]:min-h-[40px]"
       style={{ boxShadow: `inset 3px 0 0 0 ${accent}` }}
     >
       <span className="text-[11.5px] font-semibold text-text-primary">
-        {count} ausgewählt
+        {tr("helpdesk.bulk.selectedCount").replace("{count}", String(count))}
       </span>
       {count < totalVisible && (
         <button
@@ -3071,7 +3116,10 @@ function BulkActionsBar({
           onClick={onSelectAll}
           className="text-[10.5px] text-text-tertiary hover:text-text-primary underline"
         >
-          Alle ({totalVisible}) auswählen
+          {tr("helpdesk.bulk.selectAllVisible").replace(
+            "{total}",
+            String(totalVisible),
+          )}
         </button>
       )}
       <button
@@ -3079,7 +3127,7 @@ function BulkActionsBar({
         onClick={onClear}
         className="text-[10.5px] text-text-tertiary hover:text-text-primary"
       >
-        Auswahl löschen
+        {tr("helpdesk.bulk.clearSelection")}
       </button>
       <span className="flex-1" />
       <select
@@ -3090,7 +3138,7 @@ function BulkActionsBar({
         disabled={busy}
         className="bg-bg-base border border-stroke-1 rounded px-1.5 py-0.5 text-[11px]"
       >
-        <option value="">Status…</option>
+        <option value="">{tr("helpdesk.bulk.optionStatus")}</option>
         {meta.states.filter((s) => s.active).map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
@@ -3105,7 +3153,7 @@ function BulkActionsBar({
         disabled={busy}
         className="bg-bg-base border border-stroke-1 rounded px-1.5 py-0.5 text-[11px]"
       >
-        <option value="">Priorität…</option>
+        <option value="">{tr("helpdesk.bulk.optionPriority")}</option>
         {meta.priorities.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
@@ -3120,7 +3168,7 @@ function BulkActionsBar({
         disabled={busy}
         className="bg-bg-base border border-stroke-1 rounded px-1.5 py-0.5 text-[11px]"
       >
-        <option value="">Gruppe…</option>
+        <option value="">{tr("helpdesk.bulk.optionGroup")}</option>
         {meta.groups.filter((g) => g.active).map((g) => (
           <option key={g.id} value={g.id}>
             {g.name}
@@ -3135,8 +3183,8 @@ function BulkActionsBar({
         disabled={busy}
         className="bg-bg-base border border-stroke-1 rounded px-1.5 py-0.5 text-[11px]"
       >
-        <option value="">Bearbeiter…</option>
-        <option value={1}>— unzuweisen —</option>
+        <option value="">{tr("helpdesk.bulk.optionAssignee")}</option>
+        <option value={1}>{tr("helpdesk.bulk.unassign")}</option>
         {meta.agents.map((a) => (
           <option key={a.id} value={a.id}>
             {a.fullName}
@@ -3157,7 +3205,7 @@ function BulkActionsBar({
         style={{ background: accent }}
       >
         {busy ? <Loader2 size={11} className="spin" /> : <CheckCircle2 size={11} />}
-        Anwenden
+        {tr("helpdesk.bulk.apply")}
       </button>
     </div>
   );
@@ -3180,6 +3228,7 @@ function OwnerPicker({
   meId: number | null;
   onChange: (id: number) => void;
 }) {
+  const tr = useT();
   // Sort: me first, then alphabetical. Unassigned (id 1) is its own option.
   const sorted = useMemo(() => {
     const list = [...agents];
@@ -3223,7 +3272,7 @@ function OwnerPicker({
             <span className="truncate">{currentName}</span>
           </span>
         ) : (
-          <span className="text-text-tertiary">— unzugewiesen —</span>
+          <span className="text-text-tertiary">{tr("helpdesk.bulk.unassign")}</span>
         )}
         <ChevronDown size={11} className="text-text-quaternary" />
       </button>
@@ -3234,7 +3283,7 @@ function OwnerPicker({
               autoFocus
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Agent suchen…"
+              placeholder={`${tr("common.search")}…`}
               className="w-full bg-bg-base border border-stroke-1 rounded px-1.5 py-1 text-[11px] outline-none"
             />
           </div>
@@ -3248,7 +3297,7 @@ function OwnerPicker({
                 }}
                 className="w-full text-left px-2 py-1 text-[11px] hover:bg-bg-overlay text-text-tertiary"
               >
-                — Unzuweisen —
+                {tr("helpdesk.bulk.unassign")}
               </button>
             </li>
             {meId && agents.find((a) => a.id === meId) && (
@@ -3291,7 +3340,7 @@ function OwnerPicker({
             ))}
             {filtered.length === 0 && (
               <li className="px-2 py-2 text-[11px] text-text-tertiary text-center">
-                Keine Treffer.
+                {tr("common.noResults")}
               </li>
             )}
           </ul>
@@ -3316,6 +3365,7 @@ function OverviewsBar({
   onPick: (id: number | null) => void;
   accent: string;
 }) {
+  const tr = useT();
   // Show top 4 inline; collapse the rest into a "+N" menu.
   const [showAll, setShowAll] = useState(false);
   const top = showAll ? overviews : overviews.slice(0, 4);
@@ -3323,7 +3373,7 @@ function OverviewsBar({
   return (
     <div className="flex items-center gap-1 flex-wrap">
       <span className="inline-flex items-center gap-1 text-[10px] text-text-quaternary mr-0.5">
-        <Filter size={10} /> Ansichten:
+        <Filter size={10} /> {tr("helpdesk.filter.viewsLabel")}
       </span>
       {top.map((o) => (
         <button
@@ -3336,7 +3386,7 @@ function OverviewsBar({
               : "border-stroke-1 text-text-tertiary hover:border-stroke-2"
           }`}
           style={activeId === o.id ? { background: accent } : undefined}
-          title={`Zammad-Ansicht: ${o.name}`}
+          title={tr("helpdesk.filter.zammadViewTitle").replace("{name}", o.name)}
         >
           <Eye size={10} />
           {o.name}
@@ -3348,7 +3398,10 @@ function OverviewsBar({
           onClick={() => setShowAll(true)}
           className="text-[10px] text-text-tertiary hover:text-text-primary"
         >
-          +{more.length} weitere
+          {tr("helpdesk.filter.moreCount").replace(
+            "{count}",
+            String(more.length),
+          )}
         </button>
       )}
       {showAll && more.length > 0 && (
@@ -3357,7 +3410,7 @@ function OverviewsBar({
           onClick={() => setShowAll(false)}
           className="text-[10px] text-text-tertiary hover:text-text-primary"
         >
-          weniger
+          {tr("helpdesk.filter.less")}
         </button>
       )}
     </div>
@@ -3424,22 +3477,22 @@ function CustomerDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-stretch justify-end"
+      className="fixed inset-0 z-[56] flex items-stretch justify-end touch-manipulation pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
       onClick={onClose}
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md bg-bg-base border-l border-stroke-1 shadow-2xl flex flex-col"
+        className="relative w-full max-w-md bg-bg-base border-l border-stroke-1 shadow-2xl flex flex-col max-md:max-w-none pr-[env(safe-area-inset-right)]"
         style={{ boxShadow: `inset 3px 0 0 0 ${accent}` }}
       >
-        <header className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
-          <UserCircle2 size={16} style={{ color: accent }} />
-          <h2 className="text-[13px] font-semibold">{t("helpdesk.drawer.title")}</h2>
+        <header className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2 min-w-0">
+          <UserCircle2 size={16} style={{ color: accent }} className="shrink-0" />
+          <h2 className="text-[13px] font-semibold min-w-0 truncate">{t("helpdesk.drawer.title")}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto p-1 rounded hover:bg-bg-overlay text-text-tertiary"
+            className="ml-auto min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded hover:bg-bg-overlay text-text-tertiary touch-manipulation shrink-0"
             title={t("helpdesk.drawer.close")}
           >
             <XIcon size={14} />
@@ -3480,7 +3533,7 @@ function CustomerProfileBody({
 }) {
   const tr = useT();
   const { locale } = useLocale();
-  const locStr = locale === "en" ? "en-US" : "de-DE";
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const { user, tickets, openCount, closedCount } = profile;
   return (
     <div className="p-4 space-y-4">
@@ -3519,7 +3572,7 @@ function CustomerProfileBody({
       {user.createdAt && (
         <p className="text-[10.5px] text-text-quaternary">
           {tr("helpdesk.drawer.customerSince")}{" "}
-          {new Date(user.createdAt).toLocaleDateString(locStr)}
+          {new Date(user.createdAt).toLocaleDateString(localeFmt)}
         </p>
       )}
       <section>
@@ -3546,7 +3599,7 @@ function CustomerProfileBody({
                       <StatusPill label={t.stateName} />
                       <PriorityChip name={t.priorityName} />
                       <span className="text-[10px] text-text-quaternary">
-                        {relativeTime(t.updatedAt, tr)}
+                        {relativeTime(t.updatedAt, localeFmt, tr)}
                       </span>
                     </span>
                   </span>
@@ -3627,11 +3680,11 @@ function CannedResponsesPopover({
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 mb-1 z-30 min-w-[240px] max-h-[260px] flex flex-col rounded-md border border-stroke-1 bg-bg-elevated shadow-xl"
+      className="absolute bottom-full left-0 mb-1 z-30 flex flex-col rounded-md border border-stroke-1 bg-bg-elevated shadow-xl touch-manipulation min-w-[min(280px,calc(100vw-2rem))] max-w-[min(320px,calc(100vw-2rem))] max-h-[min(260px,45dvh)] max-md:max-h-[min(320px,50dvh)]"
     >
-      <ul className="overflow-auto py-1">
+      <ul className="overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] py-1">
         {canned.length === 0 ? (
-          <li className="px-3 py-3 text-[11px] text-text-tertiary text-center">
+          <li className="px-3 py-4 text-[11px] text-text-tertiary text-center">
             Noch keine Vorlagen.
           </li>
         ) : (
@@ -3640,11 +3693,11 @@ function CannedResponsesPopover({
               <button
                 type="button"
                 onClick={() => onPick(c.body)}
-                className="w-full text-left px-2.5 py-1.5 text-[11.5px] hover:bg-bg-overlay"
+                className="w-full text-left px-3 py-3 max-md:py-3.5 min-h-[44px] text-[11.5px] hover:bg-bg-overlay active:bg-bg-overlay flex flex-col justify-center gap-0.5"
                 title={c.body}
               >
                 <span className="block text-text-primary truncate">{c.name}</span>
-                <span className="block text-[10px] text-text-tertiary truncate">
+                <span className="block text-[10px] text-text-tertiary truncate leading-snug">
                   {c.body.slice(0, 80)}
                 </span>
               </button>
@@ -3652,11 +3705,11 @@ function CannedResponsesPopover({
           ))
         )}
       </ul>
-      <div className="border-t border-stroke-1 px-2 py-1.5 flex items-center gap-1.5">
+      <div className="border-t border-stroke-1 px-2 py-2 flex items-center justify-center sm:justify-start">
         <button
           type="button"
           onClick={onManage}
-          className="text-[11px] text-text-tertiary hover:text-text-primary inline-flex items-center gap-1"
+          className="text-[11px] text-text-tertiary hover:text-text-primary inline-flex items-center justify-center gap-1 min-h-[44px] px-3 rounded-md hover:bg-bg-overlay w-full sm:w-auto touch-manipulation"
         >
           <Plus size={10} /> Vorlagen verwalten
         </button>
@@ -3676,6 +3729,7 @@ function CannedResponsesEditor({
   onClose: () => void;
   accent: string;
 }) {
+  const tr = useT();
   const [list, setList] = useState<CannedResponse[]>(canned);
   const [editing, setEditing] = useState<CannedResponse | null>(null);
   const [name, setName] = useState("");
@@ -3727,9 +3781,9 @@ function CannedResponsesEditor({
       >
         <header className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
           <FileText size={14} style={{ color: accent }} />
-          <h2 className="text-[13px] font-semibold">Antwort-Vorlagen</h2>
+          <h2 className="text-[13px] font-semibold">{tr("helpdesk.canned.title")}</h2>
           <span className="text-[10.5px] text-text-tertiary">
-            (lokal, nur in diesem Browser)
+            {tr("helpdesk.canned.browserOnly")}
           </span>
           <button
             type="button"
@@ -3748,13 +3802,13 @@ function CannedResponsesEditor({
                 className="w-full inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-white text-[11.5px]"
                 style={{ background: accent }}
               >
-                <Plus size={12} /> Neue Vorlage
+                <Plus size={12} /> {tr("helpdesk.canned.new")}
               </button>
             </div>
             <ul>
               {list.length === 0 ? (
                 <li className="px-3 py-4 text-center text-[11px] text-text-tertiary">
-                  Keine Vorlagen.
+                  {tr("helpdesk.canned.none")}
                 </li>
               ) : (
                 list.map((c) => (
@@ -3780,7 +3834,7 @@ function CannedResponsesEditor({
                         type="button"
                         onClick={() => remove(c.id)}
                         className="p-1 text-text-quaternary hover:text-red-400"
-                        title="Löschen"
+                        title={tr("common.delete")}
                       >
                         <Trash2 size={11} />
                       </button>
@@ -3794,26 +3848,26 @@ function CannedResponsesEditor({
             {editing ? (
               <div className="flex-1 flex flex-col gap-2 min-h-0">
                 <label className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary">
-                  Name
+                  {tr("common.title")}
                 </label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="bg-bg-elevated border border-stroke-1 rounded-md px-2 py-1 text-[12px] outline-none focus:border-stroke-2"
-                  placeholder="z.B. „Begrüßung Standard"
+                  placeholder={tr("helpdesk.canned.namePlaceholder")}
                 />
                 <label className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mt-1">
-                  Text
+                  {tr("common.description")}
                 </label>
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   rows={10}
                   className="flex-1 min-h-0 bg-bg-elevated border border-stroke-1 rounded-md px-2 py-1 text-[12px] outline-none focus:border-stroke-2 resize-none"
-                  placeholder="Hallo {{customer.firstname}}, …"
+                  placeholder={tr("helpdesk.canned.bodyPlaceholder")}
                 />
                 <p className="text-[10px] text-text-quaternary">
-                  Tipp: Platzhalter wie <code>{"{{customer.firstname}}"}</code> werden später vom Trigger ersetzt — aktuell statisch eingefügt.
+                  {tr("helpdesk.canned.placeholderHint")}
                 </p>
                 <div className="flex items-center justify-end gap-2 pt-1 border-t border-stroke-1">
                   <button
@@ -3821,7 +3875,7 @@ function CannedResponsesEditor({
                     onClick={() => setEditing(null)}
                     className="px-2 py-1 text-[11px] text-text-tertiary hover:text-text-primary"
                   >
-                    Abbrechen
+                    {tr("common.cancel")}
                   </button>
                   <button
                     type="button"
@@ -3831,13 +3885,13 @@ function CannedResponsesEditor({
                     style={{ background: accent }}
                   >
                     <CheckCircle2 size={11} />
-                    Speichern
+                    {tr("common.save")}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-[11.5px] text-text-tertiary text-center px-4">
-                Wähle links eine Vorlage zum Bearbeiten oder lege eine neue an.
+                {tr("helpdesk.canned.pickPrompt")}
               </div>
             )}
           </section>
@@ -3848,7 +3902,7 @@ function CannedResponsesEditor({
             onClick={onClose}
             className="px-2 py-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
           >
-            Abbrechen
+            {tr("common.cancel")}
           </button>
           <button
             type="button"
@@ -3856,7 +3910,7 @@ function CannedResponsesEditor({
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-white text-[11.5px]"
             style={{ background: accent }}
           >
-            <CheckCircle2 size={11} /> Übernehmen
+            <CheckCircle2 size={11} /> {tr("mail.aiReply.apply")}
           </button>
         </footer>
       </div>
@@ -3869,17 +3923,21 @@ function CannedResponsesEditor({
 /* ----------------------------------------------------------------- */
 
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
-  const items: { keys: string; label: string }[] = [
-    { keys: "/", label: "Suche fokussieren" },
-    { keys: "j / k", label: "Nächstes / vorheriges Ticket" },
-    { keys: "n", label: "Neues Ticket" },
-    { keys: "r", label: "Auf Ticket antworten (Composer)" },
-    { keys: "u", label: "Mir zuweisen" },
-    { keys: "x", label: "Aktuelles Ticket für Bulk markieren" },
-    { keys: "?", label: "Diese Übersicht ein-/ausblenden" },
-    { keys: "Esc", label: "Drawer / Overlay schließen" },
-    { keys: "⌘/Ctrl + Enter", label: "Antwort senden" },
-  ];
+  const tr = useT();
+  const items: { keys: string; label: string }[] = useMemo(
+    () => [
+      { keys: "/", label: tr("helpdesk.shortcuts.focusSearch") },
+      { keys: "j / k", label: tr("helpdesk.shortcuts.nextPrev") },
+      { keys: "n", label: tr("helpdesk.shortcuts.newTicket") },
+      { keys: "r", label: tr("helpdesk.shortcuts.replyComposer") },
+      { keys: "u", label: tr("helpdesk.shortcuts.assignMe") },
+      { keys: "x", label: tr("helpdesk.shortcuts.bulkMark") },
+      { keys: "?", label: tr("helpdesk.shortcuts.toggleOverlay") },
+      { keys: "Esc", label: tr("helpdesk.shortcuts.closeOverlay") },
+      { keys: "⌘/Ctrl + Enter", label: tr("helpdesk.shortcuts.sendReply") },
+    ],
+    [tr],
+  );
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -3892,7 +3950,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
       >
         <header className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
           <Keyboard size={14} className="text-text-tertiary" />
-          <h2 className="text-[13px] font-semibold">Tastenkürzel</h2>
+          <h2 className="text-[13px] font-semibold">{tr("helpdesk.shortcuts.title")}</h2>
           <button
             type="button"
             onClick={onClose}

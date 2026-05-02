@@ -49,7 +49,7 @@ export default async function MailPage({
   }
 
   return (
-    <div className="h-full">
+    <div className="h-full min-h-0">
       <MailClient
         initialFolders={folders}
         selfEmail={mailbox}

@@ -9,6 +9,9 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
+import type { Messages } from "@/lib/i18n/messages";
 import type {
   CycleSummary,
   IssueLabel,
@@ -19,17 +22,18 @@ import type {
 } from "@/lib/projects/types";
 import {
   IssueCard,
+  ISSUE_TYPE_I18N,
   ISSUE_TYPE_META,
   ISSUE_TYPE_ORDER,
   IssueType,
   PRIORITY_COLOR,
-  PRIORITY_LABEL,
+  PRIORITY_I18N,
   PRIORITY_ORDER,
   STATE_GROUP_COLOR,
-  STATE_GROUP_LABEL,
   STATE_GROUP_ORDER,
   StoryPointsPill,
   deriveIssueType,
+  stateGroupTitle,
 } from "./shared";
 
 /* ----------------------------------------------------------------- */
@@ -43,12 +47,12 @@ type GroupBy =
   | "type"
   | "epic";
 
-const GROUP_BY_LABEL: Record<GroupBy, string> = {
-  status: "Status",
-  assignee: "Bearbeiter",
-  priority: "Priorität",
-  type: "Issue-Typ",
-  epic: "Epic / Modul",
+const GROUP_BY_KEY: Record<GroupBy, keyof Messages> = {
+  status: "projects.groupBy.status",
+  assignee: "projects.groupBy.assignee",
+  priority: "projects.groupBy.priority",
+  type: "projects.groupBy.type",
+  epic: "projects.groupBy.epic",
 };
 
 /* ----------------------------------------------------------------- */
@@ -92,6 +96,10 @@ export function JiraBoard({
   quickFilterAssignees: string[];
   onQuickFilterToggle: (id: string) => void;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
+
   const stateById = useMemo(() => {
     const m = new Map<string, IssueState>();
     for (const s of states) m.set(s.id, s);
@@ -149,7 +157,7 @@ export function JiraBoard({
         const firstState = buckets[0]?.state ?? null;
         cols.push({
           id: `status:${g}`,
-          title: STATE_GROUP_LABEL[g],
+          title: stateGroupTitle(t, g),
           color: STATE_GROUP_COLOR[g],
           targetStateId: firstState?.id ?? null,
           issues: allIssues,
@@ -181,7 +189,7 @@ export function JiraBoard({
       }
       cols.push({
         id: "assignee:none",
-        title: "Niemand",
+        title: t("projects.column.nobody"),
         color: "#94a3b8",
         targetStateId: null,
         issues: unassigned,
@@ -196,7 +204,7 @@ export function JiraBoard({
       for (const p of PRIORITY_ORDER) {
         cols.push({
           id: `priority:${p}`,
-          title: PRIORITY_LABEL[p],
+          title: t(PRIORITY_I18N[p]),
           color: PRIORITY_COLOR[p],
           targetStateId: null,
           issues: byPri.get(p) ?? [],
@@ -205,19 +213,19 @@ export function JiraBoard({
     } else if (groupBy === "type") {
       const byType = new Map<IssueType, IssueSummary[]>();
       for (const i of issues) {
-        const t = deriveIssueType(i, labels);
-        const arr = byType.get(t) ?? [];
+        const derivedType = deriveIssueType(i, labels);
+        const arr = byType.get(derivedType) ?? [];
         arr.push(i);
-        byType.set(t, arr);
+        byType.set(derivedType, arr);
       }
-      for (const t of ISSUE_TYPE_ORDER) {
-        if (!byType.get(t)?.length) continue;
+      for (const ty of ISSUE_TYPE_ORDER) {
+        if (!byType.get(ty)?.length) continue;
         cols.push({
-          id: `type:${t}`,
-          title: ISSUE_TYPE_META[t].label,
-          color: ISSUE_TYPE_META[t].bg,
+          id: `type:${ty}`,
+          title: t(ISSUE_TYPE_I18N[ty]),
+          color: ISSUE_TYPE_META[ty].bg,
           targetStateId: null,
-          issues: byType.get(t) ?? [],
+          issues: byType.get(ty) ?? [],
         });
       }
     } else if (groupBy === "epic") {
@@ -236,7 +244,7 @@ export function JiraBoard({
         const parent = issues.find((i) => i.id === parentId);
         cols.push({
           id: `epic:${parentId}`,
-          title: parent ? parent.name : "Unbekanntes Epic",
+          title: parent ? parent.name : t("projects.column.unknownEpic"),
           color: ISSUE_TYPE_META.epic.bg,
           targetStateId: null,
           issues: items,
@@ -244,7 +252,7 @@ export function JiraBoard({
       }
       cols.push({
         id: "epic:none",
-        title: "Kein Epic",
+        title: t("projects.column.noEpic"),
         color: "#94a3b8",
         targetStateId: null,
         issues: noEpic,
@@ -252,7 +260,7 @@ export function JiraBoard({
     }
 
     return cols;
-  }, [groupBy, states, issues, stateById, memberSorted, labels, accent]);
+  }, [groupBy, states, issues, stateById, memberSorted, labels, accent, t]);
 
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
@@ -271,7 +279,7 @@ export function JiraBoard({
         {activeCycle.name}
       </span>
       <span className="text-text-tertiary">
-        {sprintRangeLabel(activeCycle)}
+        {sprintRangeLabel(activeCycle, localeFmt, t)}
       </span>
       <span className="text-text-tertiary">·</span>
       <span
@@ -283,12 +291,16 @@ export function JiraBoard({
               : "text-text-secondary"
         }
       >
-        {daysRemainingLabel(activeCycle)}
+        {daysRemainingLabel(activeCycle, t)}
       </span>
       <span className="ml-auto text-text-tertiary tabular-nums">
-        {issues.filter((i) => i.cycle === activeCycle.id && stateById.get(i.state)?.group === "completed").length}
-        {" / "}
-        {issues.filter((i) => i.cycle === activeCycle.id).length} erledigt
+        {(() => {
+          const done = issues.filter(
+            (i) => i.cycle === activeCycle.id && stateById.get(i.state)?.group === "completed",
+          ).length;
+          const tot = issues.filter((i) => i.cycle === activeCycle.id).length;
+          return `${t("projects.board.doneFraction").replace("{done}", String(done)).replace("{total}", String(tot))} ${t("projects.board.doneWord")}`;
+        })()}
       </span>
     </div>
   ) : null;
@@ -297,16 +309,16 @@ export function JiraBoard({
 
   const controls = (
     <div className="shrink-0 px-3 py-2 border-b border-stroke-1 bg-bg-chrome flex items-center gap-2 text-[11.5px]">
-      <span className="text-text-tertiary">Gruppieren nach:</span>
+      <span className="text-text-tertiary">{t("projects.board.groupBy")}</span>
       <div className="relative">
         <select
           value={groupBy}
           onChange={(e) => setGroupBy(e.target.value as GroupBy)}
           className="appearance-none bg-bg-elevated border border-stroke-1 hover:border-stroke-2 rounded-md pl-2 pr-6 py-1 text-[11.5px] outline-none cursor-pointer"
         >
-          {(Object.keys(GROUP_BY_LABEL) as GroupBy[]).map((g) => (
+          {(Object.keys(GROUP_BY_KEY) as GroupBy[]).map((g) => (
             <option key={g} value={g}>
-              {GROUP_BY_LABEL[g]}
+              {t(GROUP_BY_KEY[g])}
             </option>
           ))}
         </select>
@@ -317,7 +329,7 @@ export function JiraBoard({
       </div>
 
       <div className="ml-3 flex items-center gap-1.5">
-        <span className="text-text-tertiary">Schnell-Filter:</span>
+        <span className="text-text-tertiary">{t("projects.board.quickFilter")}</span>
         {memberSorted.slice(0, 8).map((m) => {
           const active = quickFilterAssignees.includes(m.id);
           return (
@@ -325,7 +337,7 @@ export function JiraBoard({
               key={m.id}
               type="button"
               onClick={() => onQuickFilterToggle(m.id)}
-              title={`Nur Issues von ${m.displayName}`}
+              title={t("projects.board.assigneeFilterTitle").replace("{name}", m.displayName)}
               className={`rounded-full transition-all ${
                 active
                   ? "ring-2"
@@ -350,14 +362,19 @@ export function JiraBoard({
             }
             className="ml-2 text-[10.5px] text-text-tertiary hover:text-text-primary underline"
           >
-            zurücksetzen
+            {t("projects.board.quickFilterReset")}
           </button>
         )}
       </div>
 
       <div className="ml-auto inline-flex items-center gap-2 text-text-tertiary">
         <UserIcon size={11} />
-        <span>{issues.filter((i) => i.assignees.length > 0).length} zugewiesen</span>
+        <span>
+          {t("projects.board.assignedCount").replace(
+            "{n}",
+            String(issues.filter((i) => i.assignees.length > 0).length),
+          )}
+        </span>
         <span>·</span>
         <CheckCheck size={11} />
         <span className="tabular-nums">
@@ -375,7 +392,7 @@ export function JiraBoard({
     <div className="flex-1 min-h-0 flex flex-col">
       {sprintBar}
       {controls}
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden bg-bg-chrome">
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x bg-bg-chrome [-webkit-overflow-scrolling:touch]">
         <div
           className="h-full flex gap-3 p-3 min-w-max"
           onDragEnd={() => {
@@ -480,7 +497,7 @@ export function JiraBoard({
                           type="text"
                           value={composerText}
                           onChange={(e) => setComposerText(e.target.value)}
-                          placeholder="Was ist zu tun?"
+                          placeholder={t("projects.board.createPlaceholder")}
                           className="w-full bg-transparent outline-none text-[12px] py-1"
                           onBlur={() => {
                             if (composerText.trim() && onCreateIssue) {
@@ -520,7 +537,7 @@ export function JiraBoard({
                           className="w-full text-left text-[11.5px] text-text-tertiary hover:text-text-primary hover:bg-bg-overlay/50 rounded px-2 py-1.5 inline-flex items-center gap-1.5"
                         >
                           <Plus size={11} />
-                          Issue erstellen
+                          {t("projects.board.createIssue")}
                         </button>
                       )
                     )}
@@ -535,12 +552,16 @@ export function JiraBoard({
   );
 }
 
-function sprintRangeLabel(c: CycleSummary): string {
-  if (!c.startDate || !c.endDate) return "ohne Zeitfenster";
+function sprintRangeLabel(
+  c: CycleSummary,
+  localeFmt: string,
+  t: (key: keyof Messages, fallback?: string) => string,
+): string {
+  if (!c.startDate || !c.endDate) return t("projects.sprint.noWindow");
   const o: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" };
-  return `${new Date(c.startDate).toLocaleDateString("de-DE", o)} – ${new Date(
+  return `${new Date(c.startDate).toLocaleDateString(localeFmt, o)} – ${new Date(
     c.endDate,
-  ).toLocaleDateString("de-DE", o)}`;
+  ).toLocaleDateString(localeFmt, o)}`;
 }
 
 function daysRemaining(c: CycleSummary): number {
@@ -548,12 +569,15 @@ function daysRemaining(c: CycleSummary): number {
   return Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86_400_000);
 }
 
-function daysRemainingLabel(c: CycleSummary): string {
-  if (c.status === "completed") return "abgeschlossen";
-  if (!c.endDate) return "kein Enddatum";
+function daysRemainingLabel(
+  c: CycleSummary,
+  t: (key: keyof Messages, fallback?: string) => string,
+): string {
+  if (c.status === "completed") return t("projects.sprint.closed");
+  if (!c.endDate) return t("projects.sprint.noEnd");
   const d = daysRemaining(c);
-  if (d < 0) return `${Math.abs(d)} Tage überfällig`;
-  if (d === 0) return "endet heute";
-  if (d === 1) return "noch 1 Tag";
-  return `noch ${d} Tage`;
+  if (d < 0) return t("projects.sprint.overdueDays").replace("{n}", String(Math.abs(d)));
+  if (d === 0) return t("projects.sprint.endsToday");
+  if (d === 1) return t("projects.sprint.oneDayLeft");
+  return t("projects.sprint.daysLeft").replace("{n}", String(d));
 }

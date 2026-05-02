@@ -35,27 +35,13 @@ import {
   primaryFileOpenLabel,
 } from "@/lib/office/open-mode";
 import type { WorkspaceId } from "@/lib/workspaces";
-
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { cloudRelative } from "@/lib/i18n/cloud-relative";
 function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
   return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function relativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!t) return "—";
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return "gerade eben";
-  if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min`;
-  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std`;
-  if (diff < 86400 * 7) return `vor ${Math.floor(diff / 86400)} Tagen`;
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 function iconForFile(name: string, isDir: boolean): typeof FileIcon {
@@ -94,6 +80,8 @@ export function FileStationClient({
   accent: string;
   initialGlobalSearchQuery?: string | null;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
   const [cwd, setCwd] = useState("/");
   const [data, setData] = useState<CloudList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -225,13 +213,13 @@ export function FileStationClient({
     const parts = cwd.split("/").filter(Boolean);
     let acc = "";
     return [
-      { label: "Meine Ablage", path: "/" },
+      { label: t("files.myDrive"), path: "/" },
       ...parts.map((p) => {
         acc += "/" + p;
         return { label: p, path: acc };
       }),
     ];
-  }, [cwd]);
+  }, [cwd, t]);
 
   const onUpload = useCallback(
     async (files: FileList | null) => {
@@ -248,25 +236,28 @@ export function FileStationClient({
         );
         const j = (await r.json()) as { uploaded?: unknown[]; errors?: { name: string; error: string }[] };
         if (j.errors && j.errors.length > 0) {
-          alert("Fehler beim Upload:\n" + j.errors.map((e) => `${e.name}: ${e.error}`).join("\n"));
+          alert(
+            t("files.alert.uploadPrefix") +
+              j.errors.map((e) => `${e.name}: ${e.error}`).join("\n"),
+          );
         }
         await load(cwd);
       } finally {
         setBusy(false);
       }
     },
-    [cwd, load, workspaceId],
+    [cwd, load, workspaceId, t],
   );
 
   const onCreateDoc = useCallback(
     async (kind: "doc" | "sheet" | "slides" | "text") => {
       const def = {
-        doc: "Neues Dokument",
-        sheet: "Neue Tabelle",
-        slides: "Neue Präsentation",
-        text: "Neue Notiz",
+        doc: t("files.newDocument"),
+        sheet: t("files.newSpreadsheet"),
+        slides: t("files.newPresentation"),
+        text: t("files.newNote"),
       }[kind];
-      const name = prompt("Name der neuen Datei:", def)?.trim();
+      const name = prompt(t("files.prompt.newFile"), def)?.trim();
       if (!name) return;
       setBusy(true);
       try {
@@ -277,7 +268,7 @@ export function FileStationClient({
         });
         const j = (await r.json()) as { error?: string; path?: string };
         if (!r.ok) {
-          alert("Anlegen fehlgeschlagen: " + (j.error ?? r.statusText));
+          alert(t("files.alert.createDoc") + (j.error ?? r.statusText));
           return;
         }
         await load(cwd);
@@ -297,9 +288,7 @@ export function FileStationClient({
               "noopener,noreferrer",
             );
           } else {
-            alert(
-              "Präsentation angelegt; Datei-ID noch nicht verfügbar — bitte Ordner neu laden und die Datei öffnen.",
-            );
+            alert(t("files.alert.presentationId"));
           }
           return;
         }
@@ -314,11 +303,11 @@ export function FileStationClient({
         setBusy(false);
       }
     },
-    [cwd, load, workspaceId],
+    [cwd, load, workspaceId, t],
   );
 
   const onMkdir = useCallback(async () => {
-    const name = prompt("Name des neuen Ordners:")?.trim();
+    const name = prompt(t("files.prompt.newFolder"))?.trim();
     if (!name) return;
     setBusy(true);
     try {
@@ -329,17 +318,17 @@ export function FileStationClient({
       });
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { error?: string };
-        alert("Ordner anlegen fehlgeschlagen: " + (j.error ?? r.statusText));
+        alert(t("files.alert.mkdir") + (j.error ?? r.statusText));
       }
       await load(cwd);
     } finally {
       setBusy(false);
     }
-  }, [cwd, load, workspaceId]);
+  }, [cwd, load, workspaceId, t]);
 
   const onDelete = useCallback(
     async (entry: CloudEntry) => {
-      if (!confirm(`„${entry.name}“ wirklich löschen?`)) return;
+      if (!confirm(t("files.confirm.delete").replace("{name}", entry.name))) return;
       setBusy(true);
       try {
         const r = await fetch("/api/cloud/delete", {
@@ -349,14 +338,14 @@ export function FileStationClient({
         });
         if (!r.ok) {
           const j = (await r.json().catch(() => ({}))) as { error?: string };
-          alert("Löschen fehlgeschlagen: " + (j.error ?? r.statusText));
+          alert(t("files.alert.delete") + (j.error ?? r.statusText));
         }
         await load(cwd);
       } finally {
         setBusy(false);
       }
     },
-    [cwd, load, workspaceId],
+    [cwd, load, workspaceId, t],
   );
 
   const onActivate = useCallback(
@@ -407,9 +396,9 @@ export function FileStationClient({
             <Folder size={16} style={{ color: accent }} />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-sm font-semibold leading-tight">Datei-Station</h1>
+            <h1 className="text-sm font-semibold leading-tight">{t("files.title")}</h1>
             <p className="text-[10.5px] text-text-tertiary truncate">
-              {workspaceName} · in der Cloud gespeichert
+              {t("files.subtitle").replace("{workspace}", workspaceName)}
             </p>
           </div>
 
@@ -424,9 +413,7 @@ export function FileStationClient({
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder={
-                  globalSearch
-                    ? "Workspace-weit suchen…"
-                    : "In Ordner suchen…"
+                  globalSearch ? t("files.search.everywhere") : t("files.search.here")
                 }
                 className="bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2.5 py-1.5 w-[220px] text-[12px] outline-none focus:border-stroke-2"
               />
@@ -447,9 +434,7 @@ export function FileStationClient({
                 }
               }}
               title={
-                globalSearch
-                  ? "Wieder nur in diesem Ordner suchen"
-                  : "Workspace-weit suchen (alle Ordner)"
+                globalSearch ? t("files.search.titleHere") : t("files.search.titleEverywhere")
               }
               className={`px-2 py-1.5 rounded-md text-[11px] border ${
                 globalSearch
@@ -457,7 +442,7 @@ export function FileStationClient({
                   : "border-stroke-1 text-text-tertiary hover:bg-bg-overlay"
               }`}
             >
-              alle Ordner
+              {t("files.allFolders")}
             </button>
           </div>
 
@@ -468,17 +453,17 @@ export function FileStationClient({
               disabled={busy}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-white text-[12px] disabled:opacity-50"
               style={{ background: accent }}
-              title="Neue Datei oder Ordner anlegen"
+              title={t("files.newTooltip")}
             >
-              <Plus size={13} /> Neu
+              <Plus size={13} /> {t("files.plusNew")}
               <ChevronDown size={11} className="opacity-80" />
             </button>
             {showNewMenu && (
               <div className="absolute right-0 top-full mt-1 z-30 w-60 rounded-md border border-stroke-1 bg-bg-elevated shadow-xl py-1 text-[12.5px]">
                 <NewMenuItem
                   icon={<FileText size={14} style={{ color: "#1d4ed8" }} />}
-                  label="Dokument (.docx)"
-                  hint="Word-kompatibel"
+                  label={t("files.menu.doc")}
+                  hint={t("files.menu.docHint")}
                   onClick={() => {
                     setShowNewMenu(false);
                     void onCreateDoc("doc");
@@ -486,8 +471,8 @@ export function FileStationClient({
                 />
                 <NewMenuItem
                   icon={<FileSpreadsheet size={14} style={{ color: "#16a34a" }} />}
-                  label="Tabelle (.xlsx)"
-                  hint="Excel-kompatibel"
+                  label={t("files.menu.sheet")}
+                  hint={t("files.menu.sheetHint")}
                   onClick={() => {
                     setShowNewMenu(false);
                     void onCreateDoc("sheet");
@@ -495,8 +480,8 @@ export function FileStationClient({
                 />
                 <NewMenuItem
                   icon={<Presentation size={14} style={{ color: "#dc2626" }} />}
-                  label="Präsentation (.pptx)"
-                  hint="PowerPoint-kompatibel"
+                  label={t("files.menu.slides")}
+                  hint={t("files.menu.slidesHint")}
                   onClick={() => {
                     setShowNewMenu(false);
                     void onCreateDoc("slides");
@@ -504,8 +489,8 @@ export function FileStationClient({
                 />
                 <NewMenuItem
                   icon={<StickyNote size={14} style={{ color: "#7c3aed" }} />}
-                  label="Notiz (.md)"
-                  hint="Markdown"
+                  label={t("files.menu.note")}
+                  hint={t("files.menu.noteHint")}
                   onClick={() => {
                     setShowNewMenu(false);
                     void onCreateDoc("text");
@@ -514,8 +499,8 @@ export function FileStationClient({
                 <div className="my-1 border-t border-stroke-1" />
                 <NewMenuItem
                   icon={<FolderPlus size={14} className="text-text-tertiary" />}
-                  label="Ordner"
-                  hint="im aktuellen Verzeichnis"
+                  label={t("files.menu.folder")}
+                  hint={t("files.menu.folderHint")}
                   onClick={() => {
                     setShowNewMenu(false);
                     void onMkdir();
@@ -523,8 +508,8 @@ export function FileStationClient({
                 />
                 <NewMenuItem
                   icon={<Upload size={14} className="text-text-tertiary" />}
-                  label="Datei hochladen"
-                  hint="von diesem Gerät"
+                  label={t("files.upload.tooltip")}
+                  hint={t("files.menu.uploadHint")}
                   onClick={() => {
                     setShowNewMenu(false);
                     fileInputRef.current?.click();
@@ -540,9 +525,9 @@ export function FileStationClient({
             disabled={busy}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-white text-[12px] font-medium disabled:opacity-50"
             style={{ background: accent }}
-            title="Dateien hochladen"
+            title={t("files.upload.tooltip")}
           >
-            <Upload size={13} /> Hochladen
+            <Upload size={13} /> {t("files.upload")}
           </button>
 
           <input
@@ -560,7 +545,7 @@ export function FileStationClient({
             type="button"
             onClick={() => void load(cwd)}
             className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Neu laden"
+            title={t("files.reload")}
           >
             <RefreshCw size={14} />
           </button>
@@ -573,7 +558,7 @@ export function FileStationClient({
                 ? "bg-bg-overlay text-text-primary"
                 : "hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
             }`}
-            title={detailOpen ? "Detailbereich ausblenden" : "Detailbereich einblenden"}
+            title={detailOpen ? t("files.detail.toggleHide") : t("files.detail.toggleShow")}
             aria-pressed={detailOpen}
           >
             <PanelRight size={14} />
@@ -625,9 +610,9 @@ export function FileStationClient({
             <table className="w-full border-collapse">
               <thead className="sticky top-0 bg-bg-chrome z-[1] text-[10.5px] uppercase tracking-wide text-text-tertiary">
                 <tr>
-                  <th className="text-left font-medium px-4 py-2 w-[55%]">Name</th>
-                  <th className="text-left font-medium px-2 py-2">Geändert</th>
-                  <th className="text-right font-medium px-2 py-2">Größe</th>
+                  <th className="text-left font-medium px-4 py-2 w-[55%]">{t("files.column.name")}</th>
+                  <th className="text-left font-medium px-2 py-2">{t("files.column.modified")}</th>
+                  <th className="text-right font-medium px-2 py-2">{t("files.column.size")}</th>
                   <th className="px-2 py-2 w-[40px]" />
                 </tr>
               </thead>
@@ -640,13 +625,13 @@ export function FileStationClient({
                     >
                       {globalSearch
                         ? searchError
-                          ? `Suche fehlgeschlagen: ${searchError}`
+                          ? t("files.search.error").replace("{error}", searchError)
                           : filter.trim().length < 2
-                            ? "Tippe mindestens 2 Zeichen für die Workspace-weite Suche."
+                            ? t("files.search.minChars")
                             : searchBusy
-                              ? "Suche läuft…"
-                              : `Keine Treffer für „${filter}".`
-                        : "Dieser Ordner ist leer."}
+                              ? t("files.search.running")
+                              : t("files.search.none").replace("{q}", filter)
+                        : t("files.empty")}
                     </td>
                   </tr>
                 )}
@@ -692,7 +677,7 @@ export function FileStationClient({
                                   setSelected(e.path);
                                 }}
                                 className="text-[10.5px] text-text-tertiary hover:text-info truncate block text-left"
-                                title={`Im Ordner „${parentPath}" öffnen`}
+                                title={t("files.openInFolder").replace("{path}", parentPath)}
                               >
                                 {parentPath}
                               </button>
@@ -701,7 +686,7 @@ export function FileStationClient({
                         </div>
                       </td>
                       <td className="px-2 py-2 text-text-tertiary text-[11.5px]">
-                        {relativeTime(e.mtime)}
+                        {cloudRelative(e.mtime, locale, t)}
                       </td>
                       <td className="px-2 py-2 text-right text-text-tertiary tabular-nums text-[11.5px]">
                         {e.type === "folder" ? "—" : formatBytes(e.size)}
@@ -713,7 +698,7 @@ export function FileStationClient({
                               href={`/api/cloud/download?ws=${workspaceId}&path=${encodeURIComponent(e.path)}`}
                               onClick={(ev) => ev.stopPropagation()}
                               className="p-1 rounded hover:bg-bg-chrome text-text-tertiary hover:text-text-primary"
-                              title="Herunterladen"
+                              title={t("files.download")}
                             >
                               <Download size={12} />
                             </a>
@@ -725,7 +710,7 @@ export function FileStationClient({
                               void onDelete(e);
                             }}
                             className="p-1 rounded hover:bg-bg-chrome text-text-tertiary hover:text-red-500"
-                            title="Löschen"
+                            title={t("common.delete")}
                           >
                             <Trash2 size={12} />
                           </button>
@@ -770,10 +755,12 @@ function DetailRail({
   onOpen: (e: CloudEntry) => void;
   onDelete: (e: CloudEntry) => void;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
   if (!entry) {
     return (
       <div className="flex-1 flex items-center justify-center text-center px-6 text-text-quaternary text-[12px]">
-        Wähle eine Datei oder einen Ordner, um Details zu sehen.
+        {t("files.detail.pick")}
       </div>
     );
   }
@@ -793,19 +780,23 @@ function DetailRail({
               {entry.name}
             </p>
             <p className="text-[10.5px] text-text-tertiary mt-0.5">
-              {entry.type === "folder" ? "Ordner" : entry.contentType ?? "Datei"}
+              {entry.type === "folder"
+                ? t("files.kind.folder")
+                : entry.contentType ?? t("files.kind.file")}
             </p>
           </div>
         </div>
       </header>
       <dl className="px-4 py-3 grid grid-cols-2 gap-y-2 text-[11.5px] border-b border-stroke-1">
-        <dt className="text-text-tertiary">Größe</dt>
+        <dt className="text-text-tertiary">{t("files.column.size")}</dt>
         <dd className="text-text-secondary text-right tabular-nums">
           {entry.type === "folder" ? "—" : formatBytes(entry.size)}
         </dd>
-        <dt className="text-text-tertiary">Geändert</dt>
-        <dd className="text-text-secondary text-right">{relativeTime(entry.mtime)}</dd>
-        <dt className="text-text-tertiary">Pfad</dt>
+        <dt className="text-text-tertiary">{t("files.column.modified")}</dt>
+        <dd className="text-text-secondary text-right">
+          {cloudRelative(entry.mtime, locale, t)}
+        </dd>
+        <dt className="text-text-tertiary">{t("files.path")}</dt>
         <dd className="text-text-secondary text-right break-all font-mono text-[10px]">
           {entry.path}
         </dd>
@@ -818,11 +809,12 @@ function DetailRail({
           style={{ background: accent }}
         >
           <ExternalLink size={13} />
-          {primaryFileOpenLabel(
-            entry.name,
-            entry.fileId,
-            entry.type === "folder",
-          )}
+          {primaryFileOpenLabel(entry.name, entry.fileId, entry.type === "folder", {
+            folder: t("files.open.folder"),
+            portalEditor: t("files.open.portalEditor"),
+            presentationEditor: t("files.open.presentationEditor"),
+            preview: t("files.open.preview"),
+          })}
         </button>
         {entry.type === "file" && (
           <a
@@ -830,7 +822,7 @@ function DetailRail({
             className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-stroke-1 bg-bg-elevated hover:border-stroke-2 text-[12px] px-3 py-2"
           >
             <Download size={13} />
-            Herunterladen
+            {t("files.download")}
           </a>
         )}
         <button
@@ -839,7 +831,7 @@ function DetailRail({
           className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-stroke-1 bg-bg-elevated hover:border-red-500/40 hover:text-red-500 text-[12px] px-3 py-2"
         >
           <Trash2 size={13} />
-          Löschen
+          {t("common.delete")}
         </button>
       </div>
     </div>

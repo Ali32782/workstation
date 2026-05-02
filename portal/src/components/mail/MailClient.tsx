@@ -30,6 +30,7 @@ import {
   Settings as SettingsIcon,
   Sparkles,
   Kanban,
+  ChevronLeft,
   Clock,
 } from "lucide-react";
 import type {
@@ -43,9 +44,10 @@ import {
   normMessageId,
   peersInSameThread,
 } from "@/lib/mail/thread-utils";
-import { useT } from "@/components/LocaleProvider";
-import type { Messages } from "@/lib/i18n/messages";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import type { Locale, Messages } from "@/lib/i18n/messages";
 import { useResizableWidth, ResizeHandle } from "@/components/ui/resizable";
+import { useIsNarrowScreen } from "@/lib/use-is-narrow-screen";
 
 const ROLE_LABEL_KEY: Record<MailFolder["role"], keyof Messages | null> = {
   inbox: "mail.folder.inbox",
@@ -73,34 +75,38 @@ type ComposeState = {
 type TriageBucket = "urgent" | "needs-action" | "fyi" | "spam";
 type TriageVerdict = { bucket: TriageBucket; reason: string };
 
-const TRIAGE_META: Record<
+const TRIAGE_STYLES: Record<
   TriageBucket,
-  { label: string; chipClass: string; dotClass: string; emoji: string }
+  { chipClass: string; dotClass: string; emoji: string }
 > = {
-  "urgent": {
-    label: "Heute",
+  urgent: {
     chipClass: "bg-red-500/15 text-red-300 border-red-500/30",
     dotClass: "bg-red-400",
     emoji: "!",
   },
   "needs-action": {
-    label: "Antworten",
     chipClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
     dotClass: "bg-amber-400",
     emoji: "↩",
   },
-  "fyi": {
-    label: "Info",
+  fyi: {
     chipClass: "bg-sky-500/10 text-sky-300 border-sky-500/30",
     dotClass: "bg-sky-400",
     emoji: "i",
   },
-  "spam": {
-    label: "Rauschen",
-    chipClass: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30 line-through opacity-70",
+  spam: {
+    chipClass:
+      "bg-zinc-500/10 text-zinc-400 border-zinc-500/30 line-through opacity-70",
     dotClass: "bg-zinc-500",
     emoji: "—",
   },
+};
+
+const TRIAGE_LABEL_KEY: Record<TriageBucket, keyof Messages> = {
+  urgent: "mail.triage.urgent",
+  "needs-action": "mail.triage.needsAction",
+  fyi: "mail.triage.fyi",
+  spam: "mail.triage.noise",
 };
 
 function triageKey(folder: string, uid: number): string {
@@ -117,16 +123,6 @@ const ROLE_ICON: Record<MailFolder["role"], React.ComponentType<{ size?: number 
   custom: Folder,
 };
 
-const ROLE_LABEL: Record<MailFolder["role"], string> = {
-  inbox: "Posteingang",
-  sent: "Gesendet",
-  drafts: "Entwürfe",
-  trash: "Papierkorb",
-  junk: "Junk-E-Mail",
-  archive: "Archiv",
-  custom: "",
-};
-
 export function MailClient({
   initialFolders,
   selfEmail,
@@ -138,7 +134,7 @@ export function MailClient({
   selfName?: string;
   workspaceId: string;
 }) {
-  const t = useT();
+  const { locale, t } = useLocale();
   const [folders, setFolders] = useState<MailFolder[]>(initialFolders);
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string>(
@@ -161,7 +157,7 @@ export function MailClient({
   const [triageError, setTriageError] = useState<string | null>(null);
   const [triageFilter, setTriageFilter] = useState<TriageBucket | "all">("all");
 
-  /** Bulk selection `${folder}#${uid}` — gleicher Schlüssel wie triage/triageKey. */
+  /** Bulk selection keys `${folder}#${uid}` — same shape as triage/triageKey. */
   const [bulkKeys, setBulkKeys] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -171,15 +167,29 @@ export function MailClient({
   const folderResize = useResizableWidth({
     storageKey: "mail:folders",
     defaultWidth: 240,
-    min: 180,
+    tabletDefault: 200,
+    viewportMaxRatio: 0.18,
+    min: 160,
     max: 360,
   });
   const listResize = useResizableWidth({
     storageKey: "mail:list",
     defaultWidth: 360,
-    min: 280,
+    tabletDefault: 300,
+    viewportMaxRatio: 0.28,
+    min: 240,
     max: 560,
   });
+  const isNarrow = useIsNarrowScreen();
+  /** Phone-size UI: switch between folder rail · list · reader */
+  const [mailMobilePane, setMailMobilePane] = useState<
+    "folders" | "list" | "reader"
+  >("list");
+
+  useEffect(() => {
+    if (!isNarrow) return;
+    if (compose) setMailMobilePane("reader");
+  }, [isNarrow, compose]);
 
   /* ------------------------------ Fetchers ------------------------------ */
 
@@ -291,6 +301,22 @@ export function MailClient({
     [messages],
   );
 
+  const openMessageMobile = useCallback(
+    async (folder: string, uid: number) => {
+      if (isNarrow) setMailMobilePane("reader");
+      await openMessage(folder, uid);
+    },
+    [isNarrow, openMessage],
+  );
+
+  const pickFolder = useCallback(
+    (path: string) => {
+      setActiveFolder(path);
+      if (isNarrow) setMailMobilePane("list");
+    },
+    [isNarrow],
+  );
+
   /* ------------------------------ Actions ------------------------------- */
 
   const deleteCurrent = useCallback(async () => {
@@ -331,8 +357,8 @@ export function MailClient({
       const subject =
         aiPrefill?.subject?.trim() ||
         (mode === "forward"
-          ? prefixSubject(m.subject, "Fwd:")
-          : prefixSubject(m.subject, "Re:"));
+          ? prefixSubject(m.subject, "Fwd:", t("mail.noSubject"))
+          : prefixSubject(m.subject, "Re:", t("mail.noSubject")));
       const to =
         mode === "forward"
           ? ""
@@ -344,7 +370,7 @@ export function MailClient({
               .map(addrLine)
               .join(", ")
           : "";
-      const quote = quoteBody(m);
+      const quote = quoteBody(m, locale, t);
       const body = aiPrefill?.body
         ? `${aiPrefill.body}\n\n${quote}`
         : mode === "forward"
@@ -362,7 +388,7 @@ export function MailClient({
         attachments: [],
       });
     },
-    [activeMessage, selfEmail],
+    [activeMessage, selfEmail, locale, t],
   );
 
   const newMessage = useCallback(() => {
@@ -403,8 +429,7 @@ export function MailClient({
     window.history.replaceState({}, "", url.pathname + (url.search ? "?" + url.searchParams : ""));
   }, []);
 
-  // Liste filtern nach Stichwort (z.B. `@domain`) — anderer Teil des Portals kann
-  // `/mail?q=…` öffnen (CRM Company Hub).
+  // Match threads by keyword (e.g. `@domain`) — other surfaces open `/mail?q=…`
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -455,9 +480,9 @@ export function MailClient({
       refreshMessages(activeFolder);
     } else {
       const e = (await r.json().catch(() => ({}))) as { error?: string };
-      alert("Senden fehlgeschlagen: " + (e.error ?? r.statusText));
+      alert(`${t("mail.sendFailed")} ${e.error ?? r.statusText}`);
     }
-  }, [compose, activeFolder, refreshFolders, refreshMessages]);
+  }, [compose, activeFolder, refreshFolders, refreshMessages, t]);
 
   /* ------------------------------ Filtering ----------------------------- */
 
@@ -672,19 +697,37 @@ export function MailClient({
   /* --------------------------------- UI --------------------------------- */
 
   return (
-    <div className="flex h-full bg-bg-base text-text-primary text-[13px] overflow-hidden">
+    <div className="flex h-full min-h-0 bg-bg-base text-text-primary text-[13px] overflow-hidden touch-manipulation">
       {/* ── Folders ───────────────────────────────────────────────────── */}
       <aside
-        className="shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col"
-        style={{ width: folderResize.width }}
+        className={`shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col min-h-0 ${
+          isNarrow
+            ? mailMobilePane === "folders"
+              ? "flex w-full min-w-0 flex-1"
+              : "hidden"
+            : ""
+        }`}
+        style={isNarrow ? undefined : { width: folderResize.width }}
       >
         <div className="p-3 border-b border-stroke-1">
+          {isNarrow ? (
+            <button
+              type="button"
+              onClick={() => setMailMobilePane("list")}
+              className="mb-2 w-full flex items-center justify-center gap-2 rounded-md border border-stroke-1 bg-bg-elevated py-2 text-[12px] font-medium text-text-secondary hover:bg-bg-overlay touch-manipulation"
+            >
+              <ChevronLeft size={16} />
+              {t("mail.mobile.backToList")}
+            </button>
+          ) : null}
           <button
             onClick={newMessage}
-            className="w-full flex items-center justify-center gap-2 rounded-md bg-[#0078d4] hover:bg-[#106ebe] text-white px-3 py-2 text-sm font-medium transition-colors"
+            className={`w-full flex items-center justify-center gap-2 rounded-md bg-[#0078d4] hover:bg-[#106ebe] text-white px-3 font-medium transition-colors touch-manipulation ${
+              isNarrow ? "min-h-[44px] text-[13px]" : "py-2 text-sm"
+            }`}
           >
             <Plus size={16} />
-            Neue E-Mail
+            {t("mail.compose")}
           </button>
         </div>
         <div className="flex-1 overflow-y-auto py-2">
@@ -693,7 +736,7 @@ export function MailClient({
               key={f.path}
               folder={f}
               active={f.path === activeFolder}
-              onClick={() => setActiveFolder(f.path)}
+              onClick={() => pickFolder(f.path)}
             />
           ))}
         </div>
@@ -702,7 +745,7 @@ export function MailClient({
           <button
             onClick={refreshFolders}
             className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-            title="Ordner neu laden"
+            title={t("mail.reloadFolders")}
           >
             {foldersLoading ? (
               <Loader2 size={12} className="spin" />
@@ -713,47 +756,76 @@ export function MailClient({
         </div>
       </aside>
 
+      {!isNarrow && (
       <ResizeHandle
         onPointerDown={folderResize.startDrag}
-        ariaLabel="Ordnerleiste verschieben"
+        ariaLabel={t("mail.resize.folderRail")}
       />
+      )}
 
       {/* ── Message List ──────────────────────────────────────────────── */}
       <section
-        className="shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col"
-        style={{ width: listResize.width }}
+        className={`shrink-0 border-r border-stroke-1 bg-bg-chrome flex flex-col min-h-0 ${
+          isNarrow
+            ? mailMobilePane === "list"
+              ? "flex w-full min-w-0 flex-1"
+              : "hidden"
+            : ""
+        }`}
+        style={isNarrow ? undefined : { width: listResize.width }}
       >
         <div className="p-3 border-b border-stroke-1 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-text-primary">
+          <div className="flex items-center justify-between gap-2">
+            {isNarrow ? (
+              <button
+                type="button"
+                onClick={() => setMailMobilePane("folders")}
+                className="shrink-0 rounded-lg hover:bg-bg-overlay text-text-secondary min-h-[44px] min-w-[44px] inline-flex items-center justify-center touch-manipulation"
+                aria-label={t("mail.folder.aria")}
+              >
+                <ChevronLeft size={20} />
+              </button>
+            ) : null}
+            <h2 className="font-semibold text-text-primary min-w-0 truncate flex-1">
               {labelForFolder(folders, activeFolder, t)}
             </h2>
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5 shrink-0">
               <button
                 onClick={runTriage}
                 disabled={triageBusy || messages.length === 0}
-                className="px-2 h-6 inline-flex items-center gap-1 rounded border border-[#5b5fc7]/40 bg-[#5b5fc7]/15 text-[#a5a8e6] hover:bg-[#5b5fc7]/25 disabled:opacity-50 disabled:cursor-not-allowed text-[11px] font-medium transition-colors"
-                title="KI sortiert die Inbox in Heute / Antworten / Info / Rauschen"
+                className={`inline-flex items-center gap-1 rounded border border-[#5b5fc7]/40 bg-[#5b5fc7]/15 text-[#a5a8e6] hover:bg-[#5b5fc7]/25 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors touch-manipulation ${
+                  isNarrow ? "min-h-[40px] px-2.5 text-[11px]" : "px-2 h-6 text-[11px]"
+                }`}
+                title={t("mail.aiTriage.tooltip")}
               >
                 {triageBusy ? (
                   <Loader2 size={11} className="spin" />
                 ) : (
                   <Sparkles size={11} />
                 )}
-                AI-Triage
+                {t("mail.aiTriage.button")}
               </button>
               <a
                 href="https://webmail.kineo360.work/?admin"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+                className={`rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary touch-manipulation ${
+                  isNarrow
+                    ? "min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                    : "p-1"
+                }`}
                 title={t("mail.settings")}
               >
                 <SettingsIcon size={14} />
               </a>
               <button
+                type="button"
                 onClick={() => refreshMessages(activeFolder)}
-                className="p-1 rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
+                className={`rounded hover:bg-bg-overlay text-text-tertiary hover:text-text-primary touch-manipulation ${
+                  isNarrow
+                    ? "min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                    : "p-1"
+                }`}
                 title={t("common.refresh")}
               >
                 {messagesLoading ? (
@@ -769,35 +841,35 @@ export function MailClient({
           {Object.keys(triage).length > 0 && (
             <div className="flex flex-wrap items-center gap-1 -mt-0.5">
               <TriageChip
-                label="Alle"
+                label={t("common.all")}
                 count={triageCounts.all}
                 active={triageFilter === "all"}
                 onClick={() => setTriageFilter("all")}
                 tone="default"
               />
               <TriageChip
-                label={TRIAGE_META.urgent.label}
+                label={t(TRIAGE_LABEL_KEY.urgent)}
                 count={triageCounts.urgent}
                 active={triageFilter === "urgent"}
                 onClick={() => setTriageFilter("urgent")}
                 tone="red"
               />
               <TriageChip
-                label={TRIAGE_META["needs-action"].label}
+                label={t(TRIAGE_LABEL_KEY["needs-action"])}
                 count={triageCounts["needs-action"]}
                 active={triageFilter === "needs-action"}
                 onClick={() => setTriageFilter("needs-action")}
                 tone="amber"
               />
               <TriageChip
-                label={TRIAGE_META.fyi.label}
+                label={t(TRIAGE_LABEL_KEY.fyi)}
                 count={triageCounts.fyi}
                 active={triageFilter === "fyi"}
                 onClick={() => setTriageFilter("fyi")}
                 tone="sky"
               />
               <TriageChip
-                label={TRIAGE_META.spam.label}
+                label={t(TRIAGE_LABEL_KEY.spam)}
                 count={triageCounts.spam}
                 active={triageFilter === "spam"}
                 onClick={() => setTriageFilter("spam")}
@@ -869,12 +941,12 @@ export function MailClient({
           {messagesLoading && messages.length === 0 && (
             <div className="p-6 text-center text-text-tertiary text-xs">
               <Loader2 size={20} className="spin mx-auto mb-2" />
-              Lade Nachrichten …
+              {t("mail.loading.threadList")}
             </div>
           )}
           {!messagesLoading && visibleMessages.length === 0 && (
             <div className="p-6 text-center text-text-tertiary text-xs">
-              {search ? "Nichts gefunden" : "Keine Nachrichten"}
+              {search ? t("mail.empty.threadSearch") : t("mail.empty.threadList")}
             </div>
           )}
           <ul className="list-none m-0 p-0">
@@ -886,7 +958,7 @@ export function MailClient({
               msg={msg}
               active={msg.uid === activeUid}
               triage={triage[rowKey]}
-              onClick={() => openMessage(msg.folder, msg.uid)}
+              onClick={() => openMessageMobile(msg.folder, msg.uid)}
               threadSize={threadSize}
               threadIndex={threadIndex}
               bulkChecked={bulkKeys.has(rowKey)}
@@ -899,43 +971,58 @@ export function MailClient({
         </div>
       </section>
 
+      {!isNarrow && (
       <ResizeHandle
         onPointerDown={listResize.startDrag}
-        ariaLabel="Nachrichtenliste verschieben"
+        ariaLabel={t("mail.resize.messageList")}
       />
+      )}
 
       {/* ── Reader / Compose ──────────────────────────────────────────── */}
-      <section className="flex-1 flex flex-col min-w-0 bg-bg-base">
+      <section
+        className={`flex-1 flex flex-col min-w-0 bg-bg-base min-h-0 ${
+          isNarrow && mailMobilePane !== "reader" && !compose
+            ? "hidden"
+            : ""
+        }`}
+      >
         {compose ? (
           <Composer
             state={compose}
             setState={setCompose}
             onSend={sendCompose}
-            onCancel={() => setCompose(null)}
+            onCancel={() => {
+              setCompose(null);
+              if (isNarrow) setMailMobilePane("list");
+            }}
             selfEmail={selfEmail}
             selfName={selfName}
           />
         ) : messageLoading ? (
           <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">
-            <Loader2 size={20} className="spin mr-2" /> Lade Nachricht …
+            <Loader2 size={20} className="spin mr-2" />{" "}
+            {t("mail.loading.message")}
           </div>
         ) : activeMessage ? (
           <Reader
             msg={activeMessage}
             workspaceId={workspaceId}
             threadPeers={threadPeers}
-            onOpenPeer={(folder, uid) => void openMessage(folder, uid)}
+            onOpenPeer={(folder, uid) => void openMessageMobile(folder, uid)}
             onReply={() => reply("reply")}
             onReplyAll={() => reply("replyAll")}
             onForward={() => reply("forward")}
             onAiReply={(prefill) => reply("reply", prefill)}
             onDelete={deleteCurrent}
             onSnoozed={handleSnoozed}
+            onBackMobile={
+              isNarrow ? () => setMailMobilePane("list") : undefined
+            }
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-text-tertiary gap-2">
             <Inbox size={48} className="opacity-30" />
-            <p className="text-sm">Wähle eine Nachricht aus</p>
+            <p className="text-sm">{t("mail.select.messageHint")}</p>
           </div>
         )}
       </section>
@@ -956,8 +1043,9 @@ function FolderItem({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useLocale();
   const Icon = ROLE_ICON[folder.role];
-  const label = ROLE_LABEL[folder.role] || folder.name;
+  const label = folderDisplayLabel(folder, t);
   return (
     <button
       onClick={onClick}
@@ -1001,10 +1089,13 @@ function MessageRow({
   bulkActive: boolean;
   onToggleBulk: () => void;
 }) {
+  const { locale, t } = useLocale();
   const isUnread = !msg.flags.includes("\\Seen");
-  const sender = msg.from?.name ?? msg.from?.address ?? "(unbekannt)";
-  const date = formatDate(new Date(msg.date));
-  const meta = triage ? TRIAGE_META[triage.bucket] : null;
+  const sender =
+    msg.from?.name ?? msg.from?.address ?? t("mail.unknownSender");
+  const date = formatDate(new Date(msg.date), locale);
+  const metaStyles = triage ? TRIAGE_STYLES[triage.bucket] : null;
+  const metaLabel = triage ? t(TRIAGE_LABEL_KEY[triage.bucket]) : null;
   const inThreadFollow = threadIndex > 0;
   const hasThreadBadge = threadIndex === 0 && threadSize > 1;
 
@@ -1027,7 +1118,7 @@ function MessageRow({
             onToggleBulk();
           }}
           className="w-3.5 h-3.5 rounded border-stroke-2 bg-bg-base accent-[#0078d4]"
-          aria-label="Nachricht auswählen"
+          aria-label={t("mail.row.selectAria")}
         />
       </label>
       <button
@@ -1044,17 +1135,17 @@ function MessageRow({
         }`}
       >
       <div className="flex items-center gap-2">
-        {meta && (
+        {metaStyles && (
           <span
-            className={`shrink-0 w-1.5 h-1.5 rounded-full ${meta.dotClass}`}
+            className={`shrink-0 w-1.5 h-1.5 rounded-full ${metaStyles.dotClass}`}
             aria-hidden
-            title={meta.label}
+            title={metaLabel ?? undefined}
           />
         )}
         {hasThreadBadge && (
           <span
             className="shrink-0 inline-flex items-center gap-0.5 px-1 py-px rounded bg-[#0078d4]/20 text-[10px] text-[#79b8ff]"
-            title="Konversation mehrteiliger Nachrichten"
+            title={t("mail.row.threadBadgeTitle")}
           >
             <GitBranch size={10} aria-hidden /> {threadSize}
           </span>
@@ -1073,7 +1164,7 @@ function MessageRow({
           isUnread ? "text-text-primary" : "text-text-secondary"
         }`}
       >
-        {msg.subject || "(kein Betreff)"}
+        {msg.subject || t("mail.noSubject")}
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {msg.hasAttachments && <Paperclip size={11} className="text-text-tertiary" />}
@@ -1081,12 +1172,12 @@ function MessageRow({
           <Star size={11} className="text-yellow-500" />
         )}
         {isUnread && <span className="w-1.5 h-1.5 rounded-full bg-[#0078d4]" />}
-        {meta && triage && (
+        {metaStyles && triage && metaLabel && (
           <span
-            className={`inline-flex items-center gap-1 px-1.5 h-[16px] rounded border text-[10px] font-medium ${meta.chipClass}`}
-            title={triage.reason || meta.label}
+            className={`inline-flex items-center gap-1 px-1.5 h-[16px] rounded border text-[10px] font-medium ${metaStyles.chipClass}`}
+            title={triage.reason || metaLabel}
           >
-            {meta.label}
+            {metaLabel}
           </span>
         )}
       </div>
@@ -1154,10 +1245,11 @@ function Reader({
   onAiReply,
   onDelete,
   onSnoozed,
+  onBackMobile,
 }: {
   msg: MailFull;
   workspaceId: string;
-  /** Andere Nachrichten derselben Konversation auf der Liste (aktueller Folder). */
+  /** Other messages in the same conversation on this folder’s list. */
   threadPeers: MailListItem[];
   onOpenPeer: (folder: string, uid: number) => void;
   onReply: () => void;
@@ -1166,18 +1258,32 @@ function Reader({
   onAiReply: (prefill: { subject?: string; body: string }) => void;
   onDelete: () => void;
   onSnoozed: (wakeAt: Date) => void;
+  /** Phone: back to the thread list */
+  onBackMobile?: () => void;
 }) {
-  const t = useT();
+  const { locale, t } = useLocale();
   const [issueOpen, setIssueOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   return (
-    <div className="relative flex flex-col h-full min-h-0">
-      <div className="px-5 pt-4 pb-3 border-b border-stroke-1">
-        <h1 className="text-[18px] font-semibold mb-2 text-text-primary">
-          {msg.subject || "(kein Betreff)"}
-        </h1>
-        <div className="flex items-center gap-3">
+    <div className="relative flex flex-col h-full min-h-0 overflow-x-hidden">
+      <div className="px-3 sm:px-5 pt-3 sm:pt-4 pb-3 border-b border-stroke-1">
+        <div className="flex items-start gap-2 sm:gap-3 mb-2">
+          {onBackMobile ? (
+            <button
+              type="button"
+              onClick={onBackMobile}
+              className="shrink-0 p-2 -ml-1 rounded-lg hover:bg-bg-overlay text-text-secondary min-h-10 min-w-10 flex items-center justify-center sm:hidden"
+              aria-label={t("mail.reader.backToList")}
+            >
+              <ChevronLeft size={22} />
+            </button>
+          ) : null}
+          <h1 className="text-[16px] sm:text-[18px] font-semibold text-text-primary min-w-0 flex-1 [overflow-wrap:anywhere]">
+            {msg.subject || t("mail.noSubject")}
+          </h1>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
           <Avatar name={msg.from?.name ?? msg.from?.address ?? "?"} />
           <div className="flex-1 min-w-0">
             <div className="text-[13px] text-text-primary">
@@ -1191,38 +1297,43 @@ function Reader({
               )}
             </div>
             <div className="text-text-tertiary text-[11px] mt-0.5">
-              An: {msg.to.map((a) => a.name ?? a.address).join(", ") || "—"}
+              {t("mail.reader.to")}{" "}
+              {msg.to.map((a) => a.name ?? a.address).join(", ") || "—"}
               {msg.cc.length > 0 && (
                 <span className="ml-2">
-                  Cc: {msg.cc.map((a) => a.name ?? a.address).join(", ")}
+                  {t("mail.reader.cc")}{" "}
+                  {msg.cc.map((a) => a.name ?? a.address).join(", ")}
                 </span>
               )}
             </div>
           </div>
           <div className="text-text-tertiary text-[11px] whitespace-nowrap">
-            {new Date(msg.date).toLocaleString("de-DE", {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })}
+            {new Date(msg.date).toLocaleString(
+              locale === "en" ? "en-US" : "de-DE",
+              {
+                dateStyle: "medium",
+                timeStyle: "short",
+              },
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 mt-3">
+        <div className="flex flex-wrap items-center gap-1.5 mt-3">
           <ActionButton icon={Reply} label={t("common.reply")} onClick={onReply} primary />
           <ActionButton icon={ReplyAll} label={t("common.replyAll")} onClick={onReplyAll} />
           <ActionButton icon={Forward} label={t("common.forward")} onClick={onForward} />
           <ActionButton
             icon={Sparkles}
-            label="AI-Antwort"
+            label={t("mail.reader.aiReply")}
             onClick={() => setAiOpen((v) => !v)}
           />
           <ActionButton
             icon={Kanban}
-            label="Als Issue"
+            label={t("mail.reader.asIssue")}
             onClick={() => setIssueOpen(true)}
           />
           <ActionButton
             icon={Clock}
-            label="Snooze"
+            label={t("mail.reader.snooze")}
             onClick={() => setSnoozeOpen(true)}
           />
           <div className="flex-1" />
@@ -1252,7 +1363,8 @@ function Reader({
         {threadPeers.length > 0 && (
           <div className="mt-3 rounded-md border border-stroke-1 bg-bg-chrome px-3 py-2">
             <p className="text-[10px] uppercase tracking-wide font-semibold text-text-quaternary mb-1.5 flex items-center gap-1">
-              <GitBranch size={11} aria-hidden /> Weitere Nachrichten in dieser Konversation
+              <GitBranch size={11} aria-hidden />{" "}
+              {t("mail.reader.moreInThread")}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {threadPeers.map((p) => (
@@ -1266,7 +1378,7 @@ function Reader({
                     {p.from?.name ?? p.from?.address ?? "?"}
                   </span>
                   <span className="text-text-quaternary text-[10px]">
-                    {formatDate(new Date(p.date))}
+                    {formatDate(new Date(p.date), locale)}
                   </span>
                 </button>
               ))}
@@ -1282,7 +1394,7 @@ function Reader({
           />
         ) : (
           <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-text-primary">
-            {msg.bodyText ?? "(kein Inhalt)"}
+            {msg.bodyText ?? t("mail.noBody")}
           </pre>
         )}
       </div>
@@ -1319,7 +1431,7 @@ function Reader({
 }
 
 /**
- * "Später erinnern"-Panel.
+ * Snooze (“remind me later”) panel.
  *
  * Presets cover the cases that account for ~90 % of real-world snoozes
  * (today-evening, tomorrow-morning, end-of-week, next-monday) plus a
@@ -1336,6 +1448,8 @@ function SnoozePanel({
   onClose: () => void;
   onSnoozed: (wakeAt: Date) => void;
 }) {
+  const { locale, t } = useLocale();
+  const locTag = locale === "en" ? "en-US" : "de-DE";
   const presets = useMemo<
     Array<{ id: string; label: string; sub: string; date: Date }>
   >(() => {
@@ -1343,8 +1457,6 @@ function SnoozePanel({
     const todayEvening = new Date(now);
     todayEvening.setHours(18, 0, 0, 0);
     if (todayEvening.getTime() < now.getTime() + 60 * 60 * 1000) {
-      // If it's already past 17h we'd skip "today evening" — bump
-      // to tomorrow same-time and label accordingly.
       todayEvening.setDate(todayEvening.getDate() + 1);
     }
     const tomorrowMorning = new Date(now);
@@ -1356,40 +1468,44 @@ function SnoozePanel({
     nextMonday.setHours(8, 0, 0, 0);
     const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
     const fmt = (d: Date) =>
-      d.toLocaleString("de-DE", {
+      d.toLocaleString(locTag, {
         weekday: "short",
         day: "2-digit",
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
       });
+    const eveningLabel =
+      todayEvening.getDate() === now.getDate()
+        ? t("mail.snooze.preset.todayEvening")
+        : t("mail.snooze.preset.tomorrowEvening");
     return [
       {
         id: "1h",
-        label: "In 1 Stunde",
+        label: t("mail.snooze.preset.inOneHour"),
         sub: fmt(inOneHour),
         date: inOneHour,
       },
       {
         id: "evening",
-        label: todayEvening.getDate() === now.getDate() ? "Heute Abend" : "Morgen Abend",
+        label: eveningLabel,
         sub: fmt(todayEvening),
         date: todayEvening,
       },
       {
         id: "tomorrow",
-        label: "Morgen früh",
+        label: t("mail.snooze.preset.tomorrowMorning"),
         sub: fmt(tomorrowMorning),
         date: tomorrowMorning,
       },
       {
         id: "monday",
-        label: "Nächster Montag",
+        label: t("mail.snooze.preset.nextMonday"),
         sub: fmt(nextMonday),
         date: nextMonday,
       },
     ];
-  }, []);
+  }, [locale, t]);
 
   const [customDate, setCustomDate] = useState<string>(() => {
     // Default custom to "tomorrow 09:00" in local time — works in
@@ -1406,7 +1522,7 @@ function SnoozePanel({
   const submit = useCallback(
     async (when: Date) => {
       if (when.getTime() < Date.now() + 5 * 60 * 1000) {
-        setError("Bitte mindestens 5 Minuten in die Zukunft.");
+        setError(t("mail.snooze.errorMinFuture"));
         return;
       }
       setBusy(true);
@@ -1436,7 +1552,7 @@ function SnoozePanel({
         setBusy(false);
       }
     },
-    [msg.folder, msg.uid, onSnoozed],
+    [msg.folder, msg.uid, onSnoozed, t],
   );
 
   return (
@@ -1451,7 +1567,7 @@ function SnoozePanel({
         <header className="px-4 py-2.5 border-b border-stroke-1 flex items-center gap-2">
           <Clock size={14} className="text-info" />
           <h3 className="text-[12.5px] font-semibold flex-1">
-            Später erinnern
+            {t("mail.snooze.title")}
           </h3>
           <button
             type="button"
@@ -1463,8 +1579,7 @@ function SnoozePanel({
         </header>
         <div className="p-3 space-y-2">
           <p className="text-[11px] text-text-tertiary">
-            Die Mail verschwindet aus deinem Posteingang und kommt zur
-            gewählten Zeit ungelesen zurück.
+            {t("mail.snooze.intro")}
           </p>
           <div className="grid grid-cols-2 gap-2">
             {presets.map((p) => (
@@ -1484,7 +1599,7 @@ function SnoozePanel({
           </div>
           <div className="border-t border-stroke-1 pt-2.5">
             <label className="text-[10.5px] text-text-tertiary uppercase tracking-wide">
-              Eigene Zeit
+              {t("mail.snooze.customTime")}
             </label>
             <div className="flex items-center gap-2 mt-1">
               <input
@@ -1500,14 +1615,14 @@ function SnoozePanel({
                 onClick={() => {
                   const d = new Date(customDate);
                   if (Number.isNaN(d.getTime())) {
-                    setError("Ungültiges Datum");
+                    setError(t("mail.snooze.errorInvalidDate"));
                     return;
                   }
                   void submit(d);
                 }}
                 className="px-3 py-1.5 rounded-md bg-info text-white text-[11.5px] font-medium hover:bg-info/90 disabled:opacity-50"
               >
-                {busy ? <Loader2 size={11} className="animate-spin" /> : "Snoozen"}
+                {busy ? <Loader2 size={11} className="animate-spin" /> : t("mail.snooze.submit")}
               </button>
             </div>
           </div>
@@ -1522,6 +1637,17 @@ function SnoozePanel({
   );
 }
 
+function planeIssuePriorityLabel(
+  p: "none" | "low" | "medium" | "high" | "urgent",
+  translate: (k: keyof Messages, f?: string) => string,
+): string {
+  if (p === "none") return "—";
+  if (p === "low") return translate("helpdesk.priority.low");
+  if (p === "medium") return translate("helpdesk.priority.normal");
+  if (p === "high") return translate("helpdesk.priority.high");
+  return translate("helpdesk.priority.urgent");
+}
+
 function IssueFromMailDialog({
   msg,
   workspaceId,
@@ -1532,9 +1658,10 @@ function IssueFromMailDialog({
   onClose: () => void;
 }) {
   type Project = { id: string; name: string; identifier: string };
+  const { locale, t } = useLocale();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [projectId, setProjectId] = useState<string>("");
-  const [title, setTitle] = useState(msg.subject || "(kein Betreff)");
+  const [title, setTitle] = useState(msg.subject ?? "");
   const [priority, setPriority] = useState<"none" | "low" | "medium" | "high" | "urgent">(
     "medium",
   );
@@ -1586,8 +1713,10 @@ function IssueFromMailDialog({
       // without losing the thread.
       const fromLine = msg.from
         ? `${msg.from.name ?? ""} <${msg.from.address}>`.trim()
-        : "(unbekannt)";
-      const dateLine = new Date(msg.date).toLocaleString("de-DE");
+        : t("mail.unknownSender");
+      const dateLine = new Date(msg.date).toLocaleString(
+        locale === "en" ? "en-US" : "de-DE",
+      );
       const body = (msg.bodyText ?? msg.bodyHtml ?? "")
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
@@ -1596,11 +1725,11 @@ function IssueFromMailDialog({
       const portalLink = `/${workspaceId}/mail`;
 
       const descriptionHtml =
-        `<p><strong>Aus E-Mail:</strong> ${escapeHtml(fromLine)}</p>` +
-        `<p><strong>Datum:</strong> ${escapeHtml(dateLine)}</p>` +
-        `<p><strong>Betreff:</strong> ${escapeHtml(msg.subject)}</p>` +
+        `<p><strong>${escapeHtml(t("mail.issue.html.fromMail"))}</strong> ${escapeHtml(fromLine)}</p>` +
+        `<p><strong>${escapeHtml(t("mail.issue.html.date"))}</strong> ${escapeHtml(dateLine)}</p>` +
+        `<p><strong>${escapeHtml(t("mail.issue.html.subject"))}</strong> ${escapeHtml(msg.subject)}</p>` +
         `<hr/><p>${escapeHtml(body)}</p>` +
-        `<p><a href="${portalLink}">Original-E-Mail im Portal öffnen</a></p>`;
+        `<p><a href="${portalLink}">${escapeHtml(t("mail.issue.html.openOriginal"))}</a></p>`;
 
       const r = await fetch(
         `/api/projects/issues?ws=${encodeURIComponent(workspaceId)}&project=${encodeURIComponent(projectId)}`,
@@ -1636,12 +1765,12 @@ function IssueFromMailDialog({
       <div className="w-full max-w-md rounded-lg border border-stroke-1 bg-bg-elevated shadow-xl">
         <header className="flex items-center justify-between border-b border-stroke-1 px-4 py-2.5">
           <h3 className="text-sm font-semibold text-text-primary">
-            Als Plane-Issue speichern
+            {t("mail.issue.dialogTitle")}
           </h3>
           <button
             onClick={onClose}
             className="text-text-tertiary hover:text-text-primary"
-            aria-label="Schließen"
+            aria-label={t("common.close")}
           >
             <X size={14} />
           </button>
@@ -1651,30 +1780,33 @@ function IssueFromMailDialog({
           {created ? (
             <div className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5">
               <p className="text-[13px] text-emerald-200">
-                Issue erstellt — wird dir zugewiesen.
+                {t("mail.issue.successBody")}
               </p>
               <Link
                 className="text-[12px] text-emerald-300 underline mt-1 inline-block"
                 href={`/${workspaceId}/projects?project=${encodeURIComponent(projectId)}&issue=${encodeURIComponent(created.id)}`}
                 onClick={onClose}
               >
-                #{created.sequenceId} öffnen →
+                {t("mail.issue.openIssueLink").replace(
+                  "{n}",
+                  String(created.sequenceId),
+                )}
               </Link>
             </div>
           ) : (
             <>
               <div>
                 <label className="block text-[11px] font-medium text-text-tertiary mb-1">
-                  Projekt
+                  {t("mail.issue.projectLabel")}
                 </label>
                 {projects === null ? (
                   <div className="text-[12px] text-text-tertiary inline-flex items-center gap-1.5">
                     <Loader2 size={12} className="spin" />
-                    Lade Projekte …
+                    {t("mail.issue.loadingProjects")}
                   </div>
                 ) : projects.length === 0 ? (
                   <p className="text-[12px] text-amber-300">
-                    Keine Projekte in deinem Plane-Workspace gefunden.
+                    {t("mail.issue.noProjects")}
                   </p>
                 ) : (
                   <select
@@ -1693,7 +1825,7 @@ function IssueFromMailDialog({
 
               <div>
                 <label className="block text-[11px] font-medium text-text-tertiary mb-1">
-                  Titel
+                  {t("mail.issue.titleLabel")}
                 </label>
                 <input
                   type="text"
@@ -1705,7 +1837,7 @@ function IssueFromMailDialog({
 
               <div>
                 <label className="block text-[11px] font-medium text-text-tertiary mb-1">
-                  Priorität
+                  {t("mail.issue.priorityLabel")}
                 </label>
                 <div className="flex gap-1">
                   {(["urgent", "high", "medium", "low", "none"] as const).map(
@@ -1720,7 +1852,7 @@ function IssueFromMailDialog({
                             : "border-stroke-1 text-text-secondary hover:text-text-primary"
                         }`}
                       >
-                        {p === "none" ? "—" : p}
+                        {planeIssuePriorityLabel(p, t)}
                       </button>
                     ),
                   )}
@@ -1729,12 +1861,12 @@ function IssueFromMailDialog({
 
               <div className="rounded border border-stroke-1 bg-bg-base/60 p-2">
                 <p className="text-[10px] text-text-tertiary mb-0.5">
-                  Beschreibung enthält automatisch:
+                  {t("mail.issue.descIntro")}
                 </p>
                 <ul className="text-[11px] text-text-secondary list-disc list-inside space-y-0.5">
-                  <li>Absender, Datum, Betreff</li>
-                  <li>Mail-Inhalt (auf 4000 Zeichen gekürzt)</li>
-                  <li>Link zurück zur E-Mail</li>
+                  <li>{t("mail.issue.descBullet1")}</li>
+                  <li>{t("mail.issue.descBullet2")}</li>
+                  <li>{t("mail.issue.descBullet3")}</li>
                 </ul>
               </div>
 
@@ -1748,7 +1880,7 @@ function IssueFromMailDialog({
                   onClick={onClose}
                   className="px-3 h-8 rounded border border-stroke-1 text-text-secondary text-[12px] hover:text-text-primary"
                 >
-                  Abbrechen
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
@@ -1757,7 +1889,7 @@ function IssueFromMailDialog({
                   className="inline-flex items-center gap-1.5 px-3 h-8 rounded bg-[#5b5fc7] text-white text-[12px] font-medium hover:bg-[#4f52b2] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {busy && <Loader2 size={12} className="spin" />}
-                  Erstellen
+                  {t("mail.issue.createButton")}
                 </button>
               </div>
             </>
@@ -1779,6 +1911,7 @@ function AiReplyPanel({
   onClose: () => void;
   onPick: (v: { subject?: string; body: string }) => void;
 }) {
+  const { t } = useLocale();
   const [intent, setIntent] = useState("");
   const [tone, setTone] = useState<"freundlich" | "formell" | "kurz" | "empathisch">(
     "freundlich",
@@ -1843,15 +1976,19 @@ function AiReplyPanel({
       <header className="shrink-0 px-4 py-2.5 border-b border-stroke-1 bg-bg-chrome flex items-center gap-2">
         <Sparkles size={14} className="text-info" />
         <h3 className="text-[12.5px] font-semibold flex-1">
-          AI-Antwortvorschläge
+          {t("mail.aiReply.title")}
         </h3>
         {usedKnowledge.length > 0 && (
           <span
             className="text-[10.5px] text-text-tertiary truncate max-w-[260px]"
-            title={`Genutzte Wissensbasis-Abschnitte: ${usedKnowledge.join(", ")}`}
+            title={`${t("mail.aiReply.knowledgeTooltip")} ${usedKnowledge.join(", ")}`}
           >
-            Wissensbasis: {usedKnowledge.length} Abschnitt
-            {usedKnowledge.length === 1 ? "" : "e"}
+            {usedKnowledge.length === 1
+              ? t("mail.aiReply.knowledgeCountOne")
+              : t("mail.aiReply.knowledgeCountMany").replace(
+                  "{n}",
+                  String(usedKnowledge.length),
+                )}
           </span>
         )}
         <button
@@ -1870,7 +2007,7 @@ function AiReplyPanel({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !busy) void generate();
           }}
-          placeholder={'Optional: was soll die Antwort sagen? z.B. „Termin am Mi 14:00 bestätigen, alternative Donnerstag 09:00".'}
+          placeholder={t("mail.aiReply.intentPlaceholder")}
           className="flex-1 px-2.5 py-1.5 rounded-md bg-bg-base border border-stroke-1 focus:border-info text-[12px] outline-none"
         />
         <select
@@ -1886,10 +2023,10 @@ function AiReplyPanel({
           }
           className="px-2 py-1.5 rounded-md bg-bg-base border border-stroke-1 text-[12px] outline-none"
         >
-          <option value="freundlich">Freundlich</option>
-          <option value="formell">Formell</option>
-          <option value="kurz">Kurz</option>
-          <option value="empathisch">Empathisch</option>
+          <option value="freundlich">{t("mail.compose.tone.friendly")}</option>
+          <option value="formell">{t("mail.compose.tone.formal")}</option>
+          <option value="kurz">{t("mail.compose.tone.short")}</option>
+          <option value="empathisch">{t("mail.aiReply.tone.empathic")}</option>
         </select>
         <button
           type="button"
@@ -1902,7 +2039,9 @@ function AiReplyPanel({
           ) : (
             <RefreshCw size={11} />
           )}
-          {variants.length === 0 ? "Generieren" : "Neu generieren"}
+          {variants.length === 0
+            ? t("mail.aiReply.generate")
+            : t("mail.aiReply.regenerate")}
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -1911,14 +2050,14 @@ function AiReplyPanel({
             {error}
             {!isNotConfiguredError(error) ? null : (
               <p className="text-[11px] mt-1 text-text-tertiary">
-                Tipp: Befülle die{" "}
+                {t("mail.aiReply.notConfiguredIntro")}{" "}
                 <a
                   href={`/${workspaceId}/ai-knowledge`}
                   className="underline text-info"
                 >
-                  Wissensbasis
-                </a>{" "}
-                damit die AI deine Firma kennt.
+                  {t("mail.aiReply.knowledgeBase")}
+                </a>
+                {t("mail.aiReply.notConfiguredOutro")}
               </p>
             )}
           </div>
@@ -1933,7 +2072,7 @@ function AiReplyPanel({
         {busy && variants.length === 0 && (
           <div className="flex items-center justify-center py-8 text-text-tertiary text-[12px] gap-2">
             <Loader2 size={14} className="spin" />
-            Generiere Vorschläge mit Firmen-Wissensbasis …
+            {t("mail.aiReply.generating")}
           </div>
         )}
         {variants.map((v, i) => (
@@ -1951,12 +2090,12 @@ function AiReplyPanel({
                 onClick={() => onPick(v)}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-info hover:bg-info/90 text-white text-[11px] font-medium"
               >
-                Übernehmen
+                {t("mail.aiReply.apply")}
               </button>
             </header>
             {v.subject && (
               <div className="px-3 py-1.5 border-b border-stroke-1 text-[11.5px]">
-                <span className="text-text-tertiary">Betreff: </span>
+                <span className="text-text-tertiary">{t("mail.aiReply.subjectLabel")} </span>
                 <span className="font-medium">{v.subject}</span>
               </div>
             )}
@@ -2044,7 +2183,7 @@ function Composer({
       });
       const j = await r.json();
       if (!r.ok) {
-        alert(`AI-Draft fehlgeschlagen: ${j.error ?? `HTTP ${r.status}`}`);
+        alert(`${t("mail.compose.aiDraftFailed")} ${j.error ?? `HTTP ${r.status}`}`);
         return;
       }
       update({
@@ -2101,7 +2240,7 @@ function Composer({
           label={t("mail.compose.to")}
           value={state.to}
           onChange={(v) => update({ to: v })}
-          placeholder="empfänger@beispiel.de, ..."
+          placeholder={t("mail.compose.recipientsPlaceholder")}
         />
         <ComposeField
           label={t("mail.compose.cc")}
@@ -2117,7 +2256,7 @@ function Composer({
       <div className="px-5 py-2 border-b border-stroke-1 flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-1.5 text-[12px] text-text-secondary hover:text-text-primary cursor-pointer">
           <Paperclip size={14} />
-          Anhang
+          {t("mail.compose.attachment")}
           <input
             type="file"
             multiple
@@ -2133,10 +2272,10 @@ function Composer({
               ? "bg-fuchsia-500/15 text-fuchsia-300"
               : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
           }`}
-          title="Mit AI Entwurf erstellen"
+          title={t("mail.compose.aiDraftTooltip")}
         >
           <Sparkles size={13} />
-          Mit AI
+          {t("mail.compose.aiWithAi")}
         </button>
         {state.attachments.map((a, i) => (
           <span
@@ -2161,28 +2300,34 @@ function Composer({
         <div className="px-5 py-3 border-b border-stroke-1 bg-bg-elevated flex flex-col gap-2">
           <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
             <Sparkles size={11} className="text-fuchsia-400" />
-            <span>Beschreibe was die Mail erreichen soll — Subject + Body werden generiert.</span>
+            <span>{t("mail.compose.aiDraftIntro")}</span>
           </div>
           <textarea
             value={aiIntent}
             onChange={(e) => setAiIntent(e.target.value)}
-            placeholder="z.B. „Erstkontakt mit Physio-Praxis, kurze Vorstellung MedTheris und Vorschlag für ein 15-min Demo-Call."
+            placeholder={t("mail.compose.aiDraftPlaceholder")}
             className="bg-bg-base border border-stroke-1 rounded px-2 py-1.5 text-[13px] outline-none focus:border-stroke-2 min-h-[60px] resize-y"
           />
           <div className="flex items-center gap-2">
-            <label className="text-[11px] text-text-tertiary">Tonalität:</label>
-            {(["freundlich", "formell", "kurz"] as const).map((t) => (
+            <label className="text-[11px] text-text-tertiary">
+              {t("mail.compose.toneLabel")}
+            </label>
+            {(["freundlich", "formell", "kurz"] as const).map((toneId) => (
               <button
-                key={t}
+                key={toneId}
                 type="button"
-                onClick={() => setAiTone(t)}
+                onClick={() => setAiTone(toneId)}
                 className={`px-2 py-0.5 rounded text-[11px] ${
-                  aiTone === t
+                  aiTone === toneId
                     ? "bg-fuchsia-500/15 text-fuchsia-300"
                     : "text-text-tertiary hover:text-text-primary"
                 }`}
               >
-                {t}
+                {toneId === "freundlich"
+                  ? t("mail.compose.tone.friendly")
+                  : toneId === "formell"
+                    ? t("mail.compose.tone.formal")
+                    : t("mail.compose.tone.short")}
               </button>
             ))}
             <button
@@ -2196,7 +2341,7 @@ function Composer({
               ) : (
                 <Sparkles size={11} />
               )}
-              Generieren
+              {t("mail.compose.aiDraftButton")}
             </button>
           </div>
         </div>
@@ -2205,7 +2350,7 @@ function Composer({
         value={state.body}
         onChange={(e) => update({ body: e.target.value })}
         className="flex-1 px-5 py-4 bg-bg-base border-0 outline-none text-[14px] leading-relaxed text-text-primary resize-none font-sans"
-        placeholder="Schreibe deine Nachricht …"
+        placeholder={t("mail.compose.bodyPlaceholder")}
       />
     </div>
   );
@@ -2295,28 +2440,36 @@ function Avatar({ name }: { name: string }) {
 /*                                  helpers                                     */
 /* --------------------------------------------------------------------------- */
 
+function folderDisplayLabel(
+  folder: MailFolder,
+  translate: (key: keyof Messages, fallback?: string) => string,
+): string {
+  const key = ROLE_LABEL_KEY[folder.role];
+  if (key) return translate(key);
+  return folder.name;
+}
+
 function labelForFolder(
   folders: MailFolder[],
   path: string,
-  translate?: (k: keyof Messages, fallback?: string) => string,
+  translate: (key: keyof Messages, fallback?: string) => string,
 ): string {
   const f = folders.find((x) => x.path === path);
   if (!f) return path;
-  const key = ROLE_LABEL_KEY[f.role];
-  if (key && translate) return translate(key, ROLE_LABEL[f.role] || f.name);
-  return ROLE_LABEL[f.role] || f.name;
+  return folderDisplayLabel(f, translate);
 }
 
-function formatDate(d: Date): string {
+function formatDate(d: Date, locale: Locale): string {
+  const loc = locale === "en" ? "en-US" : "de-DE";
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
   }
   const week = 1000 * 60 * 60 * 24 * 6;
   if (now.getTime() - d.getTime() < week) {
-    return d.toLocaleDateString("de-DE", { weekday: "short" });
+    return d.toLocaleDateString(loc, { weekday: "short" });
   }
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit" });
 }
 
 function formatBytes(b: number): string {
@@ -2334,9 +2487,13 @@ function stringHash(s: string): number {
   return Math.abs(h);
 }
 
-function prefixSubject(subject: string, prefix: string): string {
+function prefixSubject(
+  subject: string,
+  prefix: string,
+  emptySubject: string,
+): string {
   const re = new RegExp(`^${prefix.replace(":", "")}:?\\s*`, "i");
-  return re.test(subject) ? subject : `${prefix} ${subject || "(kein Betreff)"}`;
+  return re.test(subject) ? subject : `${prefix} ${subject || emptySubject}`;
 }
 
 function addrLine(a: MailAddress): string {
@@ -2359,10 +2516,18 @@ function parseAddrLine(line: string): MailAddress[] {
     });
 }
 
-function quoteBody(m: MailFull): string {
-  const header = `Am ${new Date(m.date).toLocaleString("de-DE")} schrieb ${
-    m.from?.name ?? m.from?.address ?? "Unbekannt"
-  }:\n`;
+function quoteBody(
+  m: MailFull,
+  locale: Locale,
+  t: (key: keyof Messages, fallback?: string) => string,
+): string {
+  const loc = locale === "en" ? "en-US" : "de-DE";
+  const dateStr = new Date(m.date).toLocaleString(loc);
+  const name =
+    m.from?.name ?? m.from?.address ?? t("mail.unknownSender");
+  const header = t("mail.quote.header")
+    .replace("{date}", dateStr)
+    .replace("{name}", name);
   const body = (m.bodyText ?? "").split("\n").map((l) => `> ${l}`).join("\n");
   return `${header}${body}`;
 }

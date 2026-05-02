@@ -22,13 +22,21 @@ export function collaboraSafeOpenUrl(
   return `/api/files/safe-open?${q.toString()}`;
 }
 
+export type PrimaryOpenLabels = {
+  folder: string;
+  portalEditor: string;
+  presentationEditor: string;
+  preview: string;
+};
+
 export function primaryFileOpenLabel(
   name: string,
   fileId: number | null,
   isFolder: boolean,
+  labels: PrimaryOpenLabels,
 ): string {
-  if (isFolder) return "Öffnen";
-  if (opensInPortalOfficeEditor(name)) return "Im Editor öffnen";
-  if (opensInCollabora(name, fileId)) return "In OpenOffice öffnen";
-  return "Vorschau";
+  if (isFolder) return labels.folder;
+  if (opensInPortalOfficeEditor(name)) return labels.portalEditor;
+  if (opensInCollabora(name, fileId)) return labels.presentationEditor;
+  return labels.preview;
 }

@@ -23,46 +23,42 @@ import { opensInPortalOfficeEditor } from "@/lib/office/open-mode";
 import type { WorkspaceId } from "@/lib/workspaces";
 import { CollaboraPanel } from "./CollaboraPanel";
 import { ProposalGeneratorDialog } from "@/components/office/ProposalGeneratorDialog";
-import { useT } from "@/components/LocaleProvider";
+import { useLocale, useT } from "@/components/LocaleProvider";
 import type { Messages } from "@/lib/i18n/messages";
+import { cloudRelative } from "@/lib/i18n/cloud-relative";
 
 const QUICK_ACTIONS: {
   kind: "doc" | "sheet" | "slides" | "text";
   labelKey: keyof Messages;
-  fallback: string;
-  description: string;
+  descriptionKey: keyof Messages;
   icon: typeof FileText;
   color: string;
 }[] = [
   {
     kind: "doc",
     labelKey: "files.newDocument",
-    fallback: "Neues Dokument",
-    description: "Word-kompatibel (.docx)",
+    descriptionKey: "office.compat.word",
     icon: FileText,
     color: "#1d4ed8",
   },
   {
     kind: "sheet",
     labelKey: "files.newSpreadsheet",
-    fallback: "Neue Tabelle",
-    description: "Excel-kompatibel (.xlsx)",
+    descriptionKey: "office.compat.excel",
     icon: FileSpreadsheet,
     color: "#16a34a",
   },
   {
     kind: "slides",
     labelKey: "files.newPresentation",
-    fallback: "Neue Präsentation",
-    description: "PowerPoint-kompatibel (.pptx)",
+    descriptionKey: "office.compat.ppt",
     icon: Presentation,
     color: "#dc2626",
   },
   {
     kind: "text",
-    labelKey: "files.newDocument",
-    fallback: "Neue Notiz",
-    description: "Markdown-Datei (.md)",
+    labelKey: "files.newNote",
+    descriptionKey: "office.compat.md",
     icon: StickyNote,
     color: "#7c3aed",
   },
@@ -72,16 +68,6 @@ function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
   return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function relativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!t) return "—";
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return "gerade eben";
-  if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min`;
-  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std`;
-  return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
 }
 
 function isOfficeFile(name: string): boolean {
@@ -112,6 +98,7 @@ export function OfficeHubClient({
 }) {
   const router = useRouter();
   const t = useT();
+  const { locale } = useLocale();
   const [recents, setRecents] = useState<CloudEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,8 +160,13 @@ export function OfficeHubClient({
 
   const onCreate = useCallback(
     async (kind: "doc" | "sheet" | "slides" | "text") => {
-      const def = { doc: "Neues Dokument", sheet: "Neue Tabelle", slides: "Neue Präsentation", text: "Neue Notiz" }[kind];
-      const name = prompt("Name der neuen Datei:", def)?.trim();
+      const def = {
+        doc: t("files.newDocument"),
+        sheet: t("files.newSpreadsheet"),
+        slides: t("files.newPresentation"),
+        text: t("files.newNote"),
+      }[kind];
+      const name = prompt(t("office.prompt.filename"), def)?.trim();
       if (!name) return;
       setBusy(true);
       try {
@@ -185,7 +177,7 @@ export function OfficeHubClient({
         });
         const j = (await r.json()) as { error?: string; path?: string };
         if (!r.ok) {
-          alert("Anlegen fehlgeschlagen: " + (j.error ?? r.statusText));
+          alert(t("office.alert.create") + (j.error ?? r.statusText));
           return;
         }
         await load();
@@ -206,15 +198,13 @@ export function OfficeHubClient({
         if (created && created.fileId != null) {
           setEditor(created);
         } else {
-          alert(
-            "Präsentation wurde angelegt, aber Nextcloud liefert noch keine Datei-ID. Bitte Liste aktualisieren und erneut öffnen.",
-          );
+          alert(t("office.alert.presentationId"));
         }
       } finally {
         setBusy(false);
       }
     },
-    [load, router, workspaceId],
+    [load, router, workspaceId, t],
   );
 
   const onUpload = useCallback(
@@ -232,14 +222,17 @@ export function OfficeHubClient({
         );
         const j = (await r.json()) as { errors?: { name: string; error: string }[] };
         if (j.errors && j.errors.length > 0) {
-          alert("Fehler beim Upload:\n" + j.errors.map((e) => `${e.name}: ${e.error}`).join("\n"));
+          alert(
+            t("office.alert.upload") +
+              j.errors.map((e) => `${e.name}: ${e.error}`).join("\n"),
+          );
         }
         await load();
       } finally {
         setBusy(false);
       }
     },
-    [load, workspaceId],
+    [load, workspaceId, t],
   );
 
   return (
@@ -255,9 +248,9 @@ export function OfficeHubClient({
           <FileText size={18} style={{ color: accent }} />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-sm font-semibold leading-tight">Office</h1>
+          <h1 className="text-sm font-semibold leading-tight">{t("nav.office")}</h1>
           <p className="text-[10.5px] text-text-tertiary truncate">
-            {workspaceName} · Word & Excel im Portal; Folien im OpenOffice-Editor (Nextcloud)
+            {t("office.tagline").replace("{workspace}", workspaceName)}
           </p>
         </div>
         <div className="relative">
@@ -269,7 +262,7 @@ export function OfficeHubClient({
             type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="In Dokumenten suchen…"
+            placeholder={t("office.search.placeholder")}
             className="bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2.5 py-1.5 w-[220px] text-[12px] outline-none focus:border-stroke-2"
           />
         </div>
@@ -278,9 +271,9 @@ export function OfficeHubClient({
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-stroke-1 bg-bg-elevated hover:border-stroke-2 text-[12px] disabled:opacity-50"
-          title="Datei hochladen"
+          title={t("files.upload.tooltip")}
         >
-          <Upload size={13} /> Hochladen
+          <Upload size={13} /> {t("office.upload")}
         </button>
         <input
           ref={fileInputRef}
@@ -296,7 +289,7 @@ export function OfficeHubClient({
           type="button"
           onClick={() => void load()}
           className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-          title="Neu laden"
+          title={t("office.reload")}
         >
           <RefreshCw size={14} />
         </button>
@@ -306,20 +299,20 @@ export function OfficeHubClient({
         <div className="shrink-0 mx-5 mt-3 rounded-lg border border-stroke-1 bg-bg-elevated px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary">
           <span className="inline-flex items-center gap-1.5 text-text-tertiary">
             <PenLine size={12} style={{ color: accent }} />
-            CRM-Kontext aktiv
+            {t("office.crmContext")}
           </span>
           <Link
             href={`/${workspaceId}/crm/company/${encodeURIComponent(crmLinkCompanyId.trim())}`}
             className="text-info hover:underline"
           >
-            Company-Hub
+            {t("office.link.companyHub")}
           </Link>
           <span className="text-text-quaternary">·</span>
           <Link
             href={`/${workspaceId}/sign?crmCompany=${encodeURIComponent(crmLinkCompanyId.trim())}`}
             className="text-info hover:underline"
           >
-            Dokument zur Unterschrift (Sign)
+            {t("office.link.sign")}
           </Link>
         </div>
       )}
@@ -336,11 +329,11 @@ export function OfficeHubClient({
                 <Plus size={13} style={{ color: accent }} />
               </span>
               <h2 className="text-[13px] font-semibold text-text-primary">
-                {t("files.newDocument", "Neues Dokument")}
+                {t("office.section.new")}
               </h2>
             </div>
             <span className="text-[10.5px] text-text-tertiary">
-              Neu → Portal-Editor (nicht Nextcloud)
+              {t("office.hint.portalEditor")}
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -357,7 +350,7 @@ export function OfficeHubClient({
                     borderColor: `${qa.color}33`,
                     background: `linear-gradient(135deg, ${qa.color}0d 0%, transparent 60%)`,
                   }}
-                  title={`${t(qa.labelKey, qa.fallback)} im aktuellen Workspace anlegen`}
+                  title={t("office.createTitle").replace("{label}", t(qa.labelKey))}
                 >
                   <div className="flex items-center gap-3">
                     <div
@@ -368,10 +361,10 @@ export function OfficeHubClient({
                     </div>
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-text-primary truncate">
-                        {t(qa.labelKey, qa.fallback)}
+                        {t(qa.labelKey)}
                       </p>
                       <p className="text-[10.5px] text-text-tertiary truncate">
-                        {qa.description}
+                        {t(qa.descriptionKey)}
                       </p>
                     </div>
                   </div>
@@ -399,10 +392,10 @@ export function OfficeHubClient({
               </div>
               <div className="min-w-0">
                 <p className="text-[13px] font-semibold text-text-primary">
-                  Angebot / Proposal aus CRM
+                  {t("office.proposal.title")}
                 </p>
                 <p className="text-[10.5px] text-text-tertiary">
-                  Vorlage wählen, Firma anklicken, DOCX erzeugen (gleiche Variablen wie Serienbrief)
+                  {t("office.proposal.subtitle")}
                 </p>
               </div>
             </div>
@@ -412,9 +405,18 @@ export function OfficeHubClient({
         {/* ── Recents ─────────────────────────────────────────── */}
         <section className="px-5 pt-5 pb-6">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[10.5px] uppercase tracking-wide text-text-tertiary font-semibold flex items-center gap-1">
+            <h2 className="text-[10.5px] uppercase tracking-wide text-text-tertiary font-semibold flex items-center gap-1 flex-wrap">
               <Clock size={11} />
-              Zuletzt geändert in <span className="font-mono normal-case">{ROOT_DIR}</span>
+              {(() => {
+                const [before, after = ""] = t("office.recents").split("{dir}");
+                return (
+                  <>
+                    {before}
+                    <span className="font-mono normal-case">{ROOT_DIR}</span>
+                    {after}
+                  </>
+                );
+              })()}
             </h2>
             {busy && <Loader2 size={13} className="spin text-text-tertiary" />}
           </div>
@@ -434,7 +436,7 @@ export function OfficeHubClient({
           {!error && !loading && visible.length === 0 && (
             <div className="rounded-lg border border-dashed border-stroke-1 bg-bg-elevated/40 p-8 text-center text-text-tertiary text-[12px]">
               <Folder size={22} className="mx-auto mb-2 text-text-quaternary" />
-              Noch keine Office-Dateien hier. Lege oben eine an oder lade etwas hoch.
+              {t("office.empty")}
             </div>
           )}
 
@@ -474,7 +476,7 @@ export function OfficeHubClient({
                           {e.name}
                         </p>
                         <p className="text-[10.5px] text-text-tertiary mt-0.5 flex items-center gap-1.5">
-                          <span>{relativeTime(e.mtime)}</span>
+                          <span>{cloudRelative(e.mtime, locale, t)}</span>
                           <span className="text-text-quaternary">·</span>
                           <span className="tabular-nums">{formatBytes(e.size)}</span>
                         </p>

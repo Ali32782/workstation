@@ -11,6 +11,8 @@ import {
   Building2,
   UserPlus,
 } from "lucide-react";
+import { useT } from "@/components/LocaleProvider";
+import type { Messages } from "@/lib/i18n/messages";
 
 /**
  * Two-step CSV import wizard for the CRM (Twenty) app.
@@ -108,36 +110,68 @@ type RunResult = {
   errors?: { rowIndex: number; error: string }[];
 };
 
-const COMPANY_FIELDS: { value: CompanyField; label: string }[] = [
-  { value: "ignore", label: "Ignorieren" },
-  { value: "name", label: "Name" },
-  { value: "domainName", label: "Domain" },
-  { value: "industry", label: "Branche" },
-  { value: "phone", label: "Telefon" },
-  { value: "address", label: "Adresse" },
-  { value: "city", label: "Stadt" },
-  { value: "country", label: "Land" },
-  { value: "annualRecurringRevenue", label: "Umsatz (ARR)" },
-  { value: "employees", label: "Mitarbeiter" },
-  { value: "linkedinUrl", label: "LinkedIn" },
-  { value: "xUrl", label: "Twitter / X" },
-  { value: "notes", label: "Notizen" },
+const COMPANY_FIELD_KEYS: Record<CompanyField, keyof Messages> = {
+  ignore: "crm.importCsvModal.field.ignore",
+  name: "crm.importCsvModal.field.companyName",
+  domainName: "crm.importCsvModal.field.domainName",
+  industry: "crm.importCsvModal.field.industry",
+  phone: "crm.importCsvModal.field.phone",
+  address: "crm.importCsvModal.field.address",
+  city: "crm.importCsvModal.field.city",
+  country: "crm.importCsvModal.field.country",
+  annualRecurringRevenue: "crm.importCsvModal.field.arr",
+  employees: "crm.importCsvModal.field.employees",
+  linkedinUrl: "crm.importCsvModal.field.linkedinUrl",
+  xUrl: "crm.importCsvModal.field.xUrl",
+  notes: "crm.importCsvModal.field.notes",
+};
+
+const COMPANY_FIELD_ORDER: CompanyField[] = [
+  "ignore",
+  "name",
+  "domainName",
+  "industry",
+  "phone",
+  "address",
+  "city",
+  "country",
+  "annualRecurringRevenue",
+  "employees",
+  "linkedinUrl",
+  "xUrl",
+  "notes",
 ];
 
-const PERSON_FIELDS: { value: PersonField; label: string }[] = [
-  { value: "ignore", label: "Ignorieren" },
-  { value: "firstName", label: "Vorname" },
-  { value: "lastName", label: "Nachname" },
-  { value: "fullName", label: "Voller Name" },
-  { value: "email", label: "E-Mail" },
-  { value: "phone", label: "Telefon" },
-  { value: "jobTitle", label: "Position" },
-  { value: "city", label: "Stadt" },
-  { value: "country", label: "Land" },
-  { value: "linkedinUrl", label: "LinkedIn" },
-  { value: "xUrl", label: "Twitter / X" },
-  { value: "company", label: "Firma" },
-  { value: "notes", label: "Notizen" },
+const PERSON_FIELD_KEYS: Record<PersonField, keyof Messages> = {
+  ignore: "crm.importCsvModal.field.ignore",
+  firstName: "crm.importCsvModal.field.firstName",
+  lastName: "crm.importCsvModal.field.lastName",
+  fullName: "crm.importCsvModal.field.fullName",
+  email: "crm.importCsvModal.field.email",
+  phone: "crm.importCsvModal.field.phone",
+  jobTitle: "crm.importCsvModal.field.jobTitle",
+  city: "crm.importCsvModal.field.city",
+  country: "crm.importCsvModal.field.country",
+  linkedinUrl: "crm.importCsvModal.field.linkedinUrl",
+  xUrl: "crm.importCsvModal.field.xUrl",
+  company: "crm.importCsvModal.field.company",
+  notes: "crm.importCsvModal.field.notes",
+};
+
+const PERSON_FIELD_ORDER: PersonField[] = [
+  "ignore",
+  "firstName",
+  "lastName",
+  "fullName",
+  "email",
+  "phone",
+  "jobTitle",
+  "city",
+  "country",
+  "linkedinUrl",
+  "xUrl",
+  "company",
+  "notes",
 ];
 
 export function ImportCrmModal({
@@ -162,7 +196,19 @@ export function ImportCrmModal({
   const [result, setResult] = useState<RunResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const fields = entity === "companies" ? COMPANY_FIELDS : PERSON_FIELDS;
+  const t = useT();
+  const fields = useMemo(() => {
+    if (entity === "companies") {
+      return COMPANY_FIELD_ORDER.map((value) => ({
+        value,
+        label: t(COMPANY_FIELD_KEYS[value]),
+      }));
+    }
+    return PERSON_FIELD_ORDER.map((value) => ({
+      value,
+      label: t(PERSON_FIELD_KEYS[value]),
+    }));
+  }, [entity, t]);
 
   const runPreview = useCallback(
     async (overrideMapping?: Record<string, string>) => {
@@ -206,13 +252,13 @@ export function ImportCrmModal({
       setPreview(null);
       return;
     }
-    const t = setTimeout(() => void runPreview(), 350);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void runPreview(), 350);
+    return () => clearTimeout(timer);
   }, [text, entity, delimiter, runPreview]);
 
   const onFile = useCallback(async (f: File) => {
-    const t = await f.text();
-    setText(t);
+    const csvText = await f.text();
+    setText(csvText);
   }, []);
 
   const onMappingChange = useCallback(
@@ -272,18 +318,20 @@ export function ImportCrmModal({
             <FileUp size={16} style={{ color: accent }} />
           </span>
           <div className="flex-1 min-w-0">
-            <h2 className="text-[14px] font-semibold text-text-primary">CSV-Import</h2>
+            <h2 className="text-[14px] font-semibold text-text-primary">
+              {t("crm.importCsvModal.title")}
+            </h2>
             <p className="text-[11px] text-text-tertiary truncate">
               {entity === "companies"
-                ? "Firmen aus CSV in Twenty CRM importieren"
-                : "Personen / Kontakte aus CSV in Twenty CRM importieren — duplikatfreie Übernahme via E-Mail"}
+                ? t("crm.importCsvModal.subtitleCompanies")
+                : t("crm.importCsvModal.subtitlePeople")}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary"
-            aria-label="Schließen"
+            aria-label={t("crm.modal.close")}
           >
             <X size={14} />
           </button>
@@ -301,7 +349,7 @@ export function ImportCrmModal({
                   : "border-stroke-1 text-text-secondary hover:border-stroke-2"
               }`}
             >
-              <UserPlus size={13} /> Personen
+              <UserPlus size={13} /> {t("crm.importCsvModal.entityPeople")}
             </button>
             <button
               type="button"
@@ -312,10 +360,10 @@ export function ImportCrmModal({
                   : "border-stroke-1 text-text-secondary hover:border-stroke-2"
               }`}
             >
-              <Building2 size={13} /> Firmen
+              <Building2 size={13} /> {t("crm.importCsvModal.entityCompanies")}
             </button>
             <span className="text-[10.5px] text-text-tertiary ml-2">
-              Tipp: HubSpot/Pipedrive/Excel-Spalten werden automatisch erkannt.
+              {t("crm.importCsvModal.formatHint")}
             </span>
           </div>
 
@@ -344,19 +392,19 @@ export function ImportCrmModal({
                 onClick={() => fileRef.current?.click()}
                 className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-stroke-1 hover:border-stroke-2 text-[12px]"
               >
-                <Upload size={13} /> CSV hochladen
+                <Upload size={13} /> {t("crm.importCsvModal.uploadCsv")}
               </button>
               <label className="text-[10.5px] text-text-tertiary flex flex-col gap-1">
-                Trenner
+                {t("projects.import.delimiter")}
                 <select
                   value={delimiter}
                   onChange={(e) => setDelimiter(e.target.value)}
                   className="bg-bg-elevated border border-stroke-1 rounded-md px-2 py-1.5 text-[12px]"
                 >
-                  <option value="">automatisch</option>
-                  <option value=",">Komma (,)</option>
-                  <option value=";">Semikolon (;)</option>
-                  <option value="\t">Tab</option>
+                  <option value="">{t("projects.import.delimiter.auto")}</option>
+                  <option value=",">{t("crm.importCsvModal.sepComma")}</option>
+                  <option value=";">{t("crm.importCsvModal.sepSemicolon")}</option>
+                  <option value="\t">{t("crm.importCsvModal.sepTab")}</option>
                 </select>
               </label>
               {entity === "people" && (
@@ -367,7 +415,7 @@ export function ImportCrmModal({
                     onChange={(e) => setAutoCreateCompanies(e.target.checked)}
                     className="mt-0.5"
                   />
-                  <span>Fehlende Firmen automatisch anlegen</span>
+                  <span>{t("crm.importCsvModal.autoCreateCompanies")}</span>
                 </label>
               )}
             </div>
@@ -382,7 +430,8 @@ export function ImportCrmModal({
 
           {previewing && !preview && (
             <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
-              <Loader2 size={13} className="animate-spin" /> Vorschau wird erzeugt …
+              <Loader2 size={13} className="animate-spin" />{" "}
+              {t("crm.importCsvModal.previewBusy")}
             </div>
           )}
 
@@ -390,23 +439,27 @@ export function ImportCrmModal({
             <>
               <div className="flex flex-wrap items-center gap-3 text-[11.5px]">
                 <span className="text-text-secondary">
-                  <strong className="text-text-primary">{preview.totals.rows}</strong> Zeilen
+                  <strong className="text-text-primary">{preview.totals.rows}</strong>{" "}
+                  {t("crm.importCsvModal.totalsRows")}
                 </span>
                 <span className="text-text-secondary">
-                  <strong className="text-success">{preview.totals.valid}</strong> gültig
+                  <strong className="text-success">{preview.totals.valid}</strong>{" "}
+                  {t("crm.importCsvModal.totalsValid")}
                 </span>
                 <span className="text-text-secondary">
-                  <strong className="text-warning">{preview.totals.skipped}</strong> übersprungen
+                  <strong className="text-warning">{preview.totals.skipped}</strong>{" "}
+                  {t("crm.importCsvModal.totalsSkipped")}
                 </span>
                 <span className="text-text-tertiary text-[10.5px]">
-                  Trenner: <code>{preview.delimiter === "\t" ? "\\t" : preview.delimiter}</code>
+                  {t("crm.importCsvModal.delimiterDetected")}{" "}
+                  <code>{preview.delimiter === "\t" ? "\\t" : preview.delimiter}</code>
                 </span>
               </div>
 
               {/* Mapping table */}
               <div>
                 <h3 className="text-[11px] uppercase tracking-wide text-text-tertiary font-semibold mb-2">
-                  Spalten-Mapping
+                  {t("crm.importCsvModal.mappingHeading")}
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                   {preview.headers.map((h) => (
@@ -415,7 +468,11 @@ export function ImportCrmModal({
                       className="flex flex-col gap-1 text-[11px] text-text-tertiary"
                     >
                       <span className="truncate" title={h}>
-                        {h || <em className="text-text-quaternary">(leer)</em>}
+                        {h || (
+                          <em className="text-text-quaternary">
+                            {t("crm.importCsvModal.columnEmpty")}
+                          </em>
+                        )}
                       </span>
                       <select
                         value={preview.mapping[h] ?? "ignore"}
@@ -438,23 +495,43 @@ export function ImportCrmModal({
                 <table className="w-full text-[11.5px]">
                   <thead className="bg-bg-chrome sticky top-0 z-10">
                     <tr>
-                      <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">#</th>
+                      <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                        {t("crm.importCsvModal.thNum")}
+                      </th>
                       {entity === "companies" ? (
                         <>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Name</th>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Domain</th>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Stadt</th>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Branche</th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thCompanyName")}
+                          </th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thDomain")}
+                          </th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thCity")}
+                          </th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thIndustry")}
+                          </th>
                         </>
                       ) : (
                         <>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Vor- / Nachname</th>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">E-Mail</th>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Firma</th>
-                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Position</th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thPersonName")}
+                          </th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thEmail")}
+                          </th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thCompany")}
+                          </th>
+                          <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                            {t("crm.importCsvModal.thJobTitle")}
+                          </th>
                         </>
                       )}
-                      <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">Status</th>
+                      <th className="text-left px-2 py-1.5 text-text-tertiary font-semibold">
+                        {t("crm.importCsvModal.thStatus")}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -504,17 +581,31 @@ export function ImportCrmModal({
               <div className="flex items-center gap-2 text-success">
                 <CheckCircle2 size={13} />
                 <strong>{result.created}</strong>{" "}
-                {entity === "companies" ? "Firmen" : "Personen"} angelegt.
+                {entity === "companies"
+                  ? t("crm.importCsvModal.resultCompaniesSuffix")
+                  : t("crm.importCsvModal.resultPeopleSuffix")}
               </div>
               {result.skipped && result.skipped.length > 0 && (
                 <p className="text-text-tertiary">
-                  <strong>{result.skipped.length}</strong> übersprungen (z. B. existierende E-Mail).
+                  {t("crm.importCsvModal.skippedSummary").replace(
+                    "{count}",
+                    String(result.skipped.length),
+                  )}
                 </p>
               )}
               {result.errors && result.errors.length > 0 && (
                 <p className="text-warning">
-                  <strong>{result.errors.length}</strong> fehlgeschlagen — Details: {" "}
-                  {result.errors.slice(0, 3).map((e) => `Zeile ${e.rowIndex}`).join(", ")}
+                  {t("crm.importCsvModal.errorsSummary").replace(
+                    "{count}",
+                    String(result.errors.length),
+                  )}{" "}
+                  {result.errors
+                    .slice(0, 3)
+                    .map(
+                      (e) =>
+                        `${t("crm.importCsvModal.errorsRowPrefix")} ${e.rowIndex}`,
+                    )
+                    .join(", ")}
                   {result.errors.length > 3 && " …"}
                 </p>
               )}
@@ -524,7 +615,12 @@ export function ImportCrmModal({
 
         <footer className="flex items-center justify-between gap-3 px-5 py-3 border-t border-stroke-1 bg-bg-chrome">
           <span className="text-[10.5px] text-text-tertiary">
-            {totalValid > 0 ? `${totalValid} gültige Zeilen bereit` : "CSV einfügen oder hochladen"}
+            {totalValid > 0
+              ? t("crm.importCsvModal.footerReady").replace(
+                  "{count}",
+                  String(totalValid),
+                )
+              : t("crm.importCsvModal.footerPrompt")}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -532,7 +628,7 @@ export function ImportCrmModal({
               onClick={onClose}
               className="px-3 py-1.5 rounded-md border border-stroke-1 text-[12px] hover:border-stroke-2"
             >
-              Schließen
+              {t("crm.modal.close")}
             </button>
             <button
               type="button"
@@ -546,7 +642,12 @@ export function ImportCrmModal({
               ) : (
                 <Upload size={12} />
               )}
-              {running ? "Importiere …" : `${totalValid} importieren`}
+              {running
+                ? t("crm.importCsvModal.running")
+                : t("crm.importCsvModal.runCount").replace(
+                    "{count}",
+                    String(totalValid),
+                  )}
             </button>
           </div>
         </footer>

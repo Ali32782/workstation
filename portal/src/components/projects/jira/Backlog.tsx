@@ -27,6 +27,8 @@ import {
   StoryPointsPill,
   deriveIssueType,
 } from "./shared";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 /**
  * Jira-style backlog. Each open/upcoming sprint is a section at the top
@@ -65,6 +67,8 @@ export function JiraBacklog({
   ) => Promise<void> | void;
   accent: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const stateById = useMemo(() => {
     const m = new Map<string, IssueState>();
     for (const s of states) m.set(s.id, s);
@@ -111,12 +115,12 @@ export function JiraBacklog({
       {
         id: "__backlog__",
         kind: "backlog" as const,
-        title: "Backlog",
+        title: t("projects.stateGroup.backlog"),
         cycle: null,
         issues: backlogIssues,
       },
     ];
-  }, [cycles, issues, cycleById]);
+  }, [cycles, issues, cycleById, t]);
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Record<string, true>>({});
@@ -168,7 +172,7 @@ export function JiraBacklog({
     if (!onUpdateCycle) return;
     if (
       !window.confirm(
-        `Sprint "${c.name}" starten? Startdatum wird auf heute gesetzt.`,
+        t("projects.backlog.startSprintConfirm").replace("{name}", c.name),
       )
     ) {
       return;
@@ -181,17 +185,23 @@ export function JiraBacklog({
       {selectedIds.length > 0 && (
         <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-bg-chrome/95 backdrop-blur border-b border-stroke-1">
           <span className="text-[11.5px] font-medium text-text-secondary">
-            {selectedIds.length} ausgewählt
+            {t("projects.backlog.selectedCount").replace(
+              "{count}",
+              String(selectedIds.length),
+            )}
           </span>
           <select
             value={moveTarget}
             onChange={(e) => setMoveTarget(e.target.value)}
             className="ml-2 bg-bg-elevated border border-stroke-1 rounded-md px-2 py-1 text-[11.5px]"
           >
-            <option value="">In Sprint verschieben…</option>
+            <option value="">{t("projects.backlog.moveToSprint")}</option>
             {targetCycles.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} {c.status === "current" ? "· Aktiv" : "· Geplant"}
+                {c.name}{" "}
+                {c.status === "current"
+                  ? t("projects.issueDrawer.sprintActiveBadge")
+                  : t("projects.issueDrawer.sprintPlannedBadge")}
               </option>
             ))}
           </select>
@@ -203,14 +213,14 @@ export function JiraBacklog({
             style={{ background: accent }}
           >
             <ArrowRight size={12} />
-            Verschieben
+            {t("projects.backlog.move")}
           </button>
           <button
             type="button"
             onClick={clearSelection}
             className="ml-auto text-[11px] text-text-tertiary hover:text-text-primary"
           >
-            Auswahl aufheben
+            {t("projects.backlog.clearSelection")}
           </button>
         </div>
       )}
@@ -260,33 +270,33 @@ export function JiraBacklog({
                 </h3>
                 {s.kind === "cycle" && s.cycle?.status === "current" && (
                   <span className="px-1.5 py-[1px] rounded-sm bg-emerald-500/20 text-emerald-400 text-[9.5px] font-bold uppercase">
-                    Aktiv
+                    {t("projects.backlog.badgeActive")}
                   </span>
                 )}
                 {s.kind === "cycle" && s.cycle?.status === "upcoming" && (
                   <span className="px-1.5 py-[1px] rounded-sm bg-sky-500/20 text-sky-400 text-[9.5px] font-bold uppercase">
-                    Geplant
+                    {t("projects.backlog.badgePlanned")}
                   </span>
                 )}
                 {s.kind === "cycle" && s.cycle?.startDate && s.cycle?.endDate && (
                   <span className="text-[10.5px] text-text-tertiary">
-                    {fmtRange(s.cycle.startDate, s.cycle.endDate)}
+                    {fmtRange(s.cycle.startDate, s.cycle.endDate, localeFmt)}
                   </span>
                 )}
 
                 <div className="ml-auto flex items-center gap-3 text-[11px] tabular-nums">
                   <CountPill
-                    label="To Do"
+                    label={t("projects.stateGroup.unstarted")}
                     count={counts.todo}
                     color="#6b7280"
                   />
                   <CountPill
-                    label="In Arbeit"
+                    label={t("projects.stateGroup.started")}
                     count={counts.inProgress}
                     color="#3b82f6"
                   />
                   <CountPill
-                    label="Erledigt"
+                    label={t("projects.stateGroup.completed")}
                     count={counts.done}
                     color="#16a34a"
                   />
@@ -304,10 +314,10 @@ export function JiraBacklog({
                       }}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white text-[11px] font-semibold"
                       style={{ background: "#16a34a" }}
-                      title="Sprint starten"
+                      title={t("projects.backlog.startSprintTooltip")}
                     >
                       <Play size={11} />
-                      Sprint starten
+                      {t("projects.backlog.startSprint")}
                     </button>
                   )}
                   {s.kind === "cycle" &&
@@ -319,7 +329,10 @@ export function JiraBacklog({
                           e.stopPropagation();
                           if (
                             window.confirm(
-                              `Sprint "${s.cycle!.name}" abschließen?`,
+                              t("projects.backlog.completeSprintConfirm").replace(
+                                "{name}",
+                                s.cycle!.name,
+                              ),
                             )
                           ) {
                             void onUpdateCycle(s.cycle!.id, {
@@ -328,10 +341,10 @@ export function JiraBacklog({
                           }
                         }}
                         className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-secondary hover:text-text-primary text-[11px]"
-                        title="Sprint abschließen"
+                        title={t("projects.backlog.completeSprintTooltip")}
                       >
                         <CheckCheck size={11} />
-                        Abschließen
+                        {t("projects.backlog.complete")}
                       </button>
                     )}
                   <button
@@ -342,7 +355,7 @@ export function JiraBacklog({
                       setComposerText("");
                     }}
                     className="p-1 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary"
-                    title="Neues Issue"
+                    title={t("projects.backlog.newIssueTooltip")}
                   >
                     <Plus size={12} />
                   </button>
@@ -354,8 +367,8 @@ export function JiraBacklog({
                   {s.issues.length === 0 && composer !== s.id && (
                     <p className="text-center text-[11.5px] text-text-quaternary py-6">
                       {s.kind === "backlog"
-                        ? "Backlog ist leer."
-                        : "Sprint ist leer — Issues aus dem Backlog verschieben."}
+                        ? t("projects.backlog.emptyBacklog")
+                        : t("projects.backlog.emptySprint")}
                     </p>
                   )}
                   {s.issues.map((i) => (
@@ -379,7 +392,7 @@ export function JiraBacklog({
                         type="text"
                         value={composerText}
                         onChange={(e) => setComposerText(e.target.value)}
-                        placeholder="Was ist zu tun? Enter zum Anlegen, Esc zum Abbrechen."
+                        placeholder={t("projects.issueRow.placeholder")}
                         className="flex-1 bg-transparent border border-stroke-1 rounded-md px-2 py-1 text-[12px] outline-none focus:border-stroke-2"
                         onKeyDown={(e) => {
                           if (e.key === "Enter") void submitComposer();
@@ -395,7 +408,7 @@ export function JiraBacklog({
                         className="px-2 py-1 text-[11px] rounded-md text-white"
                         style={{ background: accent }}
                       >
-                        Anlegen
+                        {t("projects.issueDrawer.createButton")}
                       </button>
                     </div>
                   )}
@@ -453,12 +466,12 @@ function byPriorityThenUpdated(a: IssueSummary, b: IssueSummary): number {
   return b.updatedAt.localeCompare(a.updatedAt);
 }
 
-function fmtRange(start: string, end: string): string {
+function fmtRange(start: string, end: string, localeFmt: string): string {
   const s = new Date(start);
   const e = new Date(end);
   const o: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" };
-  return `${s.toLocaleDateString("de-DE", o)} – ${e.toLocaleDateString(
-    "de-DE",
+  return `${s.toLocaleDateString(localeFmt, o)} – ${e.toLocaleDateString(
+    localeFmt,
     o,
   )}`;
 }
