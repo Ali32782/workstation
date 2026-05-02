@@ -119,10 +119,10 @@ function kineoEnvApps(): App[] {
   if (chatbot) {
     out.push({
       id: "chatbot",
-      name: "Chatbot",
+      name: "Kineo Assistent",
       section: "Kommunikation",
       description:
-        "Kineo360 Chat-Assistent · Sales- & Support-Bot (NEXT_PUBLIC_KINEO_CHATBOT_URL)",
+        "Kineo360 Raumplanungs- & Support-Assistent (NEXT_PUBLIC_KINEO_CHATBOT_URL)",
       url: chatbot,
       icon: Bot,
       embed: envEmbedMode("NEXT_PUBLIC_KINEO_CHATBOT_EMBED"),
