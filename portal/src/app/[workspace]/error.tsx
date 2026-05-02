@@ -14,6 +14,7 @@
 import { useEffect } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useT } from "@/components/LocaleProvider";
+import { reportClient } from "@/lib/error-report";
 
 export default function WorkspaceError({
   error,
@@ -25,9 +26,10 @@ export default function WorkspaceError({
   const t = useT();
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      console.error("[portal/workspace] error", error);
-    }
+    reportClient(error, {
+      scope: "workspace-error",
+      extra: { digest: error.digest ?? null },
+    });
   }, [error]);
 
   return (

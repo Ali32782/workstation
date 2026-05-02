@@ -14,6 +14,7 @@
  */
 
 import { useEffect } from "react";
+import { reportClient } from "@/lib/error-report";
 
 export default function GlobalError({
   error,
@@ -23,9 +24,10 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      console.error("[portal] global-error", error);
-    }
+    reportClient(error, {
+      scope: "global-error",
+      extra: { digest: error.digest ?? null },
+    });
   }, [error]);
 
   return (
