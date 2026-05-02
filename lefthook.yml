@@ -1,0 +1,61 @@
+# =============================================================================
+# lefthook.yml — repo-local Git hooks
+#
+# Lefthook is a single-binary, zero-runtime-dep hook runner. We pick it over
+# husky to avoid pinning a node_modules dependency at the repo root (the only
+# JS project lives under portal/, and we also have shell + python tooling).
+#
+# Install once per clone:
+#   brew install lefthook && lefthook install
+#
+# Disable temporarily:
+#   LEFTHOOK=0 git push
+# =============================================================================
+
+pre-push:
+  parallel: true
+  commands:
+    portal-verify:
+      # Only run if the push touches portal/ — skips verify on docs-only or
+      # scripts-only pushes (much faster everyday flow).
+      run: |
+        if git diff --name-only "@{push}" HEAD 2>/dev/null | grep -q "^portal/"; then
+          cd portal && npm run verify
+        else
+          echo "portal-verify: no portal/ changes in this push, skipped."
+        fi
+      tags: portal
+
+    no-secrets:
+      # Cheap belt-and-suspenders against the obvious mistakes (private keys,
+      # AWS keys, .env contents). Real secret scanning lives in the GitHub
+      # workflow; this is just a local fast-fail.
+      run: |
+        if git diff "@{push}" HEAD 2>/dev/null | grep -EnH \
+            "BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|aws_secret_access_key\s*=\s*[^[:space:]]+" \
+            >&2; then
+          echo "no-secrets: looks like a private key or AWS secret in the diff. Aborting." >&2
+          exit 1
+        fi
+      tags: security
+
+pre-commit:
+  parallel: true
+  commands:
+    no-tabs-tsx:
+      # Tabs in TSX/TS files have caused alignment grief multiple times in
+      # this repo. We only allow them in package-lock.json and *.md.
+      glob: "portal/src/**/*.{ts,tsx}"
+      run: |
+        if grep -lP "^\t" {staged_files} 2>/dev/null; then
+          echo "no-tabs-tsx: TSX/TS files must use spaces. Files above contain tabs." >&2
+          exit 1
+        fi
+      tags: format
+
+    i18n-quick:
+      # Only run the i18n guardrail when messages or components changed —
+      # nothing else can introduce hardcoded locale strings.
+      glob: "portal/src/**/*.{ts,tsx}"
+      run: cd portal && npm run check:i18n
+      tags: i18n
