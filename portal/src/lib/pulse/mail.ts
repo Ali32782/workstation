@@ -1,6 +1,7 @@
 import "server-only";
 import { ImapFlow } from "imapflow";
 import { derivePassword } from "@/lib/derived-passwords";
+import { tFor, type Locale } from "@/lib/i18n/messages";
 import type { PulseModuleResult } from "./types";
 
 const IMAP_HOST = process.env.IMAP_HOST ?? "imap.migadu.com";
@@ -14,7 +15,10 @@ const IMAP_PORT = Number(process.env.IMAP_PORT ?? 993);
  * Only mailboxes provisioned through our onboarding (or `provision-test-
  * mailboxes.mjs`) accept this password.
  */
-export async function getMailPulse(email: string): Promise<PulseModuleResult> {
+export async function getMailPulse(
+  email: string,
+  locale: Locale,
+): Promise<PulseModuleResult> {
   let client: ImapFlow | null = null;
   try {
     const password = derivePassword("mail", email);
@@ -45,11 +49,17 @@ export async function getMailPulse(email: string): Promise<PulseModuleResult> {
       stats: [
         {
           key: "mail-unread",
-          label: "Ungelesene Mails",
+          label: tFor(locale, "pulse.mail.unread"),
           value: String(unseen),
           tone: unseen > 0 ? "info" : "success",
           href: "/api/webmail/sso",
-          hint: total > 0 ? `${total} insgesamt im Posteingang` : "Posteingang leer",
+          hint:
+            total > 0
+              ? tFor(locale, "pulse.mail.hintTotal").replace(
+                  "{total}",
+                  String(total),
+                )
+              : tFor(locale, "pulse.mail.inboxEmpty"),
         },
       ],
     };
@@ -61,11 +71,11 @@ export async function getMailPulse(email: string): Promise<PulseModuleResult> {
       fallbackStats: [
         {
           key: "mail-unread",
-          label: "Mail",
+          label: tFor(locale, "nav.mail"),
           value: "—",
           tone: "neutral",
           href: "/api/webmail/sso",
-          hint: "Verbindung zu IMAP fehlgeschlagen",
+          hint: tFor(locale, "pulse.mail.offlineHint"),
         },
       ],
     };

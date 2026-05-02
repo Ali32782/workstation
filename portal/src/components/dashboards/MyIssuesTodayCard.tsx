@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Kanban,
@@ -9,6 +9,8 @@ import {
   AlertTriangle,
   Calendar,
 } from "lucide-react";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag, type Messages } from "@/lib/i18n/messages";
 
 /**
  * "Was steht heute an?" Plane snapshot for the Daily Home.
@@ -55,6 +57,8 @@ export function MyIssuesTodayCard({
   workspaceId: string;
   accent: string;
 }) {
+  const { t, locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const [issues, setIssues] = useState<MyIssue[] | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [busy, setBusy] = useState(true);
@@ -116,19 +120,30 @@ export function MyIssuesTodayCard({
         </span>
         <div className="flex-1 min-w-0">
           <h2 className="text-text-primary font-semibold text-sm">
-            Meine Issues heute
+            {t("dash.myIssues.title")}
           </h2>
           <p className="text-text-tertiary text-[11px]">
             {busy
-              ? "Lade Plane-Snapshot …"
+              ? t("dash.myIssues.loadingSnapshot")
               : counts
                 ? counts.overdue > 0
-                  ? `${counts.overdue} überfällig · ${counts.dueToday - counts.overdue} fällig heute`
+                  ? t("dash.myIssues.subtitleOverdueLine")
+                      .replace("{overdue}", String(counts.overdue))
+                      .replace(
+                        "{restDueToday}",
+                        String(counts.dueToday - counts.overdue),
+                      )
                   : counts.dueToday > 0
-                    ? `${counts.dueToday} fällig heute`
+                    ? t("dash.myIssues.subtitleDueToday").replace(
+                        "{n}",
+                        String(counts.dueToday),
+                      )
                     : counts.total > 0
-                      ? `${counts.total} offen — nichts mit Frist heute`
-                      : "Inbox-Zero. Cool."
+                      ? t("dash.myIssues.subtitleOpenNoDue").replace(
+                          "{n}",
+                          String(counts.total),
+                        )
+                      : t("dash.myIssues.inboxZero")
                 : ""}
           </p>
         </div>
@@ -142,14 +157,13 @@ export function MyIssuesTodayCard({
       {busy ? (
         <div className="flex items-center gap-2 text-text-tertiary text-[12px]">
           <Loader2 size={12} className="spin" />
-          Lade …
+          {t("dash.myIssues.loadingShort")}
         </div>
       ) : error ? (
         <p className="text-[12px] text-amber-300">{error}</p>
       ) : !issues || issues.length === 0 ? (
         <p className="text-[12px] text-text-tertiary leading-relaxed">
-          Keine offenen Issues, die dir zugewiesen sind. Wenn das überrascht,
-          sind sie evtl. einer Gruppe zugewiesen statt dir direkt.
+          {t("dash.myIssues.emptyBody")}
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-stroke-1">
@@ -161,7 +175,10 @@ export function MyIssuesTodayCard({
               <span
                 className={`mt-1 shrink-0 w-1.5 h-1.5 rounded-full ${PRIO_DOT[it.priority]}`}
                 aria-hidden
-                title={`Priorität: ${it.priority}`}
+                title={t("dash.myIssues.priorityTitle").replace(
+                  "{priority}",
+                  it.priority,
+                )}
               />
               <div className="flex-1 min-w-0">
                 <Link
@@ -194,7 +211,7 @@ export function MyIssuesTodayCard({
                         ) : (
                           <Calendar size={10} />
                         )}
-                        {formatDue(it.targetDate)}
+                        {formatDue(it.targetDate, localeFmt, t)}
                       </span>
                     </>
                   )}
@@ -209,7 +226,7 @@ export function MyIssuesTodayCard({
           href={`/${workspaceId}/projects`}
           className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-text-secondary hover:text-text-primary"
         >
-          + {issues.length - 5} weitere
+          + {t("dash.myIssues.moreCount").replace("{n}", String(issues.length - 5))}
           <ArrowUpRight size={11} />
         </Link>
       )}
@@ -217,15 +234,21 @@ export function MyIssuesTodayCard({
   );
 }
 
-function formatDue(iso: string): string {
+function formatDue(
+  iso: string,
+  localeFmt: string,
+  t: (key: keyof Messages) => string,
+): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const d = new Date(iso + "T00:00:00");
   const days = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (days === 0) return "heute";
-  if (days === -1) return "gestern";
-  if (days === 1) return "morgen";
-  if (days < 0) return `vor ${-days} d`;
-  if (days <= 7) return `in ${days} d`;
-  return d.toLocaleDateString("de-DE", { day: "numeric", month: "short" });
+  if (days === 0) return t("dash.myIssues.due.today");
+  if (days === -1) return t("dash.myIssues.due.yesterday");
+  if (days === 1) return t("dash.myIssues.due.tomorrow");
+  if (days < 0)
+    return t("dash.myIssues.due.daysAgo").replace("{n}", String(-days));
+  if (days <= 7)
+    return t("dash.myIssues.due.daysIn").replace("{n}", String(days));
+  return d.toLocaleDateString(localeFmt, { day: "numeric", month: "short" });
 }

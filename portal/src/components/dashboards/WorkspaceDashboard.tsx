@@ -17,6 +17,7 @@ import {
   Brain,
 } from "lucide-react";
 import { LivePulse } from "@/components/dashboards/LivePulse";
+import { DashboardClock } from "@/components/dashboards/DashboardClock";
 import { ScraperRunCard } from "@/components/dashboards/ScraperRunCard";
 import { FunnelOverviewCard } from "@/components/dashboards/FunnelOverviewCard";
 import { UnifiedInboxCard } from "@/components/dashboards/UnifiedInboxCard";
@@ -25,81 +26,177 @@ import { ActiveCycleCard } from "@/components/dashboards/ActiveCycleCard";
 import { MailFollowupsCard } from "@/components/dashboards/MailFollowupsCard";
 import { MentionsFeedCard } from "@/components/dashboards/MentionsFeedCard";
 import type { WorkspaceId } from "@/lib/workspaces";
+import { localeFromCookies } from "@/lib/i18n/server-locale";
+import { localeTag, tFor, type Messages } from "@/lib/i18n/messages";
 
-const DATE_DE = new Intl.DateTimeFormat("de-DE", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-}).format(new Date());
+type HubKey = "communication" | "office" | "project";
 
-function greetingForHour(): string {
-  const h = new Date().getHours();
-  if (h >= 5 && h < 11) return "Guten Morgen";
-  if (h >= 11 && h < 18) return "Guten Tag";
-  if (h >= 18 && h < 22) return "Guten Abend";
-  return "Gute Nacht";
-}
-
-type ShortcutDef = {
+type ShortcutSpec = {
   path: string;
-  label: string;
-  hint: string;
+  labelKey: keyof Messages;
+  hintKey: keyof Messages;
   Icon: typeof Mail;
 };
 
-const SHORTCUTS: Record<WorkspaceId, ShortcutDef[]> = {
+type HubSpec = {
+  key: HubKey;
+  blurbKey: keyof Messages;
+  items: ShortcutSpec[];
+};
+
+function hubTitleKey(k: HubKey): keyof Messages {
+  switch (k) {
+    case "communication":
+      return "dash.hub.communication.title";
+    case "office":
+      return "dash.hub.office.title";
+    case "project":
+      return "dash.hub.project.title";
+  }
+}
+
+function greetingKey(): keyof Messages {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 11) return "dash.greeting.morning";
+  if (h >= 11 && h < 18) return "dash.greeting.day";
+  if (h >= 18 && h < 22) return "dash.greeting.evening";
+  return "dash.greeting.night";
+}
+
+const HUB_LAYOUT: Record<WorkspaceId, HubSpec[]> = {
   corehub: [
-    { path: "/mail", label: "Mail", hint: "Posteingang & Team-Mail", Icon: Mail },
-    { path: "/chat", label: "Chat", hint: "Kanäle & DMs", Icon: MessageSquare },
-    { path: "/calendar", label: "Kalender", hint: "Termine & Slots", Icon: Calendar },
-    { path: "/projects", label: "Projekte", hint: "Plane · Issues & Board", Icon: Kanban },
-    { path: "/files", label: "Files", hint: "Nextcloud Datei-Station", Icon: FolderOpen },
-    { path: "/apps/code", label: "Code", hint: "Gitea · Repositories & CI", Icon: Code2 },
-    { path: "/ai-knowledge", label: "AI-Wissen", hint: "Firmen-Kontext für Antworten", Icon: Brain },
+    {
+      key: "communication",
+      blurbKey: "dash.corehub.communication.blurb",
+      items: [
+        { path: "/mail", labelKey: "nav.mail", hintKey: "dash.corehub.hint.mail", Icon: Mail },
+        { path: "/chat", labelKey: "nav.chat", hintKey: "dash.corehub.hint.chat", Icon: MessageSquare },
+        { path: "/calendar", labelKey: "nav.calendar", hintKey: "dash.corehub.hint.calendar", Icon: Calendar },
+        { path: "/calls", labelKey: "nav.calls", hintKey: "dash.corehub.hint.calls", Icon: Video },
+      ],
+    },
+    {
+      key: "office",
+      blurbKey: "dash.corehub.office.blurb",
+      items: [
+        { path: "/files", labelKey: "nav.files", hintKey: "dash.corehub.hint.files", Icon: FolderOpen },
+        { path: "/office", labelKey: "nav.office", hintKey: "dash.corehub.hint.office", Icon: FileText },
+        { path: "/sign", labelKey: "nav.sign", hintKey: "dash.corehub.hint.sign", Icon: PenLine },
+        { path: "/crm", labelKey: "nav.crm", hintKey: "dash.corehub.hint.crm", Icon: Users },
+        {
+          path: "/ai-knowledge",
+          labelKey: "nav.aiKnowledge",
+          hintKey: "dash.corehub.hint.aiKnowledge",
+          Icon: Brain,
+        },
+      ],
+    },
+    {
+      key: "project",
+      blurbKey: "dash.corehub.project.blurb",
+      items: [
+        { path: "/projects", labelKey: "nav.projects", hintKey: "dash.corehub.hint.projects", Icon: Kanban },
+        { path: "/apps/code", labelKey: "nav.code", hintKey: "dash.corehub.hint.code", Icon: Code2 },
+      ],
+    },
   ],
   medtheris: [
-    { path: "/mail", label: "Mail", hint: "Sales & Praxis-Kommunikation", Icon: Mail },
-    { path: "/calendar", label: "Kalender", hint: "Demos & Folgetermine", Icon: Calendar },
-    { path: "/crm", label: "CRM", hint: "Twenty · Pipeline & Leads", Icon: Users },
-    { path: "/helpdesk", label: "Helpdesk", hint: "Zammad · Tickets", Icon: HeadphonesIcon },
-    { path: "/marketing", label: "Marketing", hint: "Mautic · Kampagnen", Icon: Megaphone },
-    { path: "/projects", label: "Projekte", hint: "Plane · Delivery", Icon: Kanban },
-    { path: "/office", label: "Office", hint: "Dokumente & Tabellen", Icon: FileText },
-    { path: "/ai-knowledge", label: "AI-Wissen", hint: "Firmen-Kontext für Mail, Tickets, SMS", Icon: Brain },
+    {
+      key: "communication",
+      blurbKey: "dash.medtheris.communication.blurb",
+      items: [
+        { path: "/mail", labelKey: "nav.mail", hintKey: "dash.medtheris.hint.mail", Icon: Mail },
+        { path: "/chat", labelKey: "nav.chat", hintKey: "dash.medtheris.hint.chat", Icon: MessageSquare },
+        { path: "/calendar", labelKey: "nav.calendar", hintKey: "dash.medtheris.hint.calendar", Icon: Calendar },
+        { path: "/calls", labelKey: "nav.calls", hintKey: "dash.medtheris.hint.calls", Icon: Video },
+        {
+          path: "/helpdesk",
+          labelKey: "nav.helpdesk",
+          hintKey: "dash.medtheris.hint.helpdesk",
+          Icon: HeadphonesIcon,
+        },
+      ],
+    },
+    {
+      key: "office",
+      blurbKey: "dash.medtheris.office.blurb",
+      items: [
+        { path: "/files", labelKey: "nav.files", hintKey: "dash.medtheris.hint.files", Icon: FolderOpen },
+        { path: "/office", labelKey: "nav.office", hintKey: "dash.medtheris.hint.office", Icon: FileText },
+        { path: "/crm", labelKey: "nav.crm", hintKey: "dash.medtheris.hint.crm", Icon: Users },
+        { path: "/marketing", labelKey: "nav.marketing", hintKey: "dash.medtheris.hint.marketing", Icon: Megaphone },
+        { path: "/sign", labelKey: "nav.sign", hintKey: "dash.medtheris.hint.sign", Icon: PenLine },
+        {
+          path: "/ai-knowledge",
+          labelKey: "nav.aiKnowledge",
+          hintKey: "dash.medtheris.hint.aiKnowledge",
+          Icon: Brain,
+        },
+      ],
+    },
+    {
+      key: "project",
+      blurbKey: "dash.medtheris.project.blurb",
+      items: [
+        { path: "/projects", labelKey: "nav.projects", hintKey: "dash.medtheris.hint.projects", Icon: Kanban },
+      ],
+    },
   ],
   kineo: [
-    { path: "/mail", label: "Mail", hint: "Group-Mailbox", Icon: Mail },
-    { path: "/calendar", label: "Kalender", hint: "Investor- & Team-Termine", Icon: Calendar },
-    { path: "/calls", label: "Calls", hint: "Video & Raumhistorie", Icon: Video },
-    { path: "/projects", label: "Projekte", hint: "Plane · Initiativen", Icon: Kanban },
-    { path: "/crm", label: "CRM", hint: "Twenty · Partner-Pipeline", Icon: Users },
-    { path: "/sign", label: "Sign", hint: "Documenso · Verträge", Icon: PenLine },
-    { path: "/office", label: "Office", hint: "Dokumente im Portal", Icon: FileText },
-    { path: "/helpdesk", label: "Helpdesk", hint: "Interne & Vendor-Tickets", Icon: HeadphonesIcon },
-    { path: "/ai-knowledge", label: "AI-Wissen", hint: "Firmen-Kontext für Antworten", Icon: Brain },
+    {
+      key: "communication",
+      blurbKey: "dash.kineo.communication.blurb",
+      items: [
+        { path: "/mail", labelKey: "nav.mail", hintKey: "dash.kineo.hint.mail", Icon: Mail },
+        { path: "/chat", labelKey: "nav.chat", hintKey: "dash.kineo.hint.chat", Icon: MessageSquare },
+        { path: "/calls", labelKey: "nav.calls", hintKey: "dash.kineo.hint.calls", Icon: Video },
+        {
+          path: "/calendar",
+          labelKey: "nav.calendar",
+          hintKey: "dash.kineo.hint.calendar",
+          Icon: Calendar,
+        },
+        {
+          path: "/helpdesk",
+          labelKey: "nav.helpdesk",
+          hintKey: "dash.kineo.hint.helpdesk",
+          Icon: HeadphonesIcon,
+        },
+      ],
+    },
+    {
+      key: "office",
+      blurbKey: "dash.kineo.office.blurb",
+      items: [
+        { path: "/files", labelKey: "nav.files", hintKey: "dash.kineo.hint.files", Icon: FolderOpen },
+        { path: "/office", labelKey: "nav.office", hintKey: "dash.kineo.hint.office", Icon: FileText },
+        { path: "/crm", labelKey: "nav.crm", hintKey: "dash.kineo.hint.crm", Icon: Users },
+        { path: "/sign", labelKey: "nav.sign", hintKey: "dash.kineo.hint.sign", Icon: PenLine },
+        {
+          path: "/ai-knowledge",
+          labelKey: "nav.aiKnowledge",
+          hintKey: "dash.kineo.hint.aiKnowledge",
+          Icon: Brain,
+        },
+      ],
+    },
+    {
+      key: "project",
+      blurbKey: "dash.kineo.project.blurb",
+      items: [
+        { path: "/projects", labelKey: "nav.projects", hintKey: "dash.kineo.hint.projects", Icon: Kanban },
+      ],
+    },
   ],
 };
 
-const TIPS: Record<WorkspaceId, string[]> = {
-  corehub: [
-    "Plane-Fälligkeiten siehst du oben im Pulse — Klick öffnet SSO in deinen Workspace.",
-    "Builds und externe Erreichbarkeit prüfst du über Status (Sidebar) oder Uptime.",
-    "Native Apps (Mail, Chat, …) laufen im Portal; Code/Gitea öffnet eingebettet oder im Tab.",
-  ],
-  medtheris: [
-    "Neue Leads landen nach dem Scraper-Lauf im CRM — Prüfe die Twenty-Pipeline.",
-    "Kundenanfragen bündelst du im Helpdesk; Magic-Links kannst du aus dem Ticket kopieren.",
-    "Office-Hub: Word/Excel im Portal; Folien im OpenOffice-Editor über Nextcloud.",
-  ],
-  kineo: [
-    "Strategie-Arbeit: Projekte für OKRs, CRM für Partner, Sign für dokumentierte Abschlüsse.",
-    "Video-Calls und Historie findest du unter Calls; Kalender synchronisiert über CalDAV.",
-    "Helpdesk ist für interne Ops & Vendor-Support — getrennt von MedTheris-Kunden-Tickets.",
-  ],
+const TIP_KEYS: Record<WorkspaceId, (keyof Messages)[]> = {
+  corehub: ["dash.corehub.tip1", "dash.corehub.tip2", "dash.corehub.tip3"],
+  medtheris: ["dash.medtheris.tip1", "dash.medtheris.tip2", "dash.medtheris.tip3"],
+  kineo: ["dash.kineo.tip1", "dash.kineo.tip2", "dash.kineo.tip3"],
 };
 
-export function WorkspaceDashboard({
+export async function WorkspaceDashboard({
   workspaceId,
   workspaceName,
   tagline,
@@ -112,12 +209,21 @@ export function WorkspaceDashboard({
   firstName: string;
   accent: string;
 }) {
-  const shortcuts = SHORTCUTS[workspaceId];
-  const tips = TIPS[workspaceId];
+  const locale = await localeFromCookies();
+  const tag = localeTag(locale);
+  const dateLong = new Intl.DateTimeFormat(tag, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+
+  const hubBlocks = HUB_LAYOUT[workspaceId];
+  const tipKeys = TIP_KEYS[workspaceId];
   const showScraper = workspaceId === "corehub" || workspaceId === "medtheris";
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 min-w-0 overflow-x-hidden">
       <header className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-4">
         <div className="min-w-0 flex-1">
           <p
@@ -127,21 +233,24 @@ export function WorkspaceDashboard({
             {workspaceName}
           </p>
           <h1 className="text-text-primary text-xl sm:text-2xl font-semibold tracking-tight">
-            {greetingForHour()}, {firstName}
+            {tFor(locale, greetingKey())}, {firstName}
           </h1>
           <p className="text-text-tertiary text-sm mt-1 max-w-2xl leading-relaxed">
             {tagline}
           </p>
         </div>
-        <time
-          dateTime={new Date().toISOString().slice(0, 10)}
-          className="text-text-tertiary text-sm shrink-0 tabular-nums sm:text-right"
-        >
-          {DATE_DE}
-        </time>
+        <div className="flex flex-col items-start sm:items-end gap-0.5 shrink-0 tabular-nums sm:text-right">
+          <DashboardClock className="text-text-primary text-base sm:text-lg font-semibold leading-tight" />
+          <time
+            dateTime={new Date().toISOString().slice(0, 10)}
+            className="text-text-tertiary text-[12px] sm:text-sm"
+          >
+            {dateLong}
+          </time>
+        </div>
       </header>
 
-      <LivePulse workspace={workspaceId} workspaceName={workspaceName} />
+      <LivePulse workspace={workspaceId} workspaceName={workspaceName} locale={locale} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <UnifiedInboxCard workspaceId={workspaceId} accent={accent} />
@@ -155,45 +264,59 @@ export function WorkspaceDashboard({
 
       {showScraper && <ScraperRunCard accent={accent} />}
 
-      <section className="flex flex-col gap-2.5">
+      <section className="flex flex-col gap-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-text-primary font-semibold text-sm">Schnellzugriff</h2>
+          <h2 className="text-text-primary font-semibold text-sm">{tFor(locale, "dash.quick.title")}</h2>
           <span className="text-text-quaternary text-[11px] hidden sm:inline">
-            Direkt in diesem Workspace
+            {tFor(locale, "dash.quick.subtitle")}
           </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {shortcuts.map(({ path, label, hint, Icon }) => {
-            const href = `/${workspaceId}${path}`;
-            return (
-              <Link
-                key={href}
-                href={href}
-                className="group rounded-xl border border-stroke-1 bg-bg-elevated p-4 flex gap-3 hover:border-stroke-2 hover:bg-bg-overlay/80 transition-colors"
-              >
-                <span
-                  className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: `${accent}18`, color: accent }}
-                >
-                  <Icon size={18} strokeWidth={1.75} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[13px] font-semibold text-text-primary">
-                      {label}
-                    </span>
-                    <ArrowUpRight
-                      size={14}
-                      className="text-text-quaternary opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                    />
-                  </div>
-                  <p className="text-[11.5px] text-text-tertiary mt-0.5 leading-snug">
-                    {hint}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
+        <div className="flex flex-col gap-8">
+          {hubBlocks.map((hub) => (
+            <div key={hub.key} className="flex flex-col gap-3">
+              <div className="px-0.5 border-l-2 pl-3" style={{ borderColor: accent }}>
+                <h3 className="text-text-primary text-[13px] font-semibold tracking-tight">
+                  {tFor(locale, hubTitleKey(hub.key))}
+                </h3>
+                <p className="text-text-tertiary text-[11.5px] mt-0.5 leading-snug max-w-2xl">
+                  {tFor(locale, hub.blurbKey)}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {hub.items.map(({ path, labelKey, hintKey, Icon }) => {
+                  const href = `/${workspaceId}${path}`;
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className="group rounded-xl border border-stroke-1 bg-bg-elevated p-4 flex gap-3 hover:border-stroke-2 hover:bg-bg-overlay/80 transition-colors"
+                    >
+                      <span
+                        className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: `${accent}18`, color: accent }}
+                      >
+                        <Icon size={18} strokeWidth={1.75} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[13px] font-semibold text-text-primary">
+                            {tFor(locale, labelKey)}
+                          </span>
+                          <ArrowUpRight
+                            size={14}
+                            className="text-text-quaternary opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          />
+                        </div>
+                        <p className="text-[11.5px] text-text-tertiary mt-0.5 leading-snug">
+                          {tFor(locale, hintKey)}
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -206,13 +329,13 @@ export function WorkspaceDashboard({
         </span>
         <div className="min-w-0">
           <h2 className="text-text-primary font-semibold text-sm mb-2">
-            Kurz und sinnvoll
+            {tFor(locale, "dash.tips.heading")}
           </h2>
           <ul className="text-[12.5px] text-text-secondary space-y-2 leading-relaxed list-none">
-            {tips.map((line, i) => (
-              <li key={i} className="flex gap-2">
+            {tipKeys.map((lineKey) => (
+              <li key={lineKey} className="flex gap-2">
                 <span className="text-text-quaternary shrink-0">·</span>
-                <span>{line}</span>
+                <span>{tFor(locale, lineKey)}</span>
               </li>
             ))}
           </ul>

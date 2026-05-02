@@ -21,5 +21,6 @@ export type PulseSnapshot = {
     mail: PulseModuleResult;
     tasks: PulseModuleResult;
     chat: PulseModuleResult;
+    feed: PulseModuleResult;
   };
 };

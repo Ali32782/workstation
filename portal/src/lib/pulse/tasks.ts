@@ -4,6 +4,7 @@ import {
   PLANE_WORKSPACE_SLUG_BY_CORE,
   findWorkspaceMember,
 } from "@/lib/plane";
+import { tFor, type Locale } from "@/lib/i18n/messages";
 import type { PulseModuleResult } from "./types";
 
 const PLANE_BASE = PLANE_PUBLIC_BASE;
@@ -17,7 +18,9 @@ const ADMIN_TOKEN = process.env.PLANE_BRIDGE_API_TOKEN ?? "";
 export async function getTasksPulse(opts: {
   email: string;
   coreWorkspace: string;
+  locale: Locale;
 }): Promise<PulseModuleResult> {
+  const { locale } = opts;
   const slug = PLANE_WORKSPACE_SLUG_BY_CORE[opts.coreWorkspace];
   if (!slug) {
     return { ok: false, error: `unknown workspace ${opts.coreWorkspace}` };
@@ -34,11 +37,11 @@ export async function getTasksPulse(opts: {
         stats: [
           {
             key: "tasks-today",
-            label: "Heute fällig",
+            label: tFor(locale, "pulse.tasks.today"),
             value: "0",
             tone: "neutral",
             href: `/api/plane/sso?ws=${opts.coreWorkspace}`,
-            hint: `Noch nicht in Plane Workspace '${slug}'`,
+            hint: tFor(locale, "pulse.tasks.notInWorkspace").replace("{slug}", slug),
           },
         ],
       };
@@ -51,11 +54,11 @@ export async function getTasksPulse(opts: {
         stats: [
           {
             key: "tasks-today",
-            label: "Heute fällig",
+            label: tFor(locale, "pulse.tasks.today"),
             value: "0",
             tone: "neutral",
             href: `/api/plane/sso?ws=${opts.coreWorkspace}`,
-            hint: "Keine Projekte im Workspace",
+            hint: tFor(locale, "pulse.tasks.noProjects"),
           },
         ],
       };
@@ -84,11 +87,11 @@ export async function getTasksPulse(opts: {
       stats: [
         {
           key: "tasks-today",
-          label: "Heute fällig",
+          label: tFor(locale, "pulse.tasks.today"),
           value: String(dueToday),
           tone: dueToday > 0 ? "warning" : "success",
           href: `/api/plane/sso?ws=${opts.coreWorkspace}`,
-          hint: `${assignedOpen} offene Issues insgesamt`,
+          hint: tFor(locale, "pulse.tasks.openAssigned").replace("{n}", String(assignedOpen)),
         },
       ],
     };
@@ -100,11 +103,11 @@ export async function getTasksPulse(opts: {
       fallbackStats: [
         {
           key: "tasks-today",
-          label: "Heute fällig",
+          label: tFor(locale, "pulse.tasks.today"),
           value: "—",
           tone: "neutral",
           href: `/api/plane/sso?ws=${opts.coreWorkspace}`,
-          hint: "Plane-API nicht erreichbar",
+          hint: tFor(locale, "pulse.tasks.apiUnreachable"),
         },
       ],
     };

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { getPulseForCurrentUser, flattenStats, type PulseStat } from "@/lib/pulse";
+import { localeTag, tFor, type Locale } from "@/lib/i18n/messages";
 
 const TONE_COLORS: Record<PulseStat["tone"], string> = {
   info: "var(--color-info)",
@@ -10,35 +11,38 @@ const TONE_COLORS: Record<PulseStat["tone"], string> = {
   neutral: "var(--color-text-secondary)",
 };
 
-const SKELETON_KEYS = ["mail", "tasks", "chat"];
+const SKELETON_KEYS = ["mail", "tasks", "chat", "feed"];
 
 export function LivePulse({
   workspace,
   workspaceName,
+  locale,
 }: {
   workspace: string;
   /** Optional label, e.g. "MedTheris" — keeps the pulse block scoped to the tenant. */
   workspaceName?: string;
+  locale: Locale;
 }) {
   const title = workspaceName
-    ? `Pulse · ${workspaceName}`
-    : "Live · dein Pulse";
+    ? tFor(locale, "pulse.titleWithWorkspace").replace("{name}", workspaceName)
+    : tFor(locale, "pulse.titleDefault");
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
         <h2 className="text-text-primary font-semibold text-sm">{title}</h2>
       </div>
       <Suspense fallback={<PulseSkeleton />}>
-        <PulseGrid workspace={workspace} />
+        <PulseGrid workspace={workspace} locale={locale} />
       </Suspense>
     </div>
   );
 }
 
-async function PulseGrid({ workspace }: { workspace: string }) {
-  const snapshot = await getPulseForCurrentUser(workspace);
+async function PulseGrid({ workspace, locale }: { workspace: string; locale: Locale }) {
+  const snapshot = await getPulseForCurrentUser(workspace, locale);
   const stats = flattenStats(snapshot);
-  const generated = new Date(snapshot.generatedAt).toLocaleTimeString("de-DE", {
+  const tag = localeTag(locale);
+  const generated = new Date(snapshot.generatedAt).toLocaleTimeString(tag, {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -50,7 +54,7 @@ async function PulseGrid({ workspace }: { workspace: string }) {
         ))}
       </div>
       <span className="text-text-tertiary text-[11px] -mt-1">
-        aktualisiert {generated}
+        {tFor(locale, "pulse.updated").replace("{time}", generated)}
       </span>
     </>
   );

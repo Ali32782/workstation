@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Inbox, ArrowUpRight, Loader2, HeadphonesIcon, Mail } from "lucide-react";
+import { useT } from "@/components/LocaleProvider";
 
 /**
  * Unified-Inbox card for the Daily Home dashboard.
@@ -27,6 +28,7 @@ export function UnifiedInboxCard({
   workspaceId: string;
   accent: string;
 }) {
+  const t = useT();
   const [mailUnread, setMailUnread] = useState<number | null>(null);
   const [helpdesk, setHelpdesk] = useState<{
     open: number;
@@ -110,55 +112,57 @@ export function UnifiedInboxCard({
           <Inbox size={15} />
         </span>
         <div className="flex-1 min-w-0">
-          <h2 className="text-text-primary font-semibold text-sm">
-            Posteingang heute
-          </h2>
+          <h2 className="text-text-primary font-semibold text-sm">{t("dash.inbox.title")}</h2>
           <p className="text-text-tertiary text-[11px]">
             {busy
-              ? "Live-Snapshot lädt …"
+              ? t("dash.inbox.loadingSnapshot")
               : total === 0
-                ? "Alles abgearbeitet — gut gemacht."
-                : `${total} Sachen warten auf dich`}
+                ? t("dash.inbox.allDone")
+                : t("dash.inbox.waitingMany").replace("{n}", String(total))}
           </p>
         </div>
       </div>
       {busy ? (
         <div className="flex items-center gap-2 text-text-tertiary text-[12px]">
           <Loader2 size={12} className="spin" />
-          Lade …
+          {t("dash.inbox.loading")}
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-3">
           <InboxStat
-            label="Mail ungelesen"
+            label={t("dash.inbox.mailUnread")}
             value={mailUnread}
             href={`/${workspaceId}/mail`}
             Icon={Mail}
             tone="text-sky-300"
-            hint="alle Ordner"
+            hint={t("dash.inbox.allFoldersHint")}
           />
           {!helpdesk?.notConfigured && (
             <InboxStat
-              label="Tickets offen"
+              label={t("dash.inbox.ticketsOpen")}
               value={helpdesk?.open ?? null}
               href={`/${workspaceId}/helpdesk`}
               Icon={HeadphonesIcon}
               tone="text-amber-300"
-              hint={helpdesk?.sla ? `${helpdesk.sla} mit SLA-Risiko` : "ohne SLA-Risiko"}
+              hint={
+                helpdesk?.sla
+                  ? t("dash.inbox.ticketsWithSla").replace("{n}", String(helpdesk.sla))
+                  : t("dash.inbox.ticketsNoSla")
+              }
             />
           )}
           {helpdesk?.notConfigured && (
             <div className="rounded-lg border border-dashed border-stroke-1 bg-bg-base px-3 py-2 text-[11px] text-text-tertiary leading-snug">
-              Helpdesk in diesem Workspace nicht konfiguriert.
+              {t("dash.inbox.helpdeskDisabled")}
             </div>
           )}
           <InboxStat
-            label="SLA-Risiko"
+            label={t("dash.inbox.slaRisk")}
             value={helpdesk?.notConfigured ? null : helpdesk?.sla ?? 0}
             href={`/${workspaceId}/helpdesk?filter=sla`}
             Icon={HeadphonesIcon}
             tone="text-red-300"
-            hint="Tickets nahe Frist"
+            hint={t("dash.inbox.slaRiskHint")}
             mute={helpdesk?.notConfigured}
           />
         </div>

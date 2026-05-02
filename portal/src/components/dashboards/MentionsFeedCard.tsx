@@ -11,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import { useT } from "@/components/LocaleProvider";
 
 /**
  * Cross-channel "@mentions for you" card on the Daily-Home dashboard.
@@ -46,6 +47,7 @@ export function MentionsFeedCard({
   workspaceId: string;
   accent: string;
 }) {
+  const t = useT();
   const [items, setItems] = useState<MentionRoom[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,16 +106,22 @@ export function MentionsFeedCard({
         </span>
         <div className="flex-1 min-w-0">
           <h2 className="text-text-primary font-semibold text-sm">
-            Erwähnungen für dich
+            {t("dash.mentions.title")}
           </h2>
           <p className="text-text-tertiary text-[11px]">
             {busy && !items
-              ? "Lade Chat-Erwähnungen …"
+              ? t("dash.mentions.loading")
               : items === null
-                ? "Bereit"
+                ? t("dash.mentions.ready")
                 : items.length === 0
-                  ? "Keine offenen @-Erwähnungen"
-                  : `${totalMentions} Erwähnung${totalMentions === 1 ? "" : "en"} in ${items.length} Raum${items.length === 1 ? "" : "en"}`}
+                  ? t("dash.mentions.empty")
+                  : t(
+                      totalMentions === 1
+                        ? "dash.mentions.summaryOne"
+                        : "dash.mentions.summaryMany",
+                    )
+                      .replace("{n}", String(totalMentions))
+                      .replace("{rooms}", String(items.length))}
           </p>
         </div>
         <button
@@ -121,7 +129,7 @@ export function MentionsFeedCard({
           onClick={() => void load()}
           disabled={busy}
           className="text-text-tertiary hover:text-text-primary disabled:opacity-50"
-          title="Aktualisieren"
+          title={t("dash.mentions.refresh")}
         >
           {busy ? (
             <Loader2 size={13} className="animate-spin" />
@@ -133,7 +141,7 @@ export function MentionsFeedCard({
           href={`/${workspaceId}/chat`}
           className="text-[11.5px] text-text-tertiary hover:text-text-primary inline-flex items-center gap-0.5"
         >
-          Chat <ArrowUpRight size={11} />
+          {t("dash.mentions.chatLink")} <ArrowUpRight size={11} />
         </Link>
       </div>
 
@@ -141,9 +149,7 @@ export function MentionsFeedCard({
         <p className="text-[12px] text-amber-300">{error}</p>
       ) : !items || items.length === 0 ? (
         <p className="text-[12px] text-text-tertiary leading-relaxed">
-          Du hast aktuell keine offenen Erwähnungen. Wenn dich jemand mit
-          @{`<dein-name>`} pingt, taucht es hier auf — auch wenn du im
-          Chat selbst nicht eingeloggt bist.
+          {t("dash.mentions.emptyHint")}
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-stroke-1">
@@ -162,7 +168,9 @@ export function MentionsFeedCard({
               >
                 <span
                   className="mt-1 shrink-0 inline-flex items-center justify-center rounded bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-300 tabular-nums"
-                  title={`${it.userMentions} direkte · ${it.groupMentions} Gruppen-Erwähnungen`}
+                  title={t("dash.mentions.breakdownTooltip")
+                    .replace("{direct}", String(it.userMentions))
+                    .replace("{group}", String(it.groupMentions))}
                 >
                   {total}
                 </span>
@@ -178,20 +186,31 @@ export function MentionsFeedCard({
                   <div className="mt-0.5 flex items-center gap-2 text-[11px] text-text-tertiary truncate">
                     {it.unread > 0 && (
                       <>
-                        <span>{it.unread} ungelesen</span>
+                        <span>
+                          {t("dash.mentions.unreadInline").replace(
+                            "{n}",
+                            String(it.unread),
+                          )}
+                        </span>
                         <span className="opacity-60">·</span>
                       </>
                     )}
                     {it.userMentions > 0 && (
                       <span className="text-amber-300">
-                        {it.userMentions}× direkt
+                        {t("dash.mentions.directInline").replace(
+                          "{n}",
+                          String(it.userMentions),
+                        )}
                       </span>
                     )}
                     {it.groupMentions > 0 && (
                       <>
                         {it.userMentions > 0 && <span className="opacity-60">·</span>}
                         <span className="text-text-tertiary">
-                          {it.groupMentions}× @here
+                          {t("dash.mentions.groupInline").replace(
+                            "{n}",
+                            String(it.groupMentions),
+                          )}
                         </span>
                       </>
                     )}

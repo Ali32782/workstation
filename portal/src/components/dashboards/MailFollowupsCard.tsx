@@ -9,6 +9,7 @@ import {
   Clock,
   Send,
 } from "lucide-react";
+import { useT } from "@/components/LocaleProvider";
 
 /**
  * "Worauf wartest du noch eine Antwort?"  Cross-references SENT mails
@@ -42,6 +43,7 @@ export function MailFollowupsCard({
   workspaceId: string;
   accent: string;
 }) {
+  const t = useT();
   const [items, setItems] = useState<Followup[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,16 +90,22 @@ export function MailFollowupsCard({
         </span>
         <div className="flex-1 min-w-0">
           <h2 className="text-text-primary font-semibold text-sm">
-            Worauf du wartest
+            {t("dash.followups.title")}
           </h2>
           <p className="text-text-tertiary text-[11px]">
             {busy
-              ? "Vergleiche Sent ↔ Inbox …"
+              ? t("dash.followups.busy")
               : items === null
-                ? "Mail-Suche bereit."
+                ? t("dash.followups.ready")
                 : items.length === 0
-                  ? `Keine offenen Threads älter als ${days} Tage.`
-                  : `${items.length} Mail${items.length === 1 ? "" : "s"} ohne Antwort seit ${days} Tagen`}
+                  ? t("dash.followups.empty").replace("{days}", String(days))
+                  : t(
+                      items.length === 1
+                        ? "dash.followups.summaryOne"
+                        : "dash.followups.summaryMany",
+                    )
+                      .replace("{n}", String(items.length))
+                      .replace("{days}", String(days))}
           </p>
         </div>
         <select
@@ -105,7 +113,7 @@ export function MailFollowupsCard({
           onChange={(e) => void load(Number(e.target.value))}
           disabled={busy}
           className="text-[11px] bg-bg-base border border-stroke-1 rounded px-1.5 py-0.5"
-          title="Schwellwert in Tagen"
+          title={t("dash.followups.thresholdTitle")}
         >
           <option value={3}>3d</option>
           <option value={5}>5d</option>
@@ -116,21 +124,19 @@ export function MailFollowupsCard({
           href={`/${workspaceId}/mail`}
           className="text-[11.5px] text-text-tertiary hover:text-text-primary inline-flex items-center gap-0.5"
         >
-          Mail <ArrowUpRight size={11} />
+          {t("dash.followups.mailLink")} <ArrowUpRight size={11} />
         </Link>
       </div>
       {busy ? (
         <div className="flex items-center gap-2 text-text-tertiary text-[12px]">
           <Loader2 size={12} className="animate-spin" />
-          Vergleiche…
+          {t("dash.followups.comparing")}
         </div>
       ) : error ? (
         <p className="text-[12px] text-amber-300">{error}</p>
       ) : !items || items.length === 0 ? (
         <p className="text-[12px] text-text-tertiary leading-relaxed">
-          Alles im grünen Bereich. Wenn du gerade etwas Wichtiges
-          rausgeschickt hast und es taucht hier nicht auf — schau später
-          nochmal nach, der Trigger kickt nach {days} Tagen.
+          {t("dash.followups.allClear").replace("{days}", String(days))}
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-stroke-1">
@@ -160,7 +166,12 @@ export function MailFollowupsCard({
                   </Link>
                   <div className="mt-0.5 flex items-center gap-2 text-[11px] text-text-tertiary truncate">
                     <Send size={9} />
-                    <span className="truncate">an {recipientLabel}</span>
+                    <span className="truncate">
+                      {t("dash.followups.recipientPrefix").replace(
+                        "{recipient}",
+                        recipientLabel,
+                      )}
+                    </span>
                     <span className="opacity-60">·</span>
                     <span className={`${tone} inline-flex items-center gap-0.5 tabular-nums`}>
                       <Clock size={9} />
