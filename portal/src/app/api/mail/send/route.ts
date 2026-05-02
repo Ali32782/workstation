@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const ct = req.headers.get("content-type") ?? "";
   let body: SendBody;
-  let filesFromForm: { filename: string; content: Buffer; contentType?: string }[] = [];
+  const filesFromForm: { filename: string; content: Buffer; contentType?: string }[] = [];
 
   if (ct.includes("multipart/form-data")) {
     let form: FormData;

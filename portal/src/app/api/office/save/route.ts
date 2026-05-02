@@ -10,6 +10,7 @@ import {
   type SofficeTarget,
 } from "@/lib/office/converter";
 import type { SimpleWorkbook } from "@/lib/office/types";
+import { log } from "@/lib/log/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -122,9 +123,13 @@ export async function POST(req: NextRequest) {
       // file if every cell is empty — protects against client bugs that
       // would silently truncate user data.
       const cellsCount = countWorkbookCells(body.workbook);
-      console.log(
-        `[office/save] ws=${ws} user=${username} path=${path} cells=${cellsCount}`,
-      );
+      log.info({
+        scope: "office.save",
+        ws,
+        user: username,
+        path,
+        cells: cellsCount,
+      });
       if (cellsCount === 0) {
         return NextResponse.json(
           {

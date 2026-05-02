@@ -71,7 +71,6 @@ export function Avatar({
         style={{ width: size, height: size }}
         title={title ?? name ?? email ?? undefined}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
           alt={name ?? email ?? "Avatar"}

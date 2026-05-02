@@ -138,6 +138,10 @@ function fmtTimeIn(iso: string, tz: string): string {
 function tzOffsetLabel(tz: string, at: Date = new Date()): string {
   if (!tz) return "";
   try {
+    // "en-US" here is the deterministic source for shortOffset labels
+    // (e.g. "GMT+02:00") and is NOT user-localized output; we just
+    // extract the GMT offset and render the result raw.
+    // i18n-check-disable-next-line
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       timeZoneName: "shortOffset",
@@ -995,7 +999,7 @@ function CalendarWeekTimeGrid({
       const raw =
         ((ev.clientY - rect.top) / rect.height) * totalWeekGridMinutes();
       const endRel = snapToGridMinutes(raw);
-      let lo = Math.min(startRel, endRel);
+      const lo = Math.min(startRel, endRel);
       let hi = Math.max(startRel, endRel);
       if (hi - lo < WEEK_SNAP_MIN) hi = lo + WEEK_SNAP_MIN;
       const start = dateFromDayGridRel(day, lo);

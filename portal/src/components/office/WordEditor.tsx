@@ -214,8 +214,7 @@ function Toolbar({
   onOpenFind,
   onOpenMerge,
 }: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  editor: any;
+  editor: Editor;
   accent: string;
   workspaceId: WorkspaceId;
   documentPath: string;
@@ -861,8 +860,7 @@ function MailMergeDialog({
   workspaceId,
   onClose,
 }: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  editor: any;
+  editor: Editor;
   workspaceId: WorkspaceId;
   onClose: () => void;
 }) {

@@ -61,7 +61,7 @@ function mergeUtm(
   | "landingPath"
 > {
   let landingPath = fromBody?.landingPath?.trim() || null;
-  let referrer = fromBody?.referrer?.trim() || null;
+  const referrer = fromBody?.referrer?.trim() || null;
   const utm = {
     utm_source: fromBody?.utm_source ?? null,
     utm_medium: fromBody?.utm_medium ?? null,

@@ -570,7 +570,6 @@ export function ProposalGeneratorDialog({
 
             {previewHtml != null && (
               <div className="flex-1 min-h-[120px] overflow-y-auto border border-stroke-1 rounded-md bg-bg-base p-3 text-[12px] prose prose-invert max-w-none office-proposal-preview">
-                {/* eslint-disable-next-line react/no-danger */}
                 <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
               </div>
             )}
