@@ -13,7 +13,7 @@
 # =============================================================================
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/opt/corehub}"
+REPO_DIR="${REPO_DIR:-/opt/corelab}"
 cd "${REPO_DIR}"
 
 # shellcheck disable=SC1091
@@ -119,10 +119,20 @@ if docker ps --format '{{.Names}}' | grep -q '^documenso-db$'; then
 fi
 
 echo "--> dump Rocket.Chat MongoDB"
-if docker ps --format '{{.Names}}' | grep -q '^rocketchat-mongo$'; then
-  docker exec rocketchat-mongo sh -c "mongodump --archive --gzip --username root --password '${ROCKETCHAT_MONGO_ROOT_PASSWORD}' --authenticationDatabase admin" \
-    > "${WORK}/rocketchat-mongo.archive.gz"
-fi
+# We run mongo without auth in this stack (compose has no MONGO_INITDB_ROOT_*),
+# so default is anonymous mongodump. Only pass --username if the env var is
+# set, and never let a failed dump kill the whole backup run.
+for mongo_ctr in rocketchat-mongo rocketchat-mongo-medtheris; do
+  if docker ps --format '{{.Names}}' | grep -q "^${mongo_ctr}$"; then
+    if [[ -n "${ROCKETCHAT_MONGO_ROOT_PASSWORD:-}" ]]; then
+      docker exec "${mongo_ctr}" sh -c "mongodump --archive --gzip --username root --password '${ROCKETCHAT_MONGO_ROOT_PASSWORD}' --authenticationDatabase admin" \
+        > "${WORK}/${mongo_ctr}.archive.gz" || echo "   (skipped ${mongo_ctr} — auth)"
+    else
+      docker exec "${mongo_ctr}" sh -c "mongodump --archive --gzip" \
+        > "${WORK}/${mongo_ctr}.archive.gz" || echo "   (skipped ${mongo_ctr})"
+    fi
+  fi
+done
 
 echo "--> snapshot Docker volumes"
 # Stop writes for file-level snapshot of Nextcloud data (brief maintenance window).
@@ -140,34 +150,51 @@ tar -cf "${ARCHIVE}" -C "${WORK}" .
 echo "--> archive: $(du -h "${ARCHIVE}" | cut -f1)"
 
 echo "--> upload to S3"
-s3cmd \
-  --access_key="${S3_ACCESS_KEY}" \
-  --secret_key="${S3_SECRET_KEY}" \
-  --host="${S3_ENDPOINT#https://}" \
-  --host-bucket="%(bucket)s.${S3_ENDPOINT#https://}" \
-  put "${ARCHIVE}" "s3://${S3_BUCKET}/$(date +%Y/%m/%d)/corehub-${STAMP}.tar"
+S3_OK=1
+if ! s3cmd \
+    --access_key="${S3_ACCESS_KEY}" \
+    --secret_key="${S3_SECRET_KEY}" \
+    --host="${S3_ENDPOINT#https://}" \
+    --host-bucket="%(bucket)s.${S3_ENDPOINT#https://}" \
+    put "${ARCHIVE}" "s3://${S3_BUCKET}/$(date +%Y/%m/%d)/corehub-${STAMP}.tar"; then
+  S3_OK=0
+  echo "   (S3 upload FAILED — keeping local copy at ${ARCHIVE})"
+  notify fail "Backup ${STAMP} S3-upload FAILED on $(hostname). Local copy kept at ${ARCHIVE}."
+fi
 
-echo "--> cleanup local"
-rm -rf "${WORK}" "${ARCHIVE}"
+# Local retention. Even if S3 succeeded we keep a small rolling window of
+# archives on disk (default: 3) so we always have a hot copy that doesn't
+# require S3 round-trip. Bumped to 7 if S3 upload failed, so we don't lose
+# data while ops fixes the bucket.
+LOCAL_KEEP="${BACKUP_LOCAL_KEEP:-3}"
+[[ "$S3_OK" -eq 0 ]] && LOCAL_KEEP="${BACKUP_LOCAL_KEEP_OFFLINE:-7}"
+echo "--> local retention: keep latest ${LOCAL_KEEP} archive(s)"
+ls -1t /var/backups/corehub/corehub-*.tar 2>/dev/null \
+  | tail -n +$((LOCAL_KEEP + 1)) \
+  | xargs -r rm -f
+rm -rf "${WORK}"
+[[ "$S3_OK" -eq 1 ]] && rm -f "${ARCHIVE}"
 
-echo "--> prune S3 prefixes older than ${BACKUP_RETENTION_DAYS} days"
-CUTOFF=$(date -d "-${BACKUP_RETENTION_DAYS} days" +%Y%m%d)
-s3cmd \
-  --access_key="${S3_ACCESS_KEY}" \
-  --secret_key="${S3_SECRET_KEY}" \
-  --host="${S3_ENDPOINT#https://}" \
-  --host-bucket="%(bucket)s.${S3_ENDPOINT#https://}" \
-  ls --recursive "s3://${S3_BUCKET}/" \
-  | awk -v cutoff="${CUTOFF}" '{gsub(/-/,"",$1); if ($1 < cutoff) print $4}' \
-  | while read -r obj; do
-      [[ -z "$obj" ]] && continue
-      s3cmd \
-        --access_key="${S3_ACCESS_KEY}" \
-        --secret_key="${S3_SECRET_KEY}" \
-        --host="${S3_ENDPOINT#https://}" \
-        --host-bucket="%(bucket)s.${S3_ENDPOINT#https://}" \
-        del "$obj" || true
-    done
+if [[ "$S3_OK" -eq 1 ]]; then
+  echo "--> prune S3 prefixes older than ${BACKUP_RETENTION_DAYS} days"
+  CUTOFF=$(date -d "-${BACKUP_RETENTION_DAYS} days" +%Y%m%d)
+  s3cmd \
+    --access_key="${S3_ACCESS_KEY}" \
+    --secret_key="${S3_SECRET_KEY}" \
+    --host="${S3_ENDPOINT#https://}" \
+    --host-bucket="%(bucket)s.${S3_ENDPOINT#https://}" \
+    ls --recursive "s3://${S3_BUCKET}/" \
+    | awk -v cutoff="${CUTOFF}" '{gsub(/-/,"",$1); if ($1 < cutoff) print $4}' \
+    | while read -r obj; do
+        [[ -z "$obj" ]] && continue
+        s3cmd \
+          --access_key="${S3_ACCESS_KEY}" \
+          --secret_key="${S3_SECRET_KEY}" \
+          --host="${S3_ENDPOINT#https://}" \
+          --host-bucket="%(bucket)s.${S3_ENDPOINT#https://}" \
+          del "$obj" || true
+      done
+fi
 
 SIZE_HUMAN="$(du -h "${LOG}" | cut -f1 || echo '?')"
 echo "[$(date -Is)] ==== Backup done ===="

@@ -39,6 +39,9 @@ mkdir -p "$LOG_DIR"
 chown "$DEPLOY_USER":"$DEPLOY_USER" "$LOG_DIR"
 
 # Step 1: write the canonical cron file.
+# We run as **root** (not $DEPLOY_USER) because backup.sh tar's
+# /var/lib/docker/volumes which is 700 root:root — anything else fails with
+# "Permission denied" on the volume snapshot.
 cat > "$CRON_FILE" <<EOF
 # /etc/cron.d/corelab-backup — daily offsite backup at 03:00 Europe/Zurich
 # Managed by scripts/fix-backup-cron.sh. Edit there, not here.
@@ -46,7 +49,7 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 REPO_DIR=$REPO_DIR
 
-0 3 * * * $DEPLOY_USER $REPO_DIR/scripts/backup.sh >> $LOG_DIR/backup.log 2>&1
+0 3 * * * root $REPO_DIR/scripts/backup.sh >> $LOG_DIR/backup.log 2>&1
 EOF
 chmod 644 "$CRON_FILE"
 echo "[fix] wrote $CRON_FILE"
@@ -59,8 +62,9 @@ if [[ -f "$LEGACY_FILE" ]] && grep -q '/opt/corehub/scripts/backup.sh' "$LEGACY_
 fi
 
 # Step 3: kick one backup right now so the freshness check goes green.
+# Run as root (same as the cron now does); we already enforce $EUID==0 above.
 echo "[fix] running one manual backup to close the gap…"
-sudo -u "$DEPLOY_USER" bash -lc "$REPO_DIR/scripts/backup.sh" \
+REPO_DIR="$REPO_DIR" bash -lc "$REPO_DIR/scripts/backup.sh" \
   >> "$LOG_DIR/backup.log" 2>&1 \
   && echo "[fix] manual backup OK — see $LOG_DIR/backup.log" \
   || { echo "[fix] manual backup FAILED — inspect $LOG_DIR/backup.log"; exit 2; }
