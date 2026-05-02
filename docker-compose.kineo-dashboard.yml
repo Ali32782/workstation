@@ -1,0 +1,51 @@
+# =============================================================================
+# Kineo Operations Dashboard (Streamlit · Hyrox / SportsNow upload UI)
+#
+# Source lives in /opt/corelab/kineo-dashboard/ on the server (synced from the
+# admin Mac via the existing Dashboard_Aktualisieren.command workflow).
+# Replaces the local-only "streamlit run streamlit_upload.py" workflow with a
+# proper container behind NPM, embedded as an iframe in the Kineo workspace.
+#
+# Public URL:  https://dashboard.kineo360.work
+# Portal env:  NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL
+#
+# Deploy:
+#   ssh medtheris-corelab 'cd /opt/corelab && \
+#     docker compose -f docker-compose.yml -f docker-compose.kineo-dashboard.yml \
+#       up -d --build kineo_dashboard'
+# =============================================================================
+
+services:
+  kineo_dashboard:
+    build:
+      context: ./kineo-dashboard
+      dockerfile: Dockerfile
+    image: corehub/kineo-dashboard:latest
+    container_name: kineo_dashboard
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Zurich}
+      # Streamlit hardening when fronted by NPM with TLS:
+      STREAMLIT_SERVER_BASEURLPATH: ""
+      STREAMLIT_SERVER_ENABLE_CORS: "false"
+      STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION: "false"
+    volumes:
+      # Bind-mount input/output so existing Hyrox exports + the generated
+      # Kineo_Dashboard_AKTUELL.xlsx survive container rebuilds. Read-write
+      # because streamlit_upload.py writes uploaded files into input/.
+      - ./kineo-dashboard/input:/app/input
+      - ./kineo-dashboard/output:/app/output
+    networks:
+      - proxy
+    healthcheck:
+      # Streamlit serves an internal liveness endpoint at /_stcore/health.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  proxy:
+    external: true
+    name: proxy
