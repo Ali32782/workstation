@@ -26,10 +26,13 @@ const REQ_ID_HEADER = "x-request-id";
  * Public routes that bypass the auth-redirect entirely. Anything under
  * `/p/...` is a customer/visitor surface that authenticates via its own
  * mechanism (signed magic-link token, no session at all, …) and must
- * not bounce through `/login`. `/api/health` stays open so uptime probes
- * don't pin a synthetic session.
+ * not bounce through `/login`. `/api/health` and `/api/version` stay
+ * open so uptime probes / deploy fingerprints don't pin a synthetic
+ * session — both endpoints are scoped to non-sensitive metadata
+ * (process status, build sha) and are explicitly designed for external
+ * monitors.
  */
-const PUBLIC_PREFIXES = ["/p/", "/api/health"];
+const PUBLIC_PREFIXES = ["/p/", "/api/health", "/api/version"];
 
 /**
  * Generate a short request id. crypto.randomUUID is available in Edge runtime

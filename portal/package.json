@@ -11,7 +11,10 @@
     "lint": "eslint --quiet src",
     "lint:fix": "eslint --fix src",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:i18n && npm run typecheck && npm run lint"
+    "verify": "npm run check:i18n && npm run typecheck && npm run lint",
+    "smoke": "playwright test",
+    "smoke:install": "playwright install chromium --with-deps",
+    "smoke:headed": "playwright test --headed"
   },
   "dependencies": {
     "@tiptap/extension-highlight": "^2.27.2",
@@ -52,6 +55,7 @@
     "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^20.19.39",

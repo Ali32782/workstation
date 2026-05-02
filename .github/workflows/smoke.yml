@@ -1,0 +1,91 @@
+name: smoke
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Read-only Playwright smoke suite against the deployed portal.
+#
+# Runs:
+#   - on every push to main (catch a broken deploy fast)
+#   - on every PR (regression gate before merging)
+#   - on a 30-minute cron (catch upstream breakage between deploys, e.g. NPM
+#     config wipe, Keycloak realm corruption, /api/version-vs-/login routing
+#     drift). 30 min keeps GH Actions usage modest.
+#
+# The suite never logs in and never mutates any state. See
+# `docs/smoke-tests.md` for what it does and doesn't cover.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Override the portal base URL (e.g. https://staging.kineo360.work)"
+        required: false
+        default: ""
+
+concurrency:
+  # On main / cron, queue runs so we don't overlap. PRs are independent.
+  group: smoke-${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.spec }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: portal
+
+    # Per-spec parallelism. Five tiny jobs > one bigger one because a
+    # single hung TLS handshake can drag the whole run into a 5-minute
+    # tarpit and we'd rather know immediately which probe broke.
+    strategy:
+      fail-fast: false
+      matrix:
+        spec:
+          - tests/smoke/health.spec.ts
+          - tests/smoke/version.spec.ts
+          - tests/smoke/root-redirect.spec.ts
+          - tests/smoke/login-form.spec.ts
+          - tests/smoke/public-helpdesk.spec.ts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Cache Playwright browsers
+        id: cache-pw
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('portal/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.cache-pw.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke spec
+        env:
+          PORTAL_E2E_BASE_URL: ${{ github.event.inputs.base_url || vars.PORTAL_E2E_BASE_URL || 'https://app.kineo360.work' }}
+        run: npx playwright test ${{ matrix.spec }}
+
+      - name: Upload trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-trace-${{ strategy.job-index }}
+          path: portal/test-results/
+          retention-days: 7
