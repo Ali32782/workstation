@@ -1,0 +1,49 @@
+# .gitattributes — line-ending + diff hints.
+#
+# Why bother on a repo that's only ever checked out by macOS + Linux?
+#   - Windows contractors occasionally pull this on their machines and
+#     `core.autocrlf=true` corrupts shell scripts and bash heredocs.
+#   - Setting eol=lf for shell-y files makes that a non-issue regardless
+#     of the user's git config.
+#   - The diff= hints help GitHub's "Files changed" view + git diff -- *.lock
+#     stay readable.
+
+# Default: detect text vs binary, normalise line endings on commit.
+* text=auto eol=lf
+
+# Force LF on shell, env, and config — never CRLF, even on Windows checkouts.
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.env   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.conf  text eol=lf
+Dockerfile* text eol=lf
+.env*   text eol=lf
+
+# Lockfiles: keep diff but mark as generated so GitHub collapses them in PRs.
+package-lock.json linguist-generated=true
+**/package-lock.json linguist-generated=true
+poetry.lock       linguist-generated=true
+uv.lock           linguist-generated=true
+
+# Binary types — never normalise.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.avif  binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary
+*.pptx  binary
+*.zip   binary
+*.tar   binary
+*.gz    binary
+
+# Pretty diffs for shell scripts in GitHub.
+*.sh    linguist-language=Shell

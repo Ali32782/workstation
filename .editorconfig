@@ -1,0 +1,43 @@
+# EditorConfig — keep VS Code, Cursor, JetBrains, Vim aligned on formatting.
+# https://editorconfig.org/
+#
+# Rules of thumb in this repo:
+#   - Spaces over tabs (TS lint hook enforces this in portal/src).
+#   - 2 spaces for everything except shell + Python (each their own community
+#     standard) and Makefile (tabs are syntactic).
+#   - LF everywhere. Repo is checked out under Linux containers in prod, and
+#     CRLF would break the bash heredocs in scripts/.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.{md,mdx}]
+trim_trailing_whitespace = false   # markdown line breaks rely on trailing spaces
+
+[*.{py,pyi}]
+indent_size = 4
+
+[*.{sh,bash}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{ts,tsx,js,jsx,json,css,html}]
+indent_size = 2
+
+[package*.json]
+indent_size = 2
+
+[docker-compose*.yml]
+indent_size = 2
