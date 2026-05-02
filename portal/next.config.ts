@@ -4,6 +4,39 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+
+  // Modern image formats by default — Next will pick AVIF/WebP when the
+  // browser sends Accept headers for it, falling back to the original
+  // format otherwise. Saves ~30-50 % on lead-form / login hero imagery.
+  images: {
+    formats: ["image/avif", "image/webp"],
+  },
+
+  // Aggressive tree-shaking for known-fat packages. Next 14+ rewrites
+  // barrel imports (e.g. `import { Foo } from "lucide-react"`) into
+  // path-imports that only pull the component you actually use.
+  // Saves an estimated 40-100 KB on every route that touches one of
+  // these libraries.
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "@tiptap/react",
+      "@tiptap/starter-kit",
+      "@tiptap/extension-highlight",
+      "@tiptap/extension-image",
+      "@tiptap/extension-link",
+      "@tiptap/extension-table",
+      "@tiptap/extension-table-cell",
+      "@tiptap/extension-table-header",
+      "@tiptap/extension-table-row",
+      "@tiptap/extension-task-item",
+      "@tiptap/extension-task-list",
+      "@tiptap/extension-text-align",
+      "@tiptap/extension-typography",
+      "@tiptap/extension-underline",
+    ],
+  },
+
   // These packages have dynamic requires / native deps the Next.js NFT
   // tracer can't follow — keep them as runtime externals so the npm-installed
   // copy is used and bundle them via outputFileTracingIncludes.
