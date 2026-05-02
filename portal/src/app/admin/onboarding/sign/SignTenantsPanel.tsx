@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ExternalLink,
@@ -12,6 +12,8 @@ import {
   Triangle,
   XCircle,
 } from "lucide-react";
+import { useLocale } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 
 type TenantStatus = {
   workspace: string;
@@ -27,10 +29,10 @@ type TenantsResponse = {
   documensoUrl: string;
 };
 
-function fmtAbs(iso: string | null): string {
+function fmtAbs(iso: string | null, localeFmt: string): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("de-DE", {
+    return new Date(iso).toLocaleString(localeFmt, {
       dateStyle: "medium",
       timeStyle: "short",
     });
@@ -80,6 +82,8 @@ function workspaceLabel(ws: string): string {
 }
 
 export function SignTenantsPanel() {
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const [data, setData] = useState<TenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -322,7 +326,7 @@ export function SignTenantsPanel() {
                     )}
                     {t.provisionedAt && (
                       <span>
-                        seit {fmtAbs(t.provisionedAt)}
+                        seit {fmtAbs(t.provisionedAt, localeFmt)}
                         {t.provisionedBy ? ` · @${t.provisionedBy}` : ""}
                       </span>
                     )}
