@@ -1,15 +1,56 @@
-import "server-only";
-
 /**
  * Detect Rocket.Chat messages posted by portal `postCallInvite` (and similar).
+ * Safe to import from client components (pure string helpers).
  */
 
-export function rocketchatMessageLooksLikePortalVideoInvite(text: string): boolean {
+export type PortalCallInviteKind = "video" | "voice";
+
+/** Classify portal-style Jitsi invites; `null` if not a known invite shape. */
+export function portalCallInviteKind(text: string): PortalCallInviteKind | null {
   const t = text.toLowerCase();
-  return (
-    t.includes("video-anruf gestartet") ||
-    (t.includes("beitreten") && /https?:\/\//.test(text))
-  );
+  if (t.includes("sprach-anruf gestartet") || t.includes("sprach-anruf —")) {
+    return "voice";
+  }
+  if (t.includes("video-anruf gestartet") || t.includes("video-anruf —")) {
+    return "video";
+  }
+  if (/\bsprach-anruf\b/.test(t) && /https?:\/\//.test(text)) return "voice";
+  if (/\bvideo-anruf\b/.test(t) && /https?:\/\//.test(text)) return "video";
+  if (t.includes("beitreten") && /https?:\/\//.test(text)) {
+    if (/meet\.|jitsi|corehub-/i.test(text)) return "video";
+  }
+  return null;
+}
+
+export type MeetAttachment = { titleLink?: string };
+
+/**
+ * Rocket.Chat often puts the Jitsi URL only in a link-preview attachment; the
+ * msg text may be empty or different from our `postCallInvite` copy.
+ */
+export function extractMeetUrlFromAttachments(
+  attachments: MeetAttachment[] | undefined,
+): string | null {
+  if (!attachments?.length) return null;
+  for (const a of attachments) {
+    const tl = a.titleLink?.trim();
+    if (!tl) continue;
+    const low = tl.toLowerCase();
+    if (/meet\.|jitsi|corehub-/.test(low)) return stripTrail(tl);
+  }
+  return null;
+}
+
+/** True when this attachment is (likely) an auto-generated Jitsi/meet preview. */
+export function attachmentLooksLikeMeetLinkPreview(
+  titleLink: string | undefined,
+): boolean {
+  if (!titleLink?.trim()) return false;
+  return /meet\.|jitsi|corehub-/i.test(titleLink);
+}
+
+export function rocketchatMessageLooksLikePortalVideoInvite(text: string): boolean {
+  return portalCallInviteKind(text) !== null;
 }
 
 export function extractMeetUrlFromRocketchatMessage(text: string): string | null {

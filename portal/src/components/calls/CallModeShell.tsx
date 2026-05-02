@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { AvatarStack } from "@/components/ui/Avatar";
+import { useT } from "@/components/LocaleProvider";
 import type { CallSummary } from "@/lib/calls/types";
 import { JitsiEmbed } from "./JitsiEmbed";
 import { contextIcon, contextLabel } from "./shared";
@@ -36,6 +37,7 @@ export function CallModeShell({
   /** Ends the call for everyone. */
   onEnd: () => void;
 }) {
+  const t = useT();
   const activeParticipants = call.participants.filter((p) => !p.leftAt);
 
   return (
@@ -48,16 +50,16 @@ export function CallModeShell({
           type="button"
           onClick={onLeave}
           className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-bg-overlay text-text-tertiary hover:text-text-primary text-[11.5px]"
-          title="Zurück zur Liste (Call läuft weiter im Hintergrund)"
+          title={t("calls.shell.backTooltip")}
         >
           <ArrowLeft size={13} />
-          Liste
+          {t("calls.meeting.backToList")}
         </button>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[10.5px] text-text-tertiary leading-none mb-0.5">
             <span>{contextIcon(call.context)}</span>
-            <span className="truncate">{contextLabel(call.context)}</span>
+            <span className="truncate">{contextLabel(call.context, t)}</span>
             <span className="text-text-quaternary">·</span>
             <span className="truncate">{call.createdByName}</span>
           </div>
@@ -69,7 +71,10 @@ export function CallModeShell({
         {activeParticipants.length > 0 && (
           <div
             className="hidden sm:flex items-center gap-1.5 text-text-tertiary"
-            title={`${activeParticipants.length} aktive Teilnehmer`}
+            title={t("calls.stage.activeParticipantsTitle").replace(
+              "{count}",
+              String(activeParticipants.length),
+            )}
           >
             <Users size={12} />
             <AvatarStack
@@ -88,7 +93,7 @@ export function CallModeShell({
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11.5px]"
-          title="In neuem Tab öffnen"
+          title={t("calls.meeting.openNewTab")}
         >
           <Maximize2 size={12} />
         </a>
@@ -98,17 +103,17 @@ export function CallModeShell({
             navigator.clipboard.writeText(call.joinUrl);
           }}
           className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11.5px]"
-          title="Einladungslink kopieren"
+          title={t("calls.meeting.copyInvite")}
         >
           <ExternalLink size={12} />
         </button>
         <button
           type="button"
           onClick={() => {
-            if (confirm("Call für alle beenden?")) onEnd();
+            if (confirm(t("calls.confirm.endForEveryone"))) onEnd();
           }}
           className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10 text-[11.5px]"
-          title="Call beenden"
+          title={t("calls.detail.endCall")}
         >
           <X size={12} />
         </button>

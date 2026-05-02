@@ -5,7 +5,9 @@
 
 export type PhonestarRingAction =
   | "ticket_created_inbound"
-  | "article_deduped_inbound";
+  | "article_deduped_inbound"
+  /** Server → Portal: hide inbound-call toast (e.g. answered on phone, call ended). */
+  | "inbound_ring_dismiss";
 
 export type PhonestarRingEventRecord = {
   id: number;

@@ -150,15 +150,28 @@ export function PhonestarRingListener({
         if (cancelled || !j.enabled || !Array.isArray(j.events)) return;
 
         let high = since;
+        const dismissTicketIds = new Set<number>();
+        const ringCandidates: PhonestarRingEventRecord[] = [];
         for (const ev of j.events) {
           if (ev.id > high) high = ev.id;
-          if (
-            (ev.action === "ticket_created_inbound" ||
-              ev.action === "article_deduped_inbound") &&
-            tryClaimToast(ev.id)
-          ) {
-            pushToast(ev);
+          if (ev.action === "inbound_ring_dismiss") {
+            dismissTicketIds.add(ev.ticketId);
+            continue;
           }
+          if (
+            ev.action === "ticket_created_inbound" ||
+            ev.action === "article_deduped_inbound"
+          ) {
+            ringCandidates.push(ev);
+          }
+        }
+        if (dismissTicketIds.size > 0) {
+          setStack((cur) =>
+            cur.filter((t) => !dismissTicketIds.has(t.event.ticketId)),
+          );
+        }
+        for (const ev of ringCandidates) {
+          if (tryClaimToast(ev.id)) pushToast(ev);
         }
         if (high > since) persistSeen(high);
       } catch {

@@ -252,6 +252,16 @@ export async function POST(req: NextRequest) {
         subject: "Anruf angenommen",
         body: `<p>Anruf <strong>angenommen</strong> (${escapeHtml(leg)})</p>${htmlDetail(p)}`,
       });
+      if (leg === "inbound") {
+        await appendPhonestarRingEvent({
+          workspace: wsRaw,
+          direction: "inbound",
+          action: "inbound_ring_dismiss",
+          caller,
+          ticketId: id,
+          title,
+        });
+      }
       return NextResponse.json({ ok: true, action: "article_answer", ticketId: id });
     }
 
@@ -280,6 +290,16 @@ export async function POST(req: NextRequest) {
         body:
           `<p>Anruf <strong>beendet</strong> (${escapeHtml(leg)})</p>${htmlDetail(p)}${callbackHint}`,
       });
+      if (leg === "inbound") {
+        await appendPhonestarRingEvent({
+          workspace: wsRaw,
+          direction: "inbound",
+          action: "inbound_ring_dismiss",
+          caller,
+          ticketId: id,
+          title,
+        });
+      }
       return NextResponse.json({ ok: true, action: "article_destroy", ticketId: id });
     }
 

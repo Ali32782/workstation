@@ -29,7 +29,10 @@ export default async function ChatPage({
 
   let rooms: ChatRoom[] = [];
   let teams: ChatTeam[] = [];
-  let me = { username, id: "" };
+  let me: { username: string; id: string; name?: string; email?: string } = {
+    username,
+    id: "",
+  };
   let error: string | null = null;
 
   try {
@@ -38,7 +41,12 @@ export default async function ChatPage({
       email,
       name: session.user?.name ?? username,
     });
-    me = { username, id: rcUserId };
+    me = {
+      username,
+      id: rcUserId,
+      name: session.user?.name ?? username,
+      email,
+    };
     const [allRooms, allTeams] = await Promise.all([
       listRoomsForUser(rcUserId),
       listTeams(),
@@ -89,7 +97,7 @@ export default async function ChatPage({
   ).replace(/\/$/, "");
 
   return (
-    <div className="h-full">
+    <div className="h-full min-h-0">
       <ChatClient
         workspace={ws}
         workspaceLabel={workspace.name}

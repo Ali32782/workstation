@@ -7,7 +7,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { createElement } from "react";
+import type { Messages } from "@/lib/i18n/messages";
 import type { CallContext } from "@/lib/calls/types";
+
+type TT = (key: keyof Messages) => string;
 
 /** Human-readable seconds → "1m 03s" / "1h 04m" formatter. */
 export function fmtDuration(secs: number): string {
@@ -35,18 +38,21 @@ export function contextIcon(context: CallContext): ReactNode {
   }
 }
 
-export function contextLabel(context: CallContext): string {
+export function contextLabel(context: CallContext, t: TT): string {
   switch (context.kind) {
     case "crm":
-      return context.label ?? "CRM-Kontakt";
+      return context.label ?? t("calls.context.crmContact");
     case "helpdesk":
-      return context.label ?? `Ticket #${context.ticketId}`;
+      return (
+        context.label ??
+        `${t("calls.context.ticket")} #${context.ticketId}`
+      );
     case "chat":
-      return context.label ?? "Chat-Raum";
+      return context.label ?? t("calls.context.chatRoom");
     case "projects":
-      return context.label ?? "Projekt-Issue";
+      return context.label ?? t("calls.context.projectIssue");
     case "adhoc":
     default:
-      return "Spontan-Call";
+      return t("calls.context.adhoc");
   }
 }

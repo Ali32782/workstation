@@ -3,6 +3,8 @@
 import { memo, useCallback } from "react";
 import { AvatarStack } from "@/components/ui/Avatar";
 import { shortTime } from "@/components/ui/datetime";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 import type { CallSummary } from "@/lib/calls/types";
 import { contextIcon, fmtDuration } from "./shared";
 
@@ -21,6 +23,9 @@ export const CallRow = memo(function CallRow({
   selected: boolean;
   onSelect: (id: string) => void;
 }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = localeTag(locale);
   const active = !call.endedAt;
   const activeParticipants = call.participants.filter((p) => !p.leftAt);
   const ctxIcon = contextIcon(call.context);
@@ -42,14 +47,14 @@ export const CallRow = memo(function CallRow({
             className={`inline-block w-2 h-2 rounded-full ${
               active ? "bg-emerald-400 animate-pulse" : "bg-text-quaternary"
             }`}
-            title={active ? "Aktiv" : "Beendet"}
+            title={active ? t("calls.active") : t("calls.detail.ended")}
           />
           <span className="text-text-tertiary">{ctxIcon}</span>
           <span className="flex-1 text-[12.5px] font-medium truncate">
             {call.subject}
           </span>
           <span className="text-[10.5px] text-text-tertiary tabular-nums">
-            {shortTime(call.startedAt)}
+            {shortTime(call.startedAt, localeFmt)}
           </span>
         </div>
         <div className="flex items-center gap-2 mt-1 text-[10.5px] text-text-tertiary">

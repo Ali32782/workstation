@@ -31,6 +31,26 @@ async function rcAdmin<T = unknown>(path: string, init: FetchInit = {}): Promise
 }
 
 /**
+ * Post a short message as the Rocket.Chat bridge admin (integration webhooks).
+ * `channelOrRoomId` may be `#channel-name` or a room `_id`.
+ */
+export async function postAdminRoomMessage(
+  channelOrRoomId: string,
+  text: string,
+): Promise<void> {
+  if (!BASE || !ADMIN_USER_ID || !ADMIN_TOKEN) {
+    console.warn("[chat] postAdminRoomMessage: RC admin not configured");
+    return;
+  }
+  const trimmed = channelOrRoomId.trim();
+  if (!trimmed || !text.trim()) return;
+  await rcAdmin(`/api/v1/chat.postMessage`, {
+    method: "POST",
+    body: JSON.stringify({ channel: trimmed, text }),
+  });
+}
+
+/**
  * User-context call: lazily creates an actual auth-token for the target user
  * (stored in mongo as a Personal Access Token) so impersonation works for ALL
  * Rocket.Chat REST endpoints — not just admin ones.
@@ -688,14 +708,18 @@ export async function createOrOpenDM(
 
 const JITSI_BASE = process.env.JITSI_PUBLIC_BASE ?? "https://meet.kineo360.work";
 
-export function buildJitsiRoomForChat(roomId: string, roomName: string): string {
+export function buildJitsiRoomForChat(
+  roomId: string,
+  roomName: string,
+  mode: "video" | "voice" = "video",
+): string {
   // Stable per-channel room name; readable but not guessable from name alone (uses roomId hash)
   const slug =
-    roomName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 32) || "room";
+      roomName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32) || "room";
   // Append short hash of roomId so the URL is somewhat unguessable yet stable
   const hash = roomId.slice(0, 8);
   const room = `corehub-${slug}-${hash}`;
@@ -704,6 +728,10 @@ export function buildJitsiRoomForChat(roomId: string, roomName: string): string 
   u.searchParams.set("lang", "de");
   // Deep-Link-Prompts in mobiler/embedded Umgebung reduzieren (Server: ENABLE_PREJOIN_PAGE etc.)
   u.searchParams.set("config.disableDeepLinking", "true");
+  if (mode === "voice") {
+    u.hash =
+      "config.startWithVideoMuted=true&config.startAudioOnly=true";
+  }
   return u.toString();
 }
 
@@ -712,10 +740,15 @@ export async function postCallInvite(
   asUserId: string,
   roomId: string,
   roomName: string,
+  mode: "video" | "voice" = "video",
 ): Promise<{ link: string; messageId: string }> {
-  const link = buildJitsiRoomForChat(roomId, roomName);
+  const link = buildJitsiRoomForChat(roomId, roomName, mode);
+  const headline =
+    mode === "voice"
+      ? `Sprach-Anruf gestartet — [Hier beitreten](${link})`
+      : `Video-Anruf gestartet — [Hier beitreten](${link})`;
   const text = [
-    `Video-Anruf gestartet — [Hier beitreten](${link})`,
+    headline,
     ``,
     `_Direktlink: ${link}_`,
   ].join("\n");

@@ -9,8 +9,11 @@ import {
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useMemo } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { shortTime } from "@/components/ui/datetime";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 import type { CallContext, CallSummary } from "@/lib/calls/types";
 import { contextIcon, contextLabel, fmtDuration } from "./shared";
 
@@ -22,7 +25,7 @@ import { contextIcon, contextLabel, fmtDuration } from "./shared";
  * We deliberately do not render a "Bereit für den Call" placeholder or a
  * second join button — joining lives in the header alone, and the body
  * stays a clean detail view. The actual `JitsiEmbed` lives in
- * `CallModeShell` once the parent flips into call mode.
+ * `ActiveCallStage` once the parent starts embedding.
  */
 export function CallDetail({
   call,
@@ -39,6 +42,9 @@ export function CallDetail({
   /** True while parent's media probe is running — disables the join btn. */
   preflightProbing?: boolean;
 }) {
+  const { locale } = useLocale();
+  const t = useT();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
   const active = !call.endedAt;
 
   return (
@@ -53,11 +59,15 @@ export function CallDetail({
               <span className="text-text-tertiary">
                 {contextIcon(call.context)}
               </span>
-              <span>{contextLabel(call.context)}</span>
-              <span>· {new Date(call.startedAt).toLocaleString("de-DE")}</span>
+              <span>{contextLabel(call.context, t)}</span>
+              <span>
+                ·{" "}
+                {new Date(call.startedAt).toLocaleString(localeFmt)}
+              </span>
               {!active && call.durationSeconds != null && (
                 <span className="font-mono">
-                  · Dauer {fmtDuration(call.durationSeconds)}
+                  · {t("calls.detail.durationLabel")}{" "}
+                  {fmtDuration(call.durationSeconds)}
                 </span>
               )}
             </div>
@@ -65,7 +75,10 @@ export function CallDetail({
               {call.subject}
             </h2>
             <p className="text-[11px] text-text-tertiary mt-0.5">
-              gestartet von {call.createdByName}
+              {t("calls.detail.startedBy").replace(
+                "{name}",
+                call.createdByName,
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -83,24 +96,24 @@ export function CallDetail({
                   ) : (
                     <PhoneCall size={13} />
                   )}
-                  Beitreten
+                  {t("calls.detail.join")}
                 </button>
                 <a
                   href={call.joinUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11.5px]"
-                  title="In neuem Tab"
+                  title={t("calls.detail.openNewTab")}
                 >
                   <Maximize2 size={12} />
                 </a>
                 <button
                   type="button"
                   onClick={() => {
-                    if (confirm("Call für alle beenden?")) onEnd(true);
+                    onEnd(true);
                   }}
                   className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10 text-[11.5px]"
-                  title="Call beenden"
+                  title={t("calls.detail.endCall")}
                 >
                   <X size={12} />
                 </button>
@@ -108,7 +121,7 @@ export function CallDetail({
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-bg-elevated border border-stroke-1 text-[10.5px] text-text-tertiary">
                 <CheckCircle2 size={11} className="text-emerald-500" />
-                Beendet
+                {t("calls.detail.ended")}
               </span>
             )}
           </div>
@@ -121,15 +134,17 @@ export function CallDetail({
             <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 text-[12px]">
               <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
               <span className="text-text-secondary">
-                Call beendet · Dauer{" "}
-                {call.durationSeconds
-                  ? fmtDuration(call.durationSeconds)
-                  : "—"}
+                {t("calls.detail.endedWithDuration").replace(
+                  "{duration}",
+                  call.durationSeconds
+                    ? fmtDuration(call.durationSeconds)
+                    : "—",
+                )}
               </span>
             </div>
           )}
 
-          <Section title="Teilnehmer">
+          <Section title={t("calls.detail.section.participants")}>
             <ul className="space-y-2">
               {call.participants.map((p) => (
                 <li
@@ -148,33 +163,33 @@ export function CallDetail({
                   {!p.leftAt && active ? (
                     <span
                       className="inline-flex items-center gap-1.5 text-[10.5px] text-emerald-400"
-                      title="online"
+                      title={t("calls.detail.online")}
                     >
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      online
+                      {t("calls.detail.online")}
                     </span>
                   ) : (
                     <span className="text-[10.5px] text-text-tertiary tabular-nums">
                       {p.leftAt
-                        ? `${shortTime(p.joinedAt)}–${shortTime(p.leftAt)}`
-                        : shortTime(p.joinedAt)}
+                        ? `${shortTime(p.joinedAt, localeFmt)}–${shortTime(p.leftAt, localeFmt)}`
+                        : shortTime(p.joinedAt, localeFmt)}
                     </span>
                   )}
                 </li>
               ))}
               {call.participants.length === 0 && (
                 <li className="text-[11.5px] text-text-tertiary">
-                  Noch niemand beigetreten.
+                  {t("calls.detail.noParticipantsYet")}
                 </li>
               )}
             </ul>
           </Section>
 
-          <Section title="Kontext">
+          <Section title={t("calls.detail.section.context")}>
             <ContextDisplay context={call.context} />
           </Section>
 
-          <Section title="Raum">
+          <Section title={t("calls.detail.section.room")}>
             <div className="flex items-center gap-2">
               <code className="flex-1 min-w-0 text-[11px] font-mono text-text-tertiary truncate bg-bg-elevated border border-stroke-1 rounded px-2 py-1.5">
                 {call.roomName}
@@ -185,10 +200,10 @@ export function CallDetail({
                   navigator.clipboard.writeText(call.joinUrl);
                 }}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-stroke-1 hover:border-stroke-2 text-text-tertiary hover:text-text-primary text-[11px] shrink-0"
-                title="Einladungslink kopieren"
+                title={t("calls.detail.copyInviteTitle")}
               >
                 <ExternalLink size={11} />
-                Link kopieren
+                {t("calls.detail.copyLink")}
               </button>
             </div>
           </Section>
@@ -216,17 +231,18 @@ function Section({
 }
 
 function ContextDisplay({ context }: { context: CallContext }) {
+  const t = useT();
   if (context.kind === "adhoc") {
     return (
       <p className="text-[11.5px] text-text-tertiary">
-        Spontan-Call ohne Verknüpfung.
+        {t("calls.detail.adhocNoLink")}
       </p>
     );
   }
   return (
     <div className="text-[11.5px] text-text-secondary inline-flex items-center gap-1.5">
       {contextIcon(context)}
-      <span>{contextLabel(context)}</span>
+      <span>{contextLabel(context, t)}</span>
     </div>
   );
 }

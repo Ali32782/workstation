@@ -7,7 +7,7 @@ import {
 import { appendCallRingChatInvite } from "@/lib/comms/call-ring-store";
 import {
   extractMeetUrlFromRocketchatMessage,
-  rocketchatMessageLooksLikePortalVideoInvite,
+  portalCallInviteKind,
 } from "@/lib/comms/rocketchat-call-invite";
 
 export const dynamic = "force-dynamic";
@@ -129,7 +129,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: "incomplete" });
   }
 
-  if (!rocketchatMessageLooksLikePortalVideoInvite(fields.text)) {
+  const inviteKind = portalCallInviteKind(fields.text);
+  if (!inviteKind) {
     return NextResponse.json({ ok: true, ignored: "not-call-invite" });
   }
 
@@ -163,6 +164,7 @@ export async function POST(req: NextRequest) {
       initiatorUsername: fields.senderUsername || "unknown",
       initiatorName: fields.senderName,
       recipientRcUserIds,
+      callMedia: inviteKind,
     });
 
     return NextResponse.json({ ok: true, appended: true });

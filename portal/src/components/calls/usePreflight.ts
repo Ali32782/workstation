@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import type { Messages } from "@/lib/i18n/messages";
 
 export type PreflightResult =
   | { ok: true }
@@ -14,19 +15,17 @@ export type PreflightFailure =
   | "insecure"
   | "unknown";
 
-export const PREFLIGHT_MESSAGES: Record<PreflightFailure, string> = {
-  unsupported:
-    "Dein Browser unterstützt keinen Mikrofon/Kamera-Zugriff. Bitte Chrome, Edge oder Firefox verwenden.",
-  denied:
-    "Mikrofon oder Kamera wurde blockiert. Erlaube den Zugriff in der Adressleiste (Schloss-Icon) und versuch es erneut.",
-  "no-device":
-    "Es wurde kein Mikrofon/keine Kamera gefunden. Stell sicher, dass ein Headset oder eine Webcam angeschlossen ist.",
-  "in-use":
-    "Mikrofon/Kamera wird bereits von einer anderen App genutzt (Zoom, Teams, OBS …). Bitte schließe die App und versuch es erneut.",
-  insecure:
-    "Calls funktionieren nur über HTTPS oder localhost. Wechsle auf eine sichere URL.",
-  unknown:
-    "Mikrofon/Kamera konnte nicht initialisiert werden. Bitte erneut versuchen.",
+/** Map failures to `Messages` keys (translate via `useT`). */
+export const PREFLIGHT_I18N_KEY: Record<
+  PreflightFailure,
+  keyof Messages
+> = {
+  unsupported: "calls.preflight.unsupported",
+  denied: "calls.preflight.denied",
+  "no-device": "calls.preflight.noDevice",
+  "in-use": "calls.preflight.inUse",
+  insecure: "calls.preflight.insecure",
+  unknown: "calls.preflight.unknown",
 };
 
 /**

@@ -20,11 +20,12 @@ import {
 } from "lucide-react";
 import { ThreePaneLayout } from "@/components/ui/ThreePaneLayout";
 import { groupByDate } from "@/components/ui/datetime";
-import { useT } from "@/components/LocaleProvider";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localeTag } from "@/lib/i18n/messages";
 import type { CallContext, CallSummary } from "@/lib/calls/types";
 import type { WorkspaceId } from "@/lib/workspaces";
 import { CallDetail } from "./CallDetail";
-import { CallModeShell } from "./CallModeShell";
+import { ActiveCallStage, type CallStageLayout } from "./ActiveCallStage";
 import { CallRow } from "./CallRow";
 import { ComposerModal } from "./ComposerModal";
 import { PreflightDeniedModal } from "./PreflightDeniedModal";
@@ -37,11 +38,8 @@ import { usePreflight } from "./usePreflight";
  *   1. **Browse** (default) — three-pane layout (scope rail · call list ·
  *      detail with metadata + participants). The user picks a call from
  *      the list and gets context before joining.
- *   2. **Call** — a slim single-pane shell (`CallModeShell`) replaces the
- *      list/detail entirely while in an active call. Reduces visual
- *      clutter so the user focuses on the conversation. The "Liste"
- *      button in the header leaves the embed but keeps the call running
- *      so the user can re-enter without re-prompting permissions.
+ *   2. **Call** — {@link ActiveCallStage} als Vollbild oder PiP; „Liste“
+ *      minimiert ohne Jitsi neu zu laden.
  *
  * Click-to-call deep links (`/calls?start=1&subject=…&kind=…`) still work
  * the same way: they open the composer with prefilled values regardless
@@ -67,6 +65,16 @@ export function CallsClient({
   meName: string;
 }) {
   const t = useT();
+  const { locale } = useLocale();
+  const localeFmt = useMemo(() => localeTag(locale), [locale]);
+  const dateGroupLabels = useMemo(
+    () => ({
+      unknown: t("common.dateUnknown"),
+      today: t("common.today"),
+      yesterday: t("common.yesterday"),
+    }),
+    [t],
+  );
   const [calls, setCalls] = useState<CallSummary[]>(initial.calls);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,10 +94,11 @@ export function CallsClient({
     kind: "adhoc",
   });
 
-  // Lifted out of CallDetail so the parent can swap the entire layout.
-  // `embeddedCallId` doubles as the "we are in call mode" flag — null
-  // means we're in browse mode.
+  // Lifted out of CallDetail: eingebetteter Call → {@link ActiveCallStage}.
+  // `embeddedCallId` null = keine Jitsi-Session in PiP/Vollbild.
   const [embeddedCallId, setEmbeddedCallId] = useState<string | null>(null);
+  const [callStageLayout, setCallStageLayout] =
+    useState<CallStageLayout>("fullscreen");
 
   const preflight = usePreflight();
 
@@ -229,8 +238,9 @@ export function CallsClient({
   }, [calls, scope, search]);
 
   const grouped = useMemo(
-    () => groupByDate(filteredCalls, (c) => c.startedAt),
-    [filteredCalls],
+    () =>
+      groupByDate(filteredCalls, (c) => c.startedAt, localeFmt, dateGroupLabels),
+    [filteredCalls, localeFmt, dateGroupLabels],
   );
 
   const selected = useMemo(
@@ -266,7 +276,7 @@ export function CallsClient({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          subject: composerSubject || "Spontan-Call",
+          subject: composerSubject || t("calls.defaultSubject"),
           context: composerContext,
         }),
       });
@@ -280,13 +290,13 @@ export function CallsClient({
       setScope("active");
     } catch (e) {
       alert(
-        "Call konnte nicht gestartet werden: " +
+        t("calls.alert.startFailed") +
           (e instanceof Error ? e.message : e),
       );
     } finally {
       setCreating(false);
     }
-  }, [apiUrl, composerSubject, composerContext]);
+  }, [apiUrl, composerSubject, composerContext, t]);
 
   const endCall = useCallback(
     async (id: string, everyone: boolean) => {
@@ -299,12 +309,15 @@ export function CallsClient({
         const j = (await r.json()) as { call?: CallSummary; error?: string };
         if (!r.ok || !j.call) throw new Error(j.error ?? `HTTP ${r.status}`);
         setCalls((cur) => cur.map((c) => (c.id === id ? j.call! : c)));
-        if (embeddedCallId === id) setEmbeddedCallId(null);
+        if (embeddedCallId === id) {
+          setEmbeddedCallId(null);
+          setCallStageLayout("fullscreen");
+        }
       } catch (e) {
-        alert("Beenden fehlgeschlagen: " + (e instanceof Error ? e.message : e));
+        alert(t("calls.alert.endFailed") + (e instanceof Error ? e.message : e));
       }
     },
-    [apiUrl, embeddedCallId],
+    [apiUrl, embeddedCallId, t],
   );
 
   const joinCall = useCallback(
@@ -329,6 +342,7 @@ export function CallsClient({
     async (id: string) => {
       const probe = await preflight.run();
       if (!probe.ok) return; // modal will surface via preflight.failure
+      setCallStageLayout("fullscreen");
       setEmbeddedCallId(id);
       void joinCall(id);
     },
@@ -376,8 +390,7 @@ export function CallsClient({
     };
   }, [apiUrl, startEmbed]);
 
-  // Note: railItems is memoised here (before any early return) so the
-  // hook order stays stable when we flip into call-mode below.
+  // Note: railItems is memoised here so hook order stays stable.
   const railItems = useMemo(
     () => [
       {
@@ -408,31 +421,7 @@ export function CallsClient({
     [t, counts.active, counts.today, counts.week, counts.all],
   );
 
-  /* ── Render: call mode (single-pane) ─────────────────────── */
-
-  if (embeddedCallId && embeddedCall) {
-    return (
-      <>
-        <CallModeShell
-          call={embeddedCall}
-          meName={meName}
-          meEmail={meEmail}
-          accent={accent}
-          onLeave={() => setEmbeddedCallId(null)}
-          onEnd={() => void endCall(embeddedCall.id, true)}
-        />
-        {preflight.failure && (
-          <PreflightDeniedModal
-            reason={preflight.failure}
-            probing={preflight.probing}
-            accent={accent}
-            onRetry={() => void preflight.run()}
-            onClose={preflight.reset}
-          />
-        )}
-      </>
-    );
-  }
+  /* ── Render: call stage (über der Browse-Ansicht, persistentes Jitsi) ─ */
 
   /* ── Render: browse mode (three-pane) ────────────────────── */
 
@@ -548,12 +537,12 @@ export function CallsClient({
         <div className="flex items-center gap-2 mb-2">
           <h2 className="text-[12.5px] font-semibold">
             {scope === "active"
-              ? "Aktive Calls"
+              ? t("calls.list.header.active")
               : scope === "today"
-                ? "Heute"
+                ? t("common.today")
                 : scope === "week"
-                  ? "Diese Woche"
-                  : "Alle Calls"}
+                  ? t("common.thisWeek")
+                  : t("calls.list.header.all")}
           </h2>
           {loading && (
             <Loader2 size={12} className="spin text-text-tertiary" />
@@ -571,7 +560,7 @@ export function CallsClient({
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Suche Subject, Teilnehmer…"
+            placeholder={t("calls.search.placeholder")}
             className="w-full bg-bg-elevated border border-stroke-1 rounded-md pl-7 pr-2 py-1.5 text-[11.5px] outline-none focus:border-stroke-2"
           />
         </div>
@@ -588,10 +577,10 @@ export function CallsClient({
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 gap-2 text-text-tertiary">
             <PhoneCall size={28} className="text-text-quaternary" />
             <p className="text-[12.5px] font-medium text-text-secondary">
-              Keine Calls in diesem Filter.
+              {t("calls.empty.filtered.title")}
             </p>
             <p className="text-[11px] text-text-tertiary max-w-xs">
-              Starte einen neuen Call oder ändere den Filter.
+              {t("calls.empty.filtered.hint")}
             </p>
           </div>
         ) : (
@@ -629,10 +618,10 @@ export function CallsClient({
     <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12 gap-2 text-text-tertiary">
       <Video size={32} className="text-text-quaternary" />
       <p className="text-[12.5px] font-medium text-text-secondary">
-        Wähle einen Call
+        {t("calls.selection.title")}
       </p>
       <p className="text-[11px] text-text-tertiary max-w-sm">
-        Aus der Liste, oder klicke „Neuer Call" um einen Raum zu starten.
+        {t("calls.selection.hint")}
       </p>
     </div>
   );
@@ -659,6 +648,18 @@ export function CallsClient({
           onStart={() => void startCall()}
           submitting={creating}
           accent={accent}
+        />
+      )}
+
+      {embeddedCallId && embeddedCall && (
+        <ActiveCallStage
+          call={embeddedCall}
+          meName={meName}
+          meEmail={meEmail}
+          accent={accent}
+          layout={callStageLayout}
+          onLayoutChange={setCallStageLayout}
+          onEndForEveryone={() => void endCall(embeddedCall.id, true)}
         />
       )}
 

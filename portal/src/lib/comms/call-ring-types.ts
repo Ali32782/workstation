@@ -18,6 +18,8 @@ export type CallRingEventRecord = {
   initiatorUsername: string;
   initiatorName?: string;
   recipientRcUserIds: string[];
+  /** Jitsi preset from portal invite copy; missing on older stored events → UI assumes video. */
+  callMedia?: "video" | "voice";
 };
 
 export type IncomingChatRingDto = {
@@ -27,4 +29,5 @@ export type IncomingChatRingDto = {
   roomName: string;
   messageId: string;
   fromLabel: string;
+  callMedia?: "video" | "voice";
 };

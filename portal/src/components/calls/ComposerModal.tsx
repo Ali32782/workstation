@@ -2,6 +2,7 @@
 
 import { ArrowRight, Loader2, PhoneCall, X } from "lucide-react";
 import type { CallContext } from "@/lib/calls/types";
+import { useT } from "@/components/LocaleProvider";
 import { contextIcon, contextLabel } from "./shared";
 
 export function ComposerModal({
@@ -23,6 +24,7 @@ export function ComposerModal({
   submitting: boolean;
   accent: string;
 }) {
+  const t = useT();
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-24"
@@ -35,7 +37,7 @@ export function ComposerModal({
         <header className="px-4 py-3 border-b border-stroke-1 flex items-center gap-2">
           <PhoneCall size={14} style={{ color: accent }} />
           <h3 className="text-[13px] font-semibold flex-1">
-            Neuen Call starten
+            {t("calls.composer.title")}
           </h3>
           <button
             type="button"
@@ -48,14 +50,14 @@ export function ComposerModal({
         <div className="p-4 space-y-3">
           <div>
             <label className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mb-1 block">
-              Betreff
+              {t("calls.composer.subject")}
             </label>
             <input
               autoFocus
               type="text"
               value={subject}
               onChange={(e) => onSubjectChange(e.target.value)}
-              placeholder="z. B. Sales-Demo Praxis Müller"
+              placeholder={t("calls.composer.subjectPlaceholder")}
               className="w-full bg-bg-elevated border border-stroke-1 rounded-md px-3 py-2 text-[12.5px] outline-none focus:border-stroke-2"
               onKeyDown={(e) => {
                 if (e.key === "Enter") onStart();
@@ -64,25 +66,24 @@ export function ComposerModal({
           </div>
           <div>
             <label className="text-[10.5px] uppercase tracking-wide font-semibold text-text-tertiary mb-1 block">
-              Kontext
+              {t("calls.composer.contextLabel")}
             </label>
             <div className="rounded-md bg-bg-elevated border border-stroke-1 px-3 py-2 text-[11.5px] text-text-secondary inline-flex items-center gap-2">
               {contextIcon(context)}
-              <span>{contextLabel(context)}</span>
+              <span>{contextLabel(context, t)}</span>
               {context.kind !== "adhoc" && (
                 <button
                   type="button"
                   onClick={() => onContextChange({ kind: "adhoc" })}
                   className="ml-2 text-text-tertiary hover:text-text-primary"
-                  title="Verknüpfung entfernen"
+                  title={t("calls.composer.unlinkTitle")}
                 >
                   <X size={10} />
                 </button>
               )}
             </div>
             <p className="mt-1 text-[10px] text-text-quaternary">
-              Tipp: Aus CRM/Helpdesk/Chat öffnet ein Click-to-Call den Composer
-              mit vorbelegtem Kontext.
+              {t("calls.composer.contextHint")}
             </p>
           </div>
           <div className="pt-2 flex justify-end gap-2">
@@ -91,7 +92,7 @@ export function ComposerModal({
               onClick={onCancel}
               className="px-3 py-1.5 rounded-md border border-stroke-1 text-[11.5px] text-text-tertiary hover:text-text-primary"
             >
-              Abbrechen
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -105,7 +106,7 @@ export function ComposerModal({
               ) : (
                 <ArrowRight size={11} />
               )}
-              Call starten
+              {t("calls.composer.start")}
             </button>
           </div>
         </div>

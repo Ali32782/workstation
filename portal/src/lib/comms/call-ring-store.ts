@@ -17,7 +17,8 @@ type StoreFile = {
 };
 
 const MAX_EVENTS = 320;
-const MAX_AGE_MS = 60 * 60 * 1000;
+/** Nach dieser Zeit verschwinden Einträge ohne explizites Dismiss (z. B. verpasster Anruf). */
+const MAX_AGE_MS = 30 * 60 * 1000;
 
 function dataDir(): string {
   return process.env.PORTAL_DATA_DIR?.trim() || "/data";
@@ -126,6 +127,7 @@ export async function appendCallRingChatInvite(
     initiatorUsername: input.initiatorUsername,
     initiatorName: input.initiatorName,
     recipientRcUserIds: [...new Set(input.recipientRcUserIds)],
+    callMedia: input.callMedia,
   };
   store.events.push(rec);
   await writeStore(store);
@@ -156,10 +158,32 @@ export function callRingEventsForViewer(
       roomName: e.roomName,
       messageId: e.messageId,
       fromLabel: label,
+      callMedia: e.callMedia,
     });
   }
   out.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   return out;
+}
+
+export async function removeChatRingForViewer(
+  messageId: string,
+  opts: { viewerRcUserId: string; workspace: string },
+): Promise<void> {
+  if (!messageId.trim()) return;
+  const store = await readStore();
+  store.events = pruneInMemory(store.events);
+  const ws = opts.workspace.trim().toLowerCase();
+  const me = opts.viewerRcUserId.trim();
+  const idx = store.events.findIndex(
+    (e) =>
+      e.source === "chat_jitsi" &&
+      e.messageId === messageId &&
+      e.recipientRcUserIds.includes(me) &&
+      (e.workspace == null || e.workspace.trim().toLowerCase() === ws),
+  );
+  if (idx === -1) return;
+  store.events.splice(idx, 1);
+  await writeStore(store);
 }
 
 /** Raw read for the merged incoming-calls API (applies TTL in-memory). */
