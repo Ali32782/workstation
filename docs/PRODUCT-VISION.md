@@ -11,6 +11,39 @@ mit konsistentem Look & Feel laufen: Mail, Chat, Helpdesk, Files, CRM,
 Calls, Termine. Niemand im Team soll sich fühlen, als jongliere er sechs
 verschiedene Open-Source-Apps — sondern als nutze er **ein Produkt**.
 
+## Strategische Hauptsäulen
+
+> **Entschieden** _(2026-04-29)_: **Communication Hub**, **Office Hub** und
+> **Projekt Hub** sind die drei **Hauptaufgaben** der Workstation. Andere Bereiche
+> (CRM, Marketing, Helpdesk, Identity, …) **stützen oder verbinden** diese Säulen,
+> ersetzen sie aber nicht als Leitsterne für Priorisierung und Scope.
+
+### Communication Hub
+
+**Echtzeit und asynchron:** Mail, Chat, Video-/Sprach-Calls, Erwähnungen,
+Benachrichtigungen, Kalender — und wo nötig **Helpdesk** als nach außen gerichtete
+Kommunikationsschicht. Ziel: möglichst wenig Kontextbruch beim Hin- und
+Herwechseln; ein klarer Ort für „ich spreche mit Menschen und Teams“.
+
+### Office Hub
+
+**Dokumente, Schreiben, Freigaben, Vorlagen:** Portal-Office, OnlyOffice/Collabora,
+Anbindung an Files/Nextcloud. Ziel: Verträge, Korrespondenz, Tabellen-Logik,
+Merge/PDF-Workflows **ohne dauerndes App-Hopping** — der Ort für „ich erstelle und
+bearbeite Inhalt“.
+
+### Projekt Hub
+
+**Aufgaben, Zyklen, Lieferungen:** Plane und projektbezogene Views im Portal
+(Dashboard/My Work, Board, Zyklen). Ziel: Ownership, Fortschritt und Abstimmung
+sichtbar — „was läuft, wer, bis wann“.
+
+### Querschnitt
+
+Initiativen, die **mehrere Säulen verbinden** (z. B. Task aus dem Chat, Link aus
+dem Projekt ins Office, Call-Kontext neben einer Datei), haben in der Regel
+**höhere Produktwirkung** als isolierter Feinschliff in nur einer Fläche.
+
 ## Marken-Hierarchie
 
 > **Entschieden** _(2026-04-25, Ali)_: **MedTheris** ist DAS Customer-Produkt.
@@ -62,6 +95,10 @@ Tracking: `SECURITY-DEBT.md` → „Customer-Domain-Migration MedTheris".
 | **Corehub** | Engineering / Plattformbau       | `/corehub`     | `corehub.kineo360.work`      | Navy `#1e4d8c` | **Dashboard**, Mail, Chat (RC corehub), **Kalender** (NC), Files (NC), **Office** (Collabora), CRM, Code (Gitea), **Projekte** *(deferred)*, Status, Identity, Reverse Proxy |
 | **MedTheris** | Sales + Customer Inquiries     | `/medtheris`   | `medtheris.kineo360.work`    | Emerald `#059669` | **Dashboard**, Mail, Chat (RC medtheris), **Kalender** (NC), Files (NC), **Office** (Collabora), CRM (Sales-Pipeline), Helpdesk (Zammad), Status, Identity |
 | **Kineo** | Group-Holding / Strategy           | `/kineo`       | `kineo.kineo360.work`        | Violet `#7c3aed` | **Dashboard**, Mail, Chat (RC corehub), Calls (Jitsi), CRM, Projekte (Plane), Status, Identity *(eigene NC/Zammad-Backends sind deferred)* |
+
+Sidebar-**Gruppierung** (Portal): **Kommunikation** · **Office-Hub** · **Projekt-Hub** · **System**
+— siehe [Strategische Hauptsäulen](#strategische-hauptsäulen). *MedTheris* enthält z. B.
+**Projekte** (Plane) unter Projekt-Hub; **Helpdesk** unter Kommunikation.
 
 **Office-Stack:** ein gemeinsamer **OnlyOffice Document Server** (`onlyoffice-ds` Container) wird zu beiden
 Nextcloud-Instanzen connected. Vorteile: voll docx/xlsx/pptx-kompatibel (besser als Collabora),
@@ -169,8 +206,10 @@ Das ist kein „nebenbei" mehr — das ist ein zweites Geschäft.
 
 ## Produkt-Roadmap — Reihenfolge & Abhängigkeiten
 
-> Leitplan für **Wellen 2–7** und angrenzende Themen. Ziel: weniger
-> Rework, klarere Gates, realistische Parallelität.
+> Leitplan für **Wellen 2–7** und angrenzende Themen. **Priorisierung** folgt den
+> drei **Hauptsäulen** (Communication, Office, Projekt Hub — Abschnitt oben); die
+> Wellen konkretisieren das in Paketen. Ziel: weniger Rework, klarere Gates,
+> realistische Parallelität.
 
 ### Gate: Deploy + Smoke
 
@@ -198,6 +237,21 @@ CRM-Anlage, Quelle in der Lead-Inbox) bilden das **abgeschlossene
 Marketing-Fundament** im Repo. **CMS**, **Landing-Page-Builder**, weitere
 **Forms** und Kanal-Tools sind **Growth-Backlog**: sie bauen auf derselben
 Attribution-Schicht auf, sind aber kein Blocker für den aktuellen Welle-3-Core.
+
+**Marketing-Hub Stand 2026-05-01** — drei der größten kommerziellen
+Marketing-SaaS sind durch self-hostbare Open-Source-Tools im Stack abgelöst:
+
+| SaaS-Vorbild | OSS-Ersatz | Domäne im Stack |
+|---|---|---|
+| Mailchimp / ActiveCampaign | **Mautic** | Newsletter, Kontaktsegmente, Drip-Campaigns, Marketing-Attribution |
+| CapCut / Adobe Premiere Rush | **OpenCut** | Browser-Videoeditor (WebCodecs/WebGPU, 100% client-side, keine Cloud-Uploads) |
+| Buffer / Hootsuite / Later | **Postiz** | Social-Scheduler für 30+ Plattformen (LinkedIn, X, Meta, TikTok, YouTube, …) inkl. AI-Captioning |
+
+Setup je Tool dokumentiert in `docs/mautic-setup.md`, `docs/opencut-setup.md`,
+`docs/postiz-setup.md`. Sidebar-Aktivierung gated über `MAUTIC_URL`,
+`NEXT_PUBLIC_OPENCUT_URL`, `NEXT_PUBLIC_POSTIZ_URL` — sodass jede Praxis
+selbst entscheidet, welcher Subset sichtbar ist (z.B. ein Therapeut ohne
+Social-Strategie braucht keine "Social Scheduler"-Kachel in der Sidebar).
 
 ### Welle 4 — CRM / Pipeline
 

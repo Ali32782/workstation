@@ -5,8 +5,8 @@ einfließen (spätestens vor Onboarding erster externer Praxis).
 
 ## Current State (Setup-Phase)
 
-**Datum:** 2026-04-24
-**Status:** Shared Admin-Credentials akzeptiert für schnellen Setup
+**Datum:** 2026-05-01
+**Status:** Shared Admin-Credentials akzeptiert für schnellen Setup. Admin-Allowlist im Portal jetzt restriktiv (`PORTAL_ADMIN_USERNAMES=ali` — Onboarding/Scraper sehen nur Ali). Marketing-Stack vollständig (Mautic + OpenCut + Postiz). Backup-Cron seit Ende April defekt — Fix-Script bereitgestellt.
 
 ### Akzeptierte Debt
 
@@ -102,6 +102,17 @@ einfließen (spätestens vor Onboarding erster externer Praxis).
 - [ ] **Backup-Verschlüsselung** (S3 Hetzner Object Storage mit restic + Password)
 - [ ] **Audit-Log** in Keycloak aktivieren (Events → Login Events storage 14d)
 - [ ] **CrowdSec oder analog** für HTTP-Layer-Threats vor NPM
+- [ ] **Backup-Cron-Fix anwenden** (2026-05-01) — `/etc/cron.d/corehub-backup` zeigt seit Apr-Renovierung auf gelöschtes `/opt/corehub/scripts/backup.sh`. Symptom: `/var/log/corehub/backup.log` nur noch `No such file or directory`-Meldungen, `/var/backups/corehub/` leer. Fix: `sudo bash /opt/corelab/scripts/fix-backup-cron.sh` (idempotent: schreibt `/etc/cron.d/corelab-backup` korrekt + deaktiviert legacy + fährt 1× manuelles Backup). Verify: `bash scripts/backup-verify.sh`.
+- [x] **Portal-Admin-Allowlist auf einen Operator** (2026-05-01)
+  - `PORTAL_ADMIN_USERNAMES=ali` (vorher: `ali,johannes`)
+  - Wirkt auf Sidebar-Sichtbarkeit + TopBar-Pill + alle `/api/(onboarding|scraper)/**` Routes
+  - Implementation: `portal/src/lib/admin-allowlist.ts` (server-only, in-memory)
+- [x] **Marketing-Hub vollständig** (2026-05-01) — Mailchimp/CapCut/Buffer alle durch Open-Source-Self-Hosted ersetzt:
+  - Mautic (Marketing-Automation, ähnlich Mailchimp) — auf `marketing.medtheris.kineo360.work`
+  - OpenCut (Browser-Videoeditor, CapCut-Alternative) — auf `videos.kineo360.work` (DNS+NPM TBD)
+  - Postiz (Social-Scheduler, Buffer-Alternative, 30+ Plattformen) — auf `social.kineo360.work` (DNS+NPM TBD)
+  - Beide neuen Stacks: dedicated Postgres + Redis pro Stack (kein Shared-State mit Plane/Twenty)
+  - Aktivierung pro Tool via `scripts/activate-opencut-postiz.sh` nach DNS+NPM-Setup
 
 ## Why this is acceptable right now
 

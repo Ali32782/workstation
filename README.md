@@ -1,7 +1,12 @@
 # Corehub / MedTheris — Self-Hosted Stack
 
+> Stand: Mai 2026 · ~50 Container · ~6 GB RAM resident on production CX42.
+
 Infrastructure-as-code for the **Hetzner single-server stack** described in
-`Richard_Briefing_Stack_v3.docx` (April 2026).
+`Richard_Briefing_Stack_v3.docx` (April 2026), grown over a year of
+operations into a full self-hosted suite (chat, mail, video, sign,
+helpdesk, CRM, project management, marketing automation, video editor,
+social-media scheduler, observability).
 
 Two active platform domains on a single host, isolated by Keycloak realms +
 subdomains. **All Kineo360 services live under a tenant subtree** — nothing
@@ -68,6 +73,8 @@ Email via **Migadu** (managed). VoIP via **Peoplefone CH + Zoiper**
 ├── nginx-proxy-manager/README.md  # UI playbook for Proxy Hosts
 ├── cron/backup.cron               # installed by bootstrap.sh
 └── docs/
+    ├── INDEX.md                    # overview of all docs + script cross-check
+    ├── portal.md                   # Corehub workstation (Next.js portal)
     ├── subdomains.md
     ├── dns-setup.md                # Cloudflare + Vercel split, step-by-step
     ├── keycloak-realms.md
@@ -75,7 +82,11 @@ Email via **Migadu** (managed). VoIP via **Peoplefone CH + Zoiper**
     ├── jitsi-isolation-test.md
     ├── migadu-dns.md
     ├── backup-staging.md           # backups, S3 restore, staging host
-    └── roadmap-step-by-step.md     # phased checklist (ops → dev → helpdesk)
+    ├── roadmap-step-by-step.md     # phased checklist (ops → dev → helpdesk)
+    ├── scraper-runner.md
+    ├── helpdesk-setup.md
+    ├── cross-hub-roadmap.md        # integration / governance roadmap
+    └── playbooks/                  # internal operator playbooks
 ```
 
 ---
@@ -88,7 +99,7 @@ Email via **Migadu** (managed). VoIP via **Peoplefone CH + Zoiper**
 | **Phase 1 production**      | **CX42**| **8 vCPU**| **16 GB** | **160 GB SSD** | **~CHF 26** |
 | Phase 2 (>5 practices)      | AX41    | Ryzen ded.| 64 GB | 2×512 GB NVMe | ~CHF 80 |
 
-Expected runtime: **17 containers · ~3.8 GB RAM** with comfortable headroom on CX42.
+Expected runtime: **~50 containers · ~6 GB RAM** with comfortable headroom on CX42 (we're well below CX42's 16 GB ceiling thanks to per-stack Postgres-Alpine + Redis-Alpine images and disabled Twenty/Plane debug instrumentation).
 
 ---
 
@@ -262,10 +273,18 @@ Override the product domain with `PRODUCT_DOMAIN=example.com ./scripts/onboard-p
 make ps                          # service overview
 make logs s=keycloak             # tail one service
 make pull                        # update all images (careful: test!)
-make smoke                       # post-deploy health check
+make smoke                       # post-deploy health check (portal only)
 make backup                      # trigger an offsite backup now
 make restore S=s3://corehub-backups/2026/05/01/corehub-20260501-030001.tar
 make monitoring-up               # start Uptime Kuma (phase 2)
+```
+
+Cross-stack smoke (run from your laptop, ~10 s):
+
+```bash
+bash scripts/smoke-stacks.sh           # all containers + internal HTTP probes
+bash scripts/backup-verify.sh          # newest archive freshness + size
+bash scripts/check-documenso-smtp.sh   # SMTP creds present + reachable
 ```
 
 Backups run automatically at 03:00 Europe/Zurich via the cron installed by
@@ -300,6 +319,13 @@ Backups run automatically at 03:00 Europe/Zurich via the cron installed by
 | Portainer        | `portainer/portainer-ce:2.21.4`      |
 | Jitsi            | `jitsi/*:stable-9457`                |
 | Zammad           | `zammad/zammad-docker-compose:6.4.0-55` |
+| Documenso        | `documenso/documenso:latest`         |
+| Mautic           | `mautic/mautic:6-apache`             |
+| Plane            | `makeplane/plane-*:stable`           |
+| SnappyMail       | `djmaze/snappymail:latest`           |
+| Postiz           | `ghcr.io/gitroomhq/postiz-app:latest` |
+| Postiz Temporal  | `temporalio/auto-setup:1.28.1`       |
+| OpenCut          | `corehub/opencut:latest` (built locally from `OpenCut-app/OpenCut`) |
 
 Bump deliberately, test on a clone first, and always run `make backup` right before.
 
