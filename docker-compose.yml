@@ -554,19 +554,24 @@ services:
       NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY: ${DOCUMENSO_ENCRYPTION_SECONDARY_KEY}
       NEXT_PUBLIC_WEBAPP_URL: ${DOCUMENSO_URL}
       NEXT_PUBLIC_MARKETING_URL: ${DOCUMENSO_URL}
-      NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+      # Background jobs (emails, seal PDF → COMPLETED) POST back into the app.
+      # Default keeps public URL (issues #1307 / #1661); if envelopes stay PENDING
+      # after all signatures (recipients already SIGNED), try:
+      #   DOCUMENSO_INTERNAL_WEBAPP_URL=http://127.0.0.1:3000
+      # See documenso #2215 / signing certificate & job runner docs.
+      NEXT_PRIVATE_INTERNAL_WEBAPP_URL: ${DOCUMENSO_INTERNAL_WEBAPP_URL:-${DOCUMENSO_URL}}
+      NEXT_PRIVATE_JOBS_PROVIDER: ${DOCUMENSO_JOBS_PROVIDER:-local}
       NEXT_PRIVATE_DATABASE_URL: postgresql://documenso:${DOCUMENSO_DB_PASSWORD}@documenso-db:5432/documenso
       NEXT_PRIVATE_DIRECT_DATABASE_URL: postgresql://documenso:${DOCUMENSO_DB_PASSWORD}@documenso-db:5432/documenso
       # PDF signing: PKCS#12 mounted read-only from host bind-mount
       NEXT_PRIVATE_SIGNING_TRANSPORT: local
       NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH: /opt/documenso/cert.p12
       NEXT_PRIVATE_SIGNING_PASSPHRASE: ${DOCUMENSO_SIGNING_PASSPHRASE}
-      # SMTP: Migadu, port 465 + SECURE=true. Uses the same johannes@medtheris.kineo360.work
-      # mailbox as Twenty (single sender for all transactional mail keeps DKIM clean).
+      # SMTP: Migadu. Hetzner blocks outbound 465 from some VPS — use 587 + STARTTLS.
       NEXT_PRIVATE_SMTP_TRANSPORT: smtp-auth
       NEXT_PRIVATE_SMTP_HOST: smtp.migadu.com
-      NEXT_PRIVATE_SMTP_PORT: "465"
-      NEXT_PRIVATE_SMTP_SECURE: "true"
+      NEXT_PRIVATE_SMTP_PORT: "587"
+      NEXT_PRIVATE_SMTP_SECURE: "false"
       NEXT_PRIVATE_SMTP_USERNAME: ${DOCUMENSO_SMTP_USERNAME}
       NEXT_PRIVATE_SMTP_PASSWORD: ${DOCUMENSO_SMTP_PASSWORD}
       NEXT_PRIVATE_SMTP_FROM_NAME: ${DOCUMENSO_SMTP_FROM_NAME:-Kineo360 Sign}
@@ -785,6 +790,14 @@ services:
       PHONESTAR_WEBHOOK_SECRET: ${PHONESTAR_WEBHOOK_SECRET:-}
       PHONESTAR_HELPDESK_WORKSPACE: ${PHONESTAR_HELPDESK_WORKSPACE:-kineo}
       PHONESTAR_TICKET_WINDOW_MIN: ${PHONESTAR_TICKET_WINDOW_MIN:-240}
+      # --- Unified integration event feed (Documenso webhooks + generic JSON) ---
+      # Documenso: POST JSON with DOCUMENT_* event + header X-Documenso-Secret (see docs/integration-event-feed.md).
+      DOCUMENSO_WEBHOOK_SECRET: ${DOCUMENSO_WEBHOOK_SECRET:-}
+      INTEGRATION_FEED_WEBHOOK_SECRET: ${INTEGRATION_FEED_WEBHOOK_SECRET:-}
+      # Workspace slug stored on Documenso-originated events (until team routing exists).
+      INTEGRATION_FEED_DEFAULT_WORKSPACE: ${INTEGRATION_FEED_DEFAULT_WORKSPACE:-corehub}
+      # Optional Rocket.Chat channel (#integrations) — requires ROCKETCHAT_ADMIN_* .
+      INTEGRATION_FEED_ROCKETCHAT_CHANNEL: ${INTEGRATION_FEED_ROCKETCHAT_CHANNEL:-}
       NEXT_PUBLIC_ZAMMAD_URL: ${ZAMMAD_URL:-https://support.medtheris.kineo360.work}
       # --- Gitea Code bridge (admin PAT) ---
       GITEA_URL: ${GITEA_URL:-https://git.kineo360.work}
@@ -792,6 +805,15 @@ services:
       GITEA_BRIDGE_TOKEN: ${GITEA_BRIDGE_TOKEN}
       CODE_ALLOWED_GROUPS: ${CODE_ALLOWED_GROUPS:-/kineo,/medtheris,/corehub}
       NEXT_PUBLIC_GITEA_URL: ${GITEA_URL:-https://git.kineo360.work}
+      # --- Kineo workspace: optional iframe embeds (reporting on Hetzner / Streamlit) ---
+      # Set HTTPS URLs exposed via NPM with frame-ancestors for app.kineo360.work (see docs/kineo-reporting-integration.md).
+      NEXT_PUBLIC_KINEO_GAP_REPORT_URL: ${NEXT_PUBLIC_KINEO_GAP_REPORT_URL:-}
+      NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL: ${NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL:-}
+      # Marketing-Hub apps (separate compose stacks: docker-compose.opencut.yml,
+      # docker-compose.postiz.yml). Empty = sidebar entry hidden. NEXT_PUBLIC_*
+      # is baked at build time, so changes need a portal rebuild.
+      NEXT_PUBLIC_OPENCUT_URL: ${NEXT_PUBLIC_OPENCUT_URL:-}
+      NEXT_PUBLIC_POSTIZ_URL: ${NEXT_PUBLIC_POSTIZ_URL:-}
       # --- Mail (Brevo SMTP relay; Migadu fallback for IMAP/Sent) ---
       # Hetzner blocks outbound 25/465/587 on most plans, so we MUST use a
       # third-party relay (Brevo). Migadu host/port stay configured for IMAP
@@ -901,6 +923,11 @@ services:
       TENANT_TAG: ${SCRAPER_TENANT_TAG:-}
       SCRAPER_DEFAULT_PROFILE: ${SCRAPER_DEFAULT_PROFILE:-physio}
       ENABLE_SOCIAL_LOOKUP: ${SCRAPER_ENABLE_SOCIAL_LOOKUP:-0}
+      # Anthropic web_search fallback for finding a practice's website when
+      # Google Maps doesn't list one (~$0.03/lookup). Off by default so cron
+      # discovery runs don't burn budget; enable for manual --retry-no-website
+      # passes over the existing cache, see docs/scraper-runner.md.
+      ENABLE_WEBSITE_LOOKUP: ${SCRAPER_ENABLE_WEBSITE_LOOKUP:-0}
     volumes:
       - scraper_state:/var/scraper
     networks:

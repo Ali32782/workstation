@@ -10,10 +10,10 @@ werden kann.
 
 - [`TWENTY-DEAL-STAGES-ALIGNMENT.md`](./TWENTY-DEAL-STAGES-ALIGNMENT.md) —
   Deal-Stages in Twenty mit Sales abstimmen (Gate vor Welle 4 Kanban).
-- [`escalation-matrix.md`](./escalation-matrix.md) *(geplant)* —
+- [`escalation-matrix.md`](./escalation-matrix.md) *(Entwurf)* —
   Wer kümmert sich um welche Art von Vorfall? Auth-Probleme → Ali,
   Mautic/CRM-Drift → Johannes, Infra/Compose → Anika.
-- [`triage-loop.md`](./triage-loop.md) *(geplant)* — Der tägliche
+- [`triage-loop.md`](./triage-loop.md) *(Entwurf)* — Der tägliche
   Scrape→CRM→Final-Check→Funnel-Push-Loop, Schritt für Schritt.
 
 ## Konventionen

@@ -108,7 +108,7 @@ Nach jedem abgeschlossenen Paket: **Deploy + Smoke** + `cd portal && npx tsc --n
 
 | Thema | Status | Hinweis |
 |--------|--------|---------|
-| Cmd+K global | [~] | **Sign/Dokumente** (Documenso-Titel); CRM-Deals mit `?company=&deal=` / Pipeline `?deal=`; Tickets, Files, Plane … |
+| Cmd+K global | [~] | **`CmdK`** (`portal/src/components/CmdK.tsx`) → **`GET /api/search`** (`portal/src/app/api/search/route.ts`). Quellen: **CRM** (Firma `?company=`, Person `?person=`, Deal `?company=&deal=` bzw. Pipeline `?deal=`), **Documenso** (`/{ws}/sign?doc=`), **Mautic-Kontakte** (`/{ws}/marketing?section=contacts&q=&contact=<id>` — Portal öffnet Kontakte inkl. Suche/Selektion), **Zammad**, **Nextcloud** (Dateiname), **Plane** (Issues). **Smoke:** HTTPS-Loop in `scripts/smoke-test.sh` inkl. **`app.kineo360.work`**. **Backlog:** weitere Quellen (z. B. Mail, Kalender) bewusst nicht Welle-5-Minimum. |
 
 ---
 
@@ -141,4 +141,4 @@ Bei Fortsetzung in neuen Chats z. B.:
 
 ---
 
-*Letzte Strukturierung: 2026-04-29 — Pipeline `/crm/pipeline`, `/p/lead`, Wellen 3–4 angepasst.*
+*Letzte Strukturierung: 2026-04-29 — Welle 5: Cmd+K + Mautic dokumentiert; Smoke um `app.kineo360.work`; zuvor Pipeline `/crm/pipeline`, `/p/lead`, Wellen 3–4.*

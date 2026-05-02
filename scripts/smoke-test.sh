@@ -102,7 +102,7 @@ check_cert() {
 
 echo "==> HTTPS endpoints"
 for h in \
-    kineo360.work \
+    kineo360.work app.kineo360.work \
     auth.corehub.io files.corehub.io chat.corehub.io meet.corehub.io \
     crm.corehub.io  git.corehub.io \
     medtheris.kineo360.work \

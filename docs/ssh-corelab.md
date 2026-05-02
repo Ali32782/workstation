@@ -33,7 +33,7 @@ Damit User **`deploy`** per rsync den gesamten Stack aktualisieren kann:
 
 ```bash
 # als root (z. B. ssh medtheris-corelab-root)
-chown -R deploy:deploy /opt/corelab/portal /opt/corelab/medtheris-scraper
+chown -R deploy:deploy /opt/corelab/portal /opt/corelab/medtheris-scraper /opt/corelab/scripts
 chown deploy:deploy /opt/corelab/docker-compose.yml
 # rsync legt Temp-Dateien im Ordner /opt/corelab an — der Ordner selbst muss deploy gehören:
 chown deploy:deploy /opt/corelab
