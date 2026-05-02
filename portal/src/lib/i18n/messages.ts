@@ -2271,7 +2271,7 @@ const de: Messages = {
   "nav.proxy": "Reverse Proxy",
   "nav.admin": "Admin",
   "nav.onboarding": "Onboarding",
-  "nav.opsDashboard": "Operations-Dashboard",
+  "nav.opsDashboard": "Operations Dashboard",
   "nav.marketing": "Marketing",
   "nav.aiKnowledge": "AI-Wissen",
   "nav.dashboard.short": "Übersicht",
@@ -4611,7 +4611,7 @@ const en: Messages = {
   "nav.proxy": "Reverse Proxy",
   "nav.admin": "Admin",
   "nav.onboarding": "Onboarding",
-  "nav.opsDashboard": "Operations dashboard",
+  "nav.opsDashboard": "Operations Dashboard",
   "nav.marketing": "Marketing",
   "nav.aiKnowledge": "AI knowledge",
   "nav.dashboard.short": "Overview",
@@ -6858,7 +6858,11 @@ export function detectLocale(input: string | undefined | null): Locale {
 
 /** BCP 47 tag for `Intl` formatters (dashboard, pulse timestamps). */
 export function localeTag(locale: Locale): string {
-  return locale === "en" ? "en-US" : "de-DE";
+  // en-GB rather than en-US so that toLocaleTimeString() defaults to 24-hour
+  // (no AM/PM) and toLocaleDateString() defaults to dd/mm/yyyy. This matches
+  // every other Swiss-Ops timestamp in the portal and avoids surprising the
+  // user with US-formatted "11:48 PM" sprinkled into an otherwise 24h UI.
+  return locale === "en" ? "en-GB" : "de-DE";
 }
 
 export function tFor(

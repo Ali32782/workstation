@@ -351,7 +351,7 @@ export function CalendarClient({
 
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const weekdayShortMonFirst = useMemo(
     () => mondayFirstWeekdayShort(localeTag),
     [localeTag],
@@ -1038,7 +1038,7 @@ function MonthGrid({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const weekdayLabels = useMemo(
     () => mondayFirstWeekdayShort(localeTag),
     [localeTag],
@@ -1226,7 +1226,7 @@ function CalendarWeekTimeGrid({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const weekdayLabels = useMemo(
     () => mondayFirstWeekdayShort(localeTag),
     [localeTag],
@@ -1556,7 +1556,7 @@ function EventDrawer({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const allDayL = t("calendar.allDay");
 
   const me = event.attendees.find(
@@ -2398,7 +2398,7 @@ function SchedulingAssistant({
 
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const weekdayShortMonFirst = useMemo(
     () => mondayFirstWeekdayShort(localeTag),
     [localeTag],

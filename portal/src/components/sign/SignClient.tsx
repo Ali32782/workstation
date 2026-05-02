@@ -167,14 +167,14 @@ function formatRelativeIso(
       String(Math.floor(diff / 86400)),
     );
   return new Date(iso).toLocaleDateString(
-    locale === "en" ? "en-US" : "de-DE",
+    locale === "en" ? "en-GB" : "de-DE",
     { day: "numeric", month: "short" },
   );
 }
 
 function formatDateIso(iso: string, locale: Locale): string {
   return new Date(iso).toLocaleDateString(
-    locale === "en" ? "en-US" : "de-DE",
+    locale === "en" ? "en-GB" : "de-DE",
     {
       day: "numeric",
       month: "short",

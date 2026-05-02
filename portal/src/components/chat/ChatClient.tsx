@@ -91,7 +91,7 @@ export function ChatClient({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
 
   const [rooms, setRooms] = useState<ChatRoom[]>(initialRooms);
   const [teams, setTeams] = useState<ChatTeam[]>(initialTeams);
@@ -1365,7 +1365,7 @@ function CallInviteSlimRow({
 }) {
   const tr = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const isVideo = kind === "video";
   const slimTitle = fromSelf
     ? isVideo
@@ -1426,7 +1426,7 @@ function CallInviteHistoryLine({
 }) {
   const tr = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const when =
     sameRoomCount && sameRoomCount > 1
       ? formatPastInviteWhen(firstAt, lastAt, localeTag, tr)
@@ -1472,7 +1472,7 @@ function MessageBubble({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const group = inviteGroup;
   const isSelf = msg.user.username === selfUsername;
   const portalInvite = portalInviteInfo(msg);
@@ -2533,7 +2533,7 @@ function FilesTab({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const countLabel =
     files.length === 1
       ? t("chat.files.channelCountOne").replace("{count}", String(files.length))

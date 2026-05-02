@@ -175,7 +175,7 @@ function relativeTime(
       "{n}",
       String(Math.floor(diff / 86400)),
     );
-  const loc = locale === "en" ? "en-US" : "de-DE";
+  const loc = locale === "en" ? "en-GB" : "de-DE";
   return new Date(iso).toLocaleDateString(loc);
 }
 
@@ -186,7 +186,7 @@ function formatCurrency(
 ): string {
   if (amountMicros == null || !currency) return "—";
   const value = amountMicros / 1_000_000;
-  const loc = locale === "en" ? "en-US" : "de-CH";
+  const loc = locale === "en" ? "en-GB" : "de-CH";
   try {
     return new Intl.NumberFormat(loc, {
       style: "currency",
@@ -2564,7 +2564,7 @@ function CompanyDetailHero({
   onAddNote: () => void;
 }) {
   const { locale, t } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-DE";
+  const localeTag = locale === "en" ? "en-GB" : "de-DE";
   const openDeals = opportunities.filter((o) => isOpenStage(o.stage));
   const openDealValue = openDeals.reduce(
     (sum, o) => sum + (o.amount?.amountMicros ?? 0),
@@ -2766,7 +2766,7 @@ function CompanyDetailHero({
               value={lastContact ? relativeTime(lastContact, locale, t) : "—"}
               hint={lastContact
                 ? new Date(lastContact).toLocaleDateString(
-                    locale === "en" ? "en-US" : "de-DE",
+                    locale === "en" ? "en-GB" : "de-DE",
                   )
                 : t("crm.activity.empty")}
               accent={accent}
@@ -2800,7 +2800,7 @@ function CompanyDetailHero({
                         <p className="text-[10.5px] text-text-tertiary">
                           {o.stage}
                           {o.closeDate &&
-                            ` · ${new Date(o.closeDate).toLocaleDateString(locale === "en" ? "en-US" : "de-DE")}`}
+                            ` · ${new Date(o.closeDate).toLocaleDateString(locale === "en" ? "en-GB" : "de-DE")}`}
                         </p>
                       </div>
                       <span className="text-[11.5px] font-semibold text-text-primary shrink-0">
@@ -4484,7 +4484,7 @@ function ScraperLauncher({
   onFinished?: () => void;
 }) {
   const { locale, t } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-CH";
+  const localeTag = locale === "en" ? "en-GB" : "de-CH";
   const [city, setCity] = useState("Basel");
   const [canton, setCanton] = useState("");
   const [limit, setLimit] = useState("10");

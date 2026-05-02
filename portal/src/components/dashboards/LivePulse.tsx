@@ -45,6 +45,7 @@ async function PulseGrid({ workspace, locale }: { workspace: string; locale: Loc
   const generated = new Date(snapshot.generatedAt).toLocaleTimeString(tag, {
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
   return (
     <>

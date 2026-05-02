@@ -1309,7 +1309,7 @@ function Reader({
           </div>
           <div className="text-text-tertiary text-[11px] whitespace-nowrap">
             {new Date(msg.date).toLocaleString(
-              locale === "en" ? "en-US" : "de-DE",
+              locale === "en" ? "en-GB" : "de-DE",
               {
                 dateStyle: "medium",
                 timeStyle: "short",
@@ -1449,7 +1449,7 @@ function SnoozePanel({
   onSnoozed: (wakeAt: Date) => void;
 }) {
   const { locale, t } = useLocale();
-  const locTag = locale === "en" ? "en-US" : "de-DE";
+  const locTag = locale === "en" ? "en-GB" : "de-DE";
   const presets = useMemo<
     Array<{ id: string; label: string; sub: string; date: Date }>
   >(() => {
@@ -1715,7 +1715,7 @@ function IssueFromMailDialog({
         ? `${msg.from.name ?? ""} <${msg.from.address}>`.trim()
         : t("mail.unknownSender");
       const dateLine = new Date(msg.date).toLocaleString(
-        locale === "en" ? "en-US" : "de-DE",
+        locale === "en" ? "en-GB" : "de-DE",
       );
       const body = (msg.bodyText ?? msg.bodyHtml ?? "")
         .replace(/<[^>]+>/g, " ")
@@ -2460,10 +2460,14 @@ function labelForFolder(
 }
 
 function formatDate(d: Date, locale: Locale): string {
-  const loc = locale === "en" ? "en-US" : "de-DE";
+  const loc = locale === "en" ? "en-GB" : "de-DE";
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(loc, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   }
   const week = 1000 * 60 * 60 * 24 * 6;
   if (now.getTime() - d.getTime() < week) {
@@ -2521,7 +2525,7 @@ function quoteBody(
   locale: Locale,
   t: (key: keyof Messages, fallback?: string) => string,
 ): string {
-  const loc = locale === "en" ? "en-US" : "de-DE";
+  const loc = locale === "en" ? "en-GB" : "de-DE";
   const dateStr = new Date(m.date).toLocaleString(loc);
   const name =
     m.from?.name ?? m.from?.address ?? t("mail.unknownSender");

@@ -15,6 +15,7 @@ import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocale, useT } from "./LocaleProvider";
 import type { Messages } from "@/lib/i18n/messages";
+import { formatTime24 } from "@/lib/i18n/cloud-relative";
 
 const SECTION_LABELS: Record<AppSection, keyof Messages> = {
   "Übersicht": "section.overview",
@@ -166,7 +167,6 @@ export type HealthSummary = {
 
 function HealthFooter({ health }: { health?: HealthSummary }) {
   const { locale, t } = useLocale();
-  const localeTag = locale === "en" ? "en-US" : "de-CH";
 
   if (!health) {
     return (
@@ -202,7 +202,7 @@ function HealthFooter({ health }: { health?: HealthSummary }) {
       className="flex items-center gap-2 text-text-tertiary hover:text-text-secondary text-[11px] transition-colors"
       title={t("sidebar.healthLastCheck").replace(
         "{time}",
-        new Date(health.fetchedAt).toLocaleTimeString(localeTag),
+        formatTime24(health.fetchedAt, locale),
       )}
     >
       <span className="relative inline-flex">
