@@ -722,6 +722,21 @@ services:
     build:
       context: ./portal
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_* must be at BUILD time (Next.js inlines them into the
+      # client bundle). Mirror these in `.env` and rebuild the portal whenever
+      # any sidebar URL changes (`docker compose build --no-cache portal`).
+      args:
+        NEXT_PUBLIC_JITSI_BASE_URL: ${JITSI_PUBLIC_URL:-https://meet.kineo360.work}
+        NEXT_PUBLIC_GITEA_URL: ${GITEA_URL:-https://git.kineo360.work}
+        NEXT_PUBLIC_ZAMMAD_URL: ${ZAMMAD_URL:-https://support.medtheris.kineo360.work}
+        NEXT_PUBLIC_KINEO_GAP_REPORT_URL: ${NEXT_PUBLIC_KINEO_GAP_REPORT_URL:-}
+        NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED: ${NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED:-}
+        NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL: ${NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL:-}
+        NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED: ${NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED:-}
+        NEXT_PUBLIC_KINEO_CHATBOT_URL: ${NEXT_PUBLIC_KINEO_CHATBOT_URL:-}
+        NEXT_PUBLIC_KINEO_CHATBOT_EMBED: ${NEXT_PUBLIC_KINEO_CHATBOT_EMBED:-}
+        NEXT_PUBLIC_OPENCUT_URL: ${NEXT_PUBLIC_OPENCUT_URL:-}
+        NEXT_PUBLIC_POSTIZ_URL: ${NEXT_PUBLIC_POSTIZ_URL:-}
     image: corehub/portal:latest
     container_name: portal
     restart: unless-stopped
@@ -808,7 +823,11 @@ services:
       # --- Kineo workspace: optional iframe embeds (reporting on Hetzner / Streamlit) ---
       # Set HTTPS URLs exposed via NPM with frame-ancestors for app.kineo360.work (see docs/kineo-reporting-integration.md).
       NEXT_PUBLIC_KINEO_GAP_REPORT_URL: ${NEXT_PUBLIC_KINEO_GAP_REPORT_URL:-}
+      NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED: ${NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED:-}
       NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL: ${NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL:-}
+      NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED: ${NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED:-}
+      NEXT_PUBLIC_KINEO_CHATBOT_URL: ${NEXT_PUBLIC_KINEO_CHATBOT_URL:-}
+      NEXT_PUBLIC_KINEO_CHATBOT_EMBED: ${NEXT_PUBLIC_KINEO_CHATBOT_EMBED:-}
       # Marketing-Hub apps (separate compose stacks: docker-compose.opencut.yml,
       # docker-compose.postiz.yml). Empty = sidebar entry hidden. NEXT_PUBLIC_*
       # is baked at build time, so changes need a portal rebuild.

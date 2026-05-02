@@ -17,6 +17,7 @@ import {
   Megaphone,
   ClipboardList,
   BarChart3,
+  Bot,
   Film,
   Share2,
   type LucideIcon,
@@ -65,15 +66,27 @@ export type Workspace = {
 
 /**
  * Optional iframe targets for the **Kineo** workspace (reporting stack on Hetzner /
- * Streamlit / internal dashboards). Omit env vars to hide entries from the sidebar.
+ * Streamlit / internal dashboards / chatbot). Omit env vars to hide entries from the sidebar.
  *
  * - `NEXT_PUBLIC_KINEO_GAP_REPORT_URL` — Gap-filling / reporting UI (e.g. hosted report app).
  * - `NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL` — Operations dashboard (e.g. Streamlit upload pipeline from `Kineo_Dashboard`).
+ * - `NEXT_PUBLIC_KINEO_CHATBOT_URL` — Public Kineo360 chatbot UI (Sales/Support assistant).
  *
- * Both must be **HTTPS** origins trusted by NPM (`frame-ancestors` for `app.kineo360.work`).
- * Streamlit defaults often block iframes — use `newtab` via “open in new tab” in AppFrame or set
+ * All must be **HTTPS** origins trusted by NPM (`frame-ancestors` for `app.kineo360.work`).
+ * Streamlit defaults often block iframes — use `newtab` via "open in new tab" in AppFrame or set
  * `server.enableCORS` / `server.enableXsrfProtection` per Streamlit docs on the host.
+ *
+ * Per-app embed override (rare — only when a tool refuses iframe embedding entirely):
+ *
+ * - `NEXT_PUBLIC_KINEO_CHATBOT_EMBED=newtab` — open the chatbot in a new tab instead.
+ *   Same flag exists for the dashboard / gap-report (`*_EMBED=newtab`).
  */
+function envEmbedMode(key: string, fallback: AppEmbedMode = "iframe"): AppEmbedMode {
+  const v = process.env[key]?.trim().toLowerCase();
+  if (v === "newtab" || v === "iframe" || v === "native") return v;
+  return fallback;
+}
+
 function kineoEnvApps(): App[] {
   const out: App[] = [];
   const gap = process.env.NEXT_PUBLIC_KINEO_GAP_REPORT_URL?.trim();
@@ -86,7 +99,7 @@ function kineoEnvApps(): App[] {
         "Reporting · Lückenfüller & KPIs (angebunden über NEXT_PUBLIC_KINEO_GAP_REPORT_URL)",
       url: gap,
       icon: ClipboardList,
-      embed: "iframe",
+      embed: envEmbedMode("NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED"),
     });
   }
   const ops = process.env.NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL?.trim();
@@ -99,7 +112,20 @@ function kineoEnvApps(): App[] {
         "Hyrox / KPI-Pipeline · Upload & Auswertung (NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL)",
       url: ops,
       icon: BarChart3,
-      embed: "iframe",
+      embed: envEmbedMode("NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED"),
+    });
+  }
+  const chatbot = process.env.NEXT_PUBLIC_KINEO_CHATBOT_URL?.trim();
+  if (chatbot) {
+    out.push({
+      id: "chatbot",
+      name: "Chatbot",
+      section: "Kommunikation",
+      description:
+        "Kineo360 Chat-Assistent · Sales- & Support-Bot (NEXT_PUBLIC_KINEO_CHATBOT_URL)",
+      url: chatbot,
+      icon: Bot,
+      embed: envEmbedMode("NEXT_PUBLIC_KINEO_CHATBOT_EMBED"),
     });
   }
   return out;

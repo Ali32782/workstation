@@ -12,12 +12,40 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# NEXT_PUBLIC_* build args — these MUST be at build-time because Next.js
+# inlines them into the client bundle. Anything left empty is fine; the
+# corresponding sidebar entry just won't render. Kept in sync with
+# `docker-compose.yml` (service `portal` → `build.args`) and consumed by
+# `portal/src/lib/workspaces.ts` (`kineoEnvApps`, `marketingEnvApps`).
+ARG NEXT_PUBLIC_JITSI_BASE_URL=https://meet.kineo360.work
+ARG NEXT_PUBLIC_GITEA_URL=https://git.kineo360.work
+ARG NEXT_PUBLIC_ZAMMAD_URL=https://support.medtheris.kineo360.work
+ARG NEXT_PUBLIC_KINEO_GAP_REPORT_URL=
+ARG NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED=
+ARG NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL=
+ARG NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED=
+ARG NEXT_PUBLIC_KINEO_CHATBOT_URL=
+ARG NEXT_PUBLIC_KINEO_CHATBOT_EMBED=
+ARG NEXT_PUBLIC_OPENCUT_URL=
+ARG NEXT_PUBLIC_POSTIZ_URL=
+
 # Build-time env vars used to satisfy module-load checks; real values come from runtime env.
 ENV AUTH_SECRET=build-placeholder \
     KEYCLOAK_ISSUER=https://auth.kineo360.work/realms/main \
     KEYCLOAK_CLIENT_ID=portal \
     KEYCLOAK_CLIENT_SECRET=build-placeholder \
-    NEXT_PUBLIC_JITSI_BASE_URL=https://meet.kineo360.work
+    NEXT_PUBLIC_JITSI_BASE_URL=$NEXT_PUBLIC_JITSI_BASE_URL \
+    NEXT_PUBLIC_GITEA_URL=$NEXT_PUBLIC_GITEA_URL \
+    NEXT_PUBLIC_ZAMMAD_URL=$NEXT_PUBLIC_ZAMMAD_URL \
+    NEXT_PUBLIC_KINEO_GAP_REPORT_URL=$NEXT_PUBLIC_KINEO_GAP_REPORT_URL \
+    NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED=$NEXT_PUBLIC_KINEO_GAP_REPORT_EMBED \
+    NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL=$NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_URL \
+    NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED=$NEXT_PUBLIC_KINEO_OPERATIONS_DASHBOARD_EMBED \
+    NEXT_PUBLIC_KINEO_CHATBOT_URL=$NEXT_PUBLIC_KINEO_CHATBOT_URL \
+    NEXT_PUBLIC_KINEO_CHATBOT_EMBED=$NEXT_PUBLIC_KINEO_CHATBOT_EMBED \
+    NEXT_PUBLIC_OPENCUT_URL=$NEXT_PUBLIC_OPENCUT_URL \
+    NEXT_PUBLIC_POSTIZ_URL=$NEXT_PUBLIC_POSTIZ_URL
 RUN npm run build
 
 # ─── runner ───────────────────────────────────────────────────────────
