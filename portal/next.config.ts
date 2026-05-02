@@ -98,6 +98,48 @@ const nextConfig: NextConfig = {
     "/api/cloud/create-doc": [],
   },
   async headers() {
+    // Build the Content-Security-Policy as a single multi-line string.
+    // Notes / decisions:
+    //   • script-src: 'self' is enough — we don't load 3rd-party JS into the
+    //     portal shell. 'unsafe-inline' is required because Next.js still
+    //     emits a small inline boot script; remove once we move to nonce-based
+    //     CSP (next/script with nonce).
+    //   • style-src: same reason — Tailwind injects a few inline styles.
+    //   • img-src: data: for inline SVG / file-icons, blob: for in-browser
+    //     PDF rendering (pdf.js), https: for everything from S3-style storage.
+    //   • connect-src: include every internal service the portal calls from
+    //     the browser. Server-side fetches are not subject to CSP.
+    //   • frame-src: every iframe target (Jitsi, Plane, Snappymail, Collabora,
+    //     OpenCut, Postiz, Mautic builder).
+    //   • frame-ancestors 'self' — neither Plane SSO nor the legacy embed
+    //     paths need cross-origin embedding; per-route overrides set looser
+    //     policies further down.
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://meet.kineo360.work",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https://meet.kineo360.work wss://meet.kineo360.work " +
+        "https://crm.kineo360.work https://chat.kineo360.work " +
+        "https://files.kineo360.work https://files.medtheris.kineo360.work " +
+        "https://office.kineo360.work " +
+        "https://videos.kineo360.work https://social.kineo360.work " +
+        "https://marketing.medtheris.kineo360.work",
+      "frame-src 'self' https://meet.kineo360.work https://chat.kineo360.work " +
+        "https://files.kineo360.work https://files.medtheris.kineo360.work " +
+        "https://office.kineo360.work " +
+        "https://videos.kineo360.work https://social.kineo360.work " +
+        "https://marketing.medtheris.kineo360.work " +
+        "https://plane.kineo360.work https://gitea.kineo360.work " +
+        "https://webmail.kineo360.work",
+      "frame-ancestors 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+      "upgrade-insecure-requests",
+    ].join("; ");
+
     return [
       // Default security headers for the whole portal.
       {
@@ -106,6 +148,23 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Frame-Options", value: "DENY" },
+          // CSP applied only when CSP_ENFORCE=1 (default: report-only via
+          // env so we can roll it out without immediately breaking embeds).
+          // Add CSP_REPORT_URI later when we have a sink.
+          {
+            key:
+              process.env.CSP_ENFORCE === "1"
+                ? "Content-Security-Policy"
+                : "Content-Security-Policy-Report-Only",
+            value: csp,
+          },
+          // HSTS — 1 year, includeSubDomains, no preload (operator opt-in
+          // via DNS preload list separately). Only meaningful behind TLS,
+          // so harmless on localhost dev where browsers ignore it.
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains",
+          },
           // Allow Mic/Kamera for eingebettetes Jitsi (meet.*) + Portal-eigene UI.
           // Leeres camera=() würde iFrames blockieren, selbst mit allow-Attribut.
           {
