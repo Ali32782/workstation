@@ -10,3 +10,19 @@ backups/
 
 tenants/*/
 !tenants/template/
+
+# Local Python virtualenvs / caches anywhere in the tree (services/*).
+# Per-service rules live in services/.gitignore.
+**/.venv/
+**/__pycache__/
+**/*.pyc
+
+# Playwright run artefacts (smoke-tests + future e2e). Allow the report
+# folder name through if you need to share it manually, but never commit
+# screenshots or raw traces.
+portal/test-results/
+portal/playwright-report/
+portal/blob-report/
+
+# MORGEN.md is per-day operational scratchpad, kept local on purpose.
+MORGEN.md

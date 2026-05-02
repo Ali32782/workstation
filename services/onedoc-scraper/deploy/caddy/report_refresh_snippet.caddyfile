@@ -1,0 +1,12 @@
+# In den bestehenden :80 { ... } Block einfügen (vor einem allgemeinen file_server):
+#
+#   handle /report/refresh* {
+#     reverse_proxy 127.0.0.1:8090 {
+#       transport http {
+#         read_timeout 45m
+#         write_timeout 45m
+#       }
+#     }
+#   }
+#
+# report.html weiter wie bisher ausliefern.

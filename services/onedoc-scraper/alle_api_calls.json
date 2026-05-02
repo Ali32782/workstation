@@ -1,0 +1,1539 @@
+[
+  {
+    "path": "/api/professionals/2907953/bookable-entities",
+    "qs": "_=1774530789378",
+    "status": 200,
+    "body": {
+      "data": [
+        {
+          "id": 50967,
+          "groupId": 4100,
+          "type": {
+            "id": "physiotherapy-practice",
+            "key": "physiotherapiepraxis",
+            "name": "Physiotherapiepraxis",
+            "pluralName": "Physiotherapiepraxen",
+            "visible": true
+          },
+          "name": "Kineo Zürich Seefeld",
+          "phoneNumber": "+41445129147",
+          "addresses": [
+            {
+              "id": 474514196,
+              "entityId": 50967,
+              "type": "business",
+              "formattedAddress": "Seefeldstrasse 83, 8008 Zürich",
+              "formattedAddressLineOne": "Seefeldstrasse 83",
+              "formattedAddressLineTwo": "8008 Zürich, Schweiz",
+              "formattedAddressLineTwoWithoutCountry": "8008 Zürich",
+              "lat": 47.3601998,
+              "lng": 8.552518,
+              "streetNumber": "83",
+              "route": "Seefeldstrasse",
+              "city": {
+                "id": "zurich",
+                "key": "zurich",
+                "name": "Zürich",
+                "displayableName": "Zürich",
+                "language": "de",
+                "isIndexedCity": true,
+                "isAmbiguousCity": false,
+                "country": "CH"
+              },
+              "zipCode": "8008",
+              "state": {
+                "code": "ZH",
+                "key": "kanton-zurich",
+                "shortName": "Zürich",
+                "longName": "Kanton Zürich",
+                "country": "CH"
+              },
+              "country": {
+                "code": "CH",
+                "name": "Schweiz"
+              }
+            }
+          ],
+          "pictures": [
+            {
+              "id": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2",
+              "format": "jpeg",
+              "position": 1,
+              "files": {
+                "tiny": {
+                  "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-tiny.jpg",
+                  "width": 128,
+                  "height": 72,
+                  "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-tiny.jpg"
+                },
+                "medium": {
+                  "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-medium.jpg",
+                  "width": 512,
+                  "height": 288,
+                  "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-medium.jpg"
+                },
+                "original": {
+                  "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2.jpg",
+                  "width": 2000,
+                  "height": 1125,
+                  "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2.jpg"
+                },
+                "small": {
+                  "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-small.jpg",
+                  "width": 256,
+                  "height": 144,
+                  "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-small.jpg"
+                },
+                "large": {
+                  "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-large.jpg",
+                  "width": 1024,
+                  "height": 576,
+                  "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-large.jpg"
+                }
+              }
+            },
+            {
+              "id": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea",
+              "format": "jpeg",
+              "position": 2,
+              "files": {
+                "tiny": {
+                  "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-tiny.jpg",
+                  "width": 128,
+                  "height": 72,
+                  "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-tiny.jpg"
+                },
+                "medium": {
+                  "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-medium.jpg",
+                  "width": 512,
+                  "height": 288,
+                  "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-medium.jpg"
+                },
+                "original": {
+                  "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea.jpg",
+                  "width": 2000,
+                  "height": 1125,
+                  "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea.jpg"
+                },
+                "small": {
+                  "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-small.jpg",
+                  "width": 256,
+                  "height": 144,
+                  "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-small.jpg"
+                },
+                "large": {
+                  "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-large.jpg",
+                  "width": 1024,
+                  "height": 576,
+                  "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-large.jpg"
+                }
+              }
+            },
+            {
+              "id": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794",
+              "format": "jpeg",
+              "position": 3,
+              "files": {
+                "tiny": {
+                  "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-tiny.jpg",
+                  "width": 128,
+                  "height": 72,
+                  "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-tiny.jpg"
+                },
+                "medium": {
+                  "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-medium.jpg",
+                  "width": 512,
+                  "height": 288,
+                  "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-medium.jpg"
+                },
+                "original": {
+                  "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794.jpg",
+                  "width": 2000,
+                  "height": 1125,
+                  "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794.jpg"
+                },
+                "small": {
+                  "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-small.jpg",
+                  "width": 256,
+                  "height": 144,
+                  "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-small.jpg"
+                },
+                "large": {
+                  "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-large.jpg",
+                  "width": 1024,
+                  "height": 576,
+                  "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-large.jpg"
+                }
+              }
+            }
+          ],
+          "logo": {
+            "id": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319",
+            "format": "png",
+            "files": {
+              "medium": {
+                "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-medium.png",
+                "width": 288,
+                "height": 288,
+                "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-medium.png"
+              },
+              "original": {
+                "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319.png",
+                "width": 233,
+                "height": 233,
+                "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319.png"
+              },
+              "small": {
+                "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-small.png",
+                "width": 144,
+                "height": 144,
+                "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-small.png"
+              },
+              "tiny": {
+                "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-tiny.png",
+                "width": 72,
+                "height": 72,
+                "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-tiny.png"
+              }
+            }
+          },
+          "profileUrl": {
+            "entityId": 50967,
+            "type": {
+              "id": "physiotherapy-practice",
+              "key": "physiotherapiepraxis",
+              "name": "Physiotherapiepraxis",
+              "pluralName": "Physiotherapiepraxen",
+              "visible": true
+            },
+            "location": {
+              "country": "CH",
+              "state": "ZH",
+              "city": "Zürich",
+              "key": "zurich",
+              "name": "Zürich",
+              "lat": 47.3601998,
+              "lng": 8.552518,
+              "isIndexedCity": false
+            },
+            "path": "/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld",
+            "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld"
+          },
+          "bookingProfessionalSelection": "single-or-any",
+          "bookable": false,
+          "professionalMembersVisible": true
+        }
+      ],
+      "aggregates": {},
+      "relations": {
+        "calendars": {
+          "50967-2944269": {
+            "id": 126599,
+            "entityId": 50967,
+            "professionalId": 2944269
+          },
+          "50967-2907958": {
+            "id": 125440,
+            "entityId": 50967,
+            "professionalId": 2907958
+          },
+          "50967-2907969": {
+            "id": 125444,
+            "entityId": 50967,
+            "professionalId": 2907969
+          },
+          "50967-2907968": {
+            "id": 125441,
+            "entityId": 50967,
+            "professionalId": 2907968
+          },
+          "50967-2998987": {
+            "id": 128306,
+            "entityId": 50967,
+            "professionalId": 2998987
+          },
+          "50967-2907961": {
+            "id": 125445,
+            "entityId": 50967,
+            "professionalId": 2907961
+          },
+          "50967-2907964": {
+            "id": 125443,
+            "entityId": 50967,
+            "professionalId": 2907964
+          },
+          "50967-2907953": {
+            "id": 125442,
+            "entityId": 50967,
+            "professionalId": 2907953
+          }
+        }
+      }
+    }
+  },
+  {
+    "path": "/api/professionals/2907953",
+    "qs": "_=1774530789377",
+    "status": 200,
+    "body": {
+      "data": {
+        "id": 2907953,
+        "firstName": "Andrina",
+        "lastName": "Kümin",
+        "fullName": "Andrina Kümin",
+        "prefixedName": "Frau Kümin",
+        "prefixedFullName": "Frau Andrina Kümin",
+        "shortenedName": "A. Kümin",
+        "gender": "female",
+        "acceptsNewClients": true,
+        "website": "https://www.kineo-physiotherapie.ch",
+        "active": true,
+        "bookable": true,
+        "acceptsVideoConsultations": false,
+        "offersRemoteConsultationsByLocation": {
+          "50967": false
+        },
+        "offersVideoConsultationsByLocation": {
+          "50967": false
+        },
+        "picture": {
+          "id": "869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43",
+          "format": "jpeg",
+          "files": {
+            "tiny": {
+              "name": "869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-tiny.jpg",
+              "width": 72,
+              "height": 72,
+              "url": "https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-tiny.jpg"
+            },
+            "medium": {
+              "name": "869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-medium.jpg",
+              "width": 288,
+              "height": 288,
+              "url": "https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-medium.jpg"
+            },
+            "original": {
+              "name": "869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43.jpg",
+              "width": 1000,
+              "height": 1000,
+              "url": "https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43.jpg"
+            },
+            "small": {
+              "name": "869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-small.jpg",
+              "width": 144,
+              "height": 144,
+              "url": "https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-small.jpg"
+            },
+            "large": {
+              "name": "869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-large.jpg",
+              "width": 576,
+              "height": 576,
+              "url": "https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-large.jpg"
+            }
+          }
+        },
+        "professions": [
+          {
+            "professionalId": 2907953,
+            "professionId": 53,
+            "primary": true,
+            "position": 1,
+            "qualificationLevel": "certified"
+          },
+          {
+            "professionalId": 2907953,
+            "professionId": 193,
+            "primary": false,
+            "position": 2,
+            "qualificationLevel": "certified"
+          },
+          {
+            "professionalId": 2907953,
+            "professionId": 116,
+            "primary": false,
+            "position": 3,
+            "qualificationLevel": "certified"
+          }
+        ],
+        "languages": [
+          "de",
+          "en",
+          "fr"
+        ],
+        "insuranceNetworkIds": [],
+        "professionalEntityConfigs": {},
+        "profileUrl": {
+          "professionalId": 2907953,
+          "profession": {
+            "id": 53,
+            "maleKey": "physiotherapeut",
+            "maleName": "Physiotherapeut",
+            "maleInTrainingName": "Physiotherapeut in Ausbildung",
+            "maleAssistantName": "Physiotherapeut in Anerkennung",
+            "pluralMaleName": "Physiotherapeuten",
+            "femaleKey": "physiotherapeutin",
+            "femaleName": "Physiotherapeutin",
+            "femaleInTrainingName": "Physiotherapeutin in Ausbildung",
+            "femaleAssistantName": "Physiotherapeutin in Anerkennung",
+            "pluralFemaleName": "Physiotherapeutinnen",
+            "specialtyKey": "physiotherapie",
+            "specialtyName": "Physiotherapie"
+          },
+          "path": "/de/physiotherapeutin/zurich/pcy2s/andrina-kumin",
+          "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2s/andrina-kumin",
+          "entityUrls": [
+            {
+              "entityId": 50967,
+              "calendarId": 125442,
+              "location": {
+                "country": "CH",
+                "state": "ZH",
+                "city": "Zürich",
+                "key": "zurich",
+                "name": "Zürich",
+                "lat": 47.3601998,
+                "lng": 8.552518,
+                "isIndexedCity": false
+              },
+              "path": "/de/physiotherapeutin/zurich/pcy2s/andrina-kumin",
+              "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2s/andrina-kumin"
+            }
+          ]
+        },
+        "calendarIds": [
+          125442
+        ],
+        "verified": false
+      },
+      "relations": {
+        "entities": {
+          "50967": {
+            "id": 50967,
+            "groupId": 4100,
+            "type": {
+              "id": "physiotherapy-practice",
+              "key": "physiotherapiepraxis",
+              "name": "Physiotherapiepraxis",
+              "pluralName": "Physiotherapiepraxen",
+              "visible": true
+            },
+            "name": "Kineo Zürich Seefeld",
+            "phoneNumber": "+41445129147",
+            "addresses": [
+              {
+                "id": 474514196,
+                "entityId": 50967,
+                "type": "business",
+                "formattedAddress": "Seefeldstrasse 83, 8008 Zürich",
+                "formattedAddressLineOne": "Seefeldstrasse 83",
+                "formattedAddressLineTwo": "8008 Zürich, Schweiz",
+                "formattedAddressLineTwoWithoutCountry": "8008 Zürich",
+                "lat": 47.3601998,
+                "lng": 8.552518,
+                "streetNumber": "83",
+                "route": "Seefeldstrasse",
+                "city": {
+                  "id": "zurich",
+                  "key": "zurich",
+                  "name": "Zürich",
+                  "displayableName": "Zürich",
+                  "language": "de",
+                  "isIndexedCity": true,
+                  "isAmbiguousCity": false,
+                  "country": "CH"
+                },
+                "zipCode": "8008",
+                "state": {
+                  "code": "ZH",
+                  "key": "kanton-zurich",
+                  "shortName": "Zürich",
+                  "longName": "Kanton Zürich",
+                  "country": "CH"
+                },
+                "country": {
+                  "code": "CH",
+                  "name": "Schweiz"
+                }
+              }
+            ],
+            "pictures": [
+              {
+                "id": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2",
+                "format": "jpeg",
+                "position": 1,
+                "files": {
+                  "tiny": {
+                    "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-tiny.jpg",
+                    "width": 128,
+                    "height": 72,
+                    "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-tiny.jpg"
+                  },
+                  "medium": {
+                    "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-medium.jpg",
+                    "width": 512,
+                    "height": 288,
+                    "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-medium.jpg"
+                  },
+                  "small": {
+                    "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-small.jpg",
+                    "width": 256,
+                    "height": 144,
+                    "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-small.jpg"
+                  },
+                  "original": {
+                    "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2.jpg",
+                    "width": 2000,
+                    "height": 1125,
+                    "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2.jpg"
+                  },
+                  "large": {
+                    "name": "61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-large.jpg",
+                    "width": 1024,
+                    "height": 576,
+                    "url": "https://assets.onedoc.ch/images/entities/61defa9d813cadc7042d12dcf1622ed66d9956ee024f686aa9df05bc332524a2-large.jpg"
+                  }
+                }
+              },
+              {
+                "id": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea",
+                "format": "jpeg",
+                "position": 2,
+                "files": {
+                  "tiny": {
+                    "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-tiny.jpg",
+                    "width": 128,
+                    "height": 72,
+                    "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-tiny.jpg"
+                  },
+                  "medium": {
+                    "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-medium.jpg",
+                    "width": 512,
+                    "height": 288,
+                    "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-medium.jpg"
+                  },
+                  "small": {
+                    "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-small.jpg",
+                    "width": 256,
+                    "height": 144,
+                    "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-small.jpg"
+                  },
+                  "original": {
+                    "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea.jpg",
+                    "width": 2000,
+                    "height": 1125,
+                    "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea.jpg"
+                  },
+                  "large": {
+                    "name": "5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-large.jpg",
+                    "width": 1024,
+                    "height": 576,
+                    "url": "https://assets.onedoc.ch/images/entities/5e08873db86588026fb30d60b4917c0513af9835244873c7de1cbdcfe1aaa3ea-large.jpg"
+                  }
+                }
+              },
+              {
+                "id": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794",
+                "format": "jpeg",
+                "position": 3,
+                "files": {
+                  "tiny": {
+                    "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-tiny.jpg",
+                    "width": 128,
+                    "height": 72,
+                    "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-tiny.jpg"
+                  },
+                  "medium": {
+                    "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-medium.jpg",
+                    "width": 512,
+                    "height": 288,
+                    "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-medium.jpg"
+                  },
+                  "small": {
+                    "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-small.jpg",
+                    "width": 256,
+                    "height": 144,
+                    "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-small.jpg"
+                  },
+                  "original": {
+                    "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794.jpg",
+                    "width": 2000,
+                    "height": 1125,
+                    "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794.jpg"
+                  },
+                  "large": {
+                    "name": "221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-large.jpg",
+                    "width": 1024,
+                    "height": 576,
+                    "url": "https://assets.onedoc.ch/images/entities/221dcbc9952c85329d997920fef4f7b68ec82a0290a239276f585aace2906794-large.jpg"
+                  }
+                }
+              }
+            ],
+            "logo": {
+              "id": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319",
+              "format": "png",
+              "files": {
+                "medium": {
+                  "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-medium.png",
+                  "width": 288,
+                  "height": 288,
+                  "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-medium.png"
+                },
+                "original": {
+                  "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319.png",
+                  "width": 233,
+                  "height": 233,
+                  "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319.png"
+                },
+                "small": {
+                  "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-small.png",
+                  "width": 144,
+                  "height": 144,
+                  "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-small.png"
+                },
+                "tiny": {
+                  "name": "ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-tiny.png",
+                  "width": 72,
+                  "height": 72,
+                  "url": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319-tiny.png"
+                }
+              }
+            },
+            "profileUrl": {
+              "entityId": 50967,
+              "type": {
+                "id": "physiotherapy-practice",
+                "key": "physiotherapiepraxis",
+                "name": "Physiotherapiepraxis",
+                "pluralName": "Physiotherapiepraxen",
+                "visible": true
+              },
+              "location": {
+                "country": "CH",
+                "state": "ZH",
+                "city": "Zürich",
+                "key": "zurich",
+                "name": "Zürich",
+                "lat": 47.3601998,
+                "lng": 8.552518,
+                "isIndexedCity": false
+              },
+              "path": "/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld",
+              "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld"
+            },
+            "bookingProfessionalSelection": "single-or-any",
+            "bookable": false,
+            "professionalMembersVisible": true
+          }
+        },
+        "calendars": {
+          "50967-2907953": {
+            "id": 125442,
+            "entityId": 50967,
+            "professionalId": 2907953
+          }
+        },
+        "professions": {
+          "193": {
+            "id": 193,
+            "maleKey": "personal-trainer",
+            "maleName": "Personal Trainer",
+            "pluralMaleName": "Personal Trainer",
+            "femaleKey": "personal-trainerin",
+            "femaleName": "Personal Trainerin",
+            "pluralFemaleName": "Personal Trainerinnen",
+            "specialtyKey": "personal-training",
+            "specialtyName": "Personal Training"
+          },
+          "116": {
+            "id": 116,
+            "maleKey": "masseur-klassische-massage",
+            "maleName": "Masseur (klassische Massage)",
+            "pluralMaleName": "Masseure (klassische Massage)",
+            "femaleKey": "masseurin-klassische-massage",
+            "femaleName": "Masseurin (klassische Massage)",
+            "pluralFemaleName": "Masseurinnen (klassische Massage)",
+            "specialtyKey": "klassische-massage",
+            "specialtyName": "Klassische Massage"
+          },
+          "53": {
+            "id": 53,
+            "maleKey": "physiotherapeut",
+            "maleName": "Physiotherapeut",
+            "maleInTrainingName": "Physiotherapeut in Ausbildung",
+            "maleAssistantName": "Physiotherapeut in Anerkennung",
+            "pluralMaleName": "Physiotherapeuten",
+            "femaleKey": "physiotherapeutin",
+            "femaleName": "Physiotherapeutin",
+            "femaleInTrainingName": "Physiotherapeutin in Ausbildung",
+            "femaleAssistantName": "Physiotherapeutin in Anerkennung",
+            "pluralFemaleName": "Physiotherapeutinnen",
+            "specialtyKey": "physiotherapie",
+            "specialtyName": "Physiotherapie"
+          }
+        },
+        "languages": {
+          "fr": {
+            "code": "fr",
+            "name": "Französisch"
+          },
+          "de": {
+            "code": "de",
+            "name": "Deutsch"
+          },
+          "en": {
+            "code": "en",
+            "name": "Englisch"
+          }
+        },
+        "insuranceNetworks": {}
+      }
+    }
+  },
+  {
+    "path": "/api/entities/50967/professionals/2907953/config",
+    "qs": "_=1774530789379",
+    "status": 404,
+    "body": {
+      "message": "The requested resource could not be found"
+    }
+  },
+  {
+    "path": "/api/entities/50967/bookable-appointment-types",
+    "qs": "professionalId=2907953&_=1774530789380",
+    "status": 200,
+    "body": {
+      "data": [
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176804,
+          "professionId": 193,
+          "name": "Functional Training",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 1
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176796,
+          "professionId": 116,
+          "name": "Klassische Massage (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 1
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176806,
+          "professionId": 193,
+          "name": "5D Laufanalyse",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 2
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176797,
+          "professionId": 116,
+          "name": "Klassische Massage (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 2
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176808,
+          "professionId": 193,
+          "name": "5D Laufanalyse (mit Gutschein)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 3
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176802,
+          "professionId": 116,
+          "name": "Massage Schwangerschaftsliege (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 3
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176811,
+          "professionId": 193,
+          "name": "5D Laufanalyse Re Test",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 4
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176800,
+          "professionId": 116,
+          "name": "Massage Schwangerschaftsliege (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 4
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176805,
+          "professionId": 193,
+          "name": "Functional Training",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 5
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176798,
+          "professionId": 116,
+          "name": "Klassische Massage (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 5
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176807,
+          "professionId": 193,
+          "name": "5D Laufanalyse",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 6
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176799,
+          "professionId": 116,
+          "name": "Klassische Massage (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "required",
+          "addressRequirement": "hidden",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 6
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176810,
+          "professionId": 193,
+          "name": "5D Laufanalyse (mit Gutschein)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 7
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176803,
+          "professionId": 116,
+          "name": "Massage Schwangerschaftsliege (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 7
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176812,
+          "professionId": 193,
+          "name": "5D Laufanalyse Re Test",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "commentRequirement": "required",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 8
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176801,
+          "professionId": 116,
+          "name": "Massage Schwangerschaftsliege (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 8
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176371,
+          "professionId": 53,
+          "name": "Dry Needling",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 10
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176378,
+          "professionId": 53,
+          "name": "Allgemein Physiotherapie (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "hidden",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 11
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176379,
+          "professionId": 53,
+          "name": "Allgemein Physiotherapie (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "hidden",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 12
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176793,
+          "professionId": 53,
+          "name": "Physiotherapie Privat (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 13
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176794,
+          "professionId": 53,
+          "name": "Physiotherapie Privat (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 14
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176380,
+          "professionId": 53,
+          "name": "Neurologische Physiotherapie",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 15
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176384,
+          "professionId": 53,
+          "name": "Stosswellentherapie",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 17
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176790,
+          "professionId": 53,
+          "name": "Sportphysiotherapie",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 18
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176791,
+          "professionId": 53,
+          "name": "Runners Physio",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 19
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176792,
+          "professionId": 53,
+          "name": "Dry Needling",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "established",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 20
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176337,
+          "professionId": 53,
+          "name": "Erstbehandlung Physiotherapie (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 21
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176339,
+          "professionId": 53,
+          "name": "Erstbehandlung Physiotherapie (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 22
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176373,
+          "professionId": 53,
+          "name": "Erstbehandlung Physiotherapie Privat (30 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 23
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176375,
+          "professionId": 53,
+          "name": "Erstbehandlung Physiotherapie Privat (60 min)",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 60,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 24
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176362,
+          "professionId": 53,
+          "name": "Neurologische Physiotherapie",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 25
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176367,
+          "professionId": 53,
+          "name": "Stosswellentherapie",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 26
+        },
+        {
+          "groupId": 4100,
+          "professionalId": 2907953,
+          "appointmentTypeId": 176368,
+          "professionId": 53,
+          "name": "Sportphysiotherapie",
+          "kind": "standalone",
+          "visible": true,
+          "visibleOnPublic": true,
+          "visibleOnWidget": true,
+          "visibleOnReferrer": true,
+          "bookableOnline": true,
+          "remote": false,
+          "video": false,
+          "acceptedClientType": "new",
+          "bookableOnlineForSeconds": 6048000,
+          "commentRequirement": "optional",
+          "insuranceCardNumberRequirement": "hidden",
+          "addressRequirement": "required",
+          "durationMinutes": 30,
+          "sendEmailConfirmation": true,
+          "sendSmsReminder": true,
+          "position": 27
+        }
+      ],
+      "aggregates": {},
+      "relations": {
+        "professions": {
+          "193": {
+            "id": 193,
+            "maleKey": "personal-trainer",
+            "maleName": "Personal Trainer",
+            "pluralMaleName": "Personal Trainer",
+            "femaleKey": "personal-trainerin",
+            "femaleName": "Personal Trainerin",
+            "pluralFemaleName": "Personal Trainerinnen",
+            "specialtyKey": "personal-training",
+            "specialtyName": "Personal Training"
+          },
+          "116": {
+            "id": 116,
+            "maleKey": "masseur-klassische-massage",
+            "maleName": "Masseur (klassische Massage)",
+            "pluralMaleName": "Masseure (klassische Massage)",
+            "femaleKey": "masseurin-klassische-massage",
+            "femaleName": "Masseurin (klassische Massage)",
+            "pluralFemaleName": "Masseurinnen (klassische Massage)",
+            "specialtyKey": "klassische-massage",
+            "specialtyName": "Klassische Massage"
+          },
+          "53": {
+            "id": 53,
+            "maleKey": "physiotherapeut",
+            "maleName": "Physiotherapeut",
+            "maleInTrainingName": "Physiotherapeut in Ausbildung",
+            "maleAssistantName": "Physiotherapeut in Anerkennung",
+            "pluralMaleName": "Physiotherapeuten",
+            "femaleKey": "physiotherapeutin",
+            "femaleName": "Physiotherapeutin",
+            "femaleInTrainingName": "Physiotherapeutin in Ausbildung",
+            "femaleAssistantName": "Physiotherapeutin in Anerkennung",
+            "pluralFemaleName": "Physiotherapeutinnen",
+            "specialtyKey": "physiotherapie",
+            "specialtyName": "Physiotherapie"
+          }
+        },
+        "categories": {}
+      }
+    }
+  }
+]

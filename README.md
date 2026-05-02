@@ -58,6 +58,13 @@ Email via **Migadu** (managed). VoIP via **Peoplefone CH + Zoiper**
 ├── docker-compose.postiz.yml      # Postiz — Social-Scheduler (Buffer-Alt.)
 ├── docker-compose.kineo-bot.yml   # Kineo Raumplanungs-Assistent (FastAPI+Anthropic)
 ├── docker-compose.kineo-dashboard.yml # Kineo Operations Dashboard (Streamlit)
+├── services/                      # Source-of-truth for the three Python services
+│   │                              # that ship next to the portal. Mirrored to
+│   │                              # /opt/corelab/<name>/ via rsync.
+│   ├── README.md                  # what's here, what's gitignored, sync direction
+│   ├── onedoc-scraper/            # daily OneDoc slot scraper + diff alerts
+│   ├── kineo-dashboard/           # Streamlit KPI dashboard (app.py, update_dashboard.py)
+│   └── kineo-bot/                 # FastAPI room-planning chat (mirror of upstream GH)
 ├── .env.example                   # copy to .env and fill
 ├── Makefile                       # thin wrapper for common commands
 ├── landing/                       # static apex + tenant dashboard (nginx)

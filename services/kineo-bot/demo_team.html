@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kineo Assistent — Demo: Team-Modus Stellenplanung</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --black: #111110;
+    --white: #fafaf8;
+    --blue: #1a5276;
+    --blue-light: #d6e8f5;
+    --blue-mid: #a8c8e8;
+    --amber: #b45309;
+    --amber-light: #fef3c7;
+    --green: #2d6a4f;
+    --green-light: #d8f3dc;
+    --red: #991b1b;
+    --red-light: #fee2e2;
+    --warm-gray: #f2f1ed;
+    --mid-gray: #8a8880;
+    --border: #e2e0da;
+    --dark-bg: #1c1c1a;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--dark-bg);
+    color: var(--black);
+    min-height: 100vh;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .page-header {
+    max-width: 660px;
+    margin: 0 auto 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .logo {
+    width: 44px; height: 44px;
+    background: white;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 500;
+    letter-spacing: 0.08em; line-height: 1.4; text-align: center;
+  }
+
+  .page-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.4rem;
+    font-weight: 400;
+    color: white;
+  }
+
+  .page-header p { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
+  .chat-wrap {
+    max-width: 660px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+  }
+
+  .chat-header {
+    background: var(--black);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chat-header-logo {
+    width: 36px; height: 36px;
+    background: white;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; font-weight: 600; letter-spacing: 0.06em;
+    color: var(--black); line-height: 1.4; text-align: center;
+  }
+
+  .chat-header-info h2 { color: white; font-size: 14px; font-weight: 500; letter-spacing: 0.06em; }
+  .chat-header-info p { color: rgba(255,255,255,0.4); font-size: 11px; margin-top: 1px; }
+
+  .team-badge {
+    margin-left: auto;
+    background: rgba(255,255,255,0.1);
+    border: 0.5px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    font-weight: 500;
+  }
+
+  .messages {
+    padding: 1.5rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: var(--warm-gray);
+  }
+
+  .msg-group { opacity: 0; transform: translateY(6px); }
+  .msg-group.visible { animation: fadeUp 0.3s ease forwards; }
+  @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+  .msg-label { font-size: 10px; color: var(--mid-gray); font-weight: 500; letter-spacing: 0.05em; margin-bottom: 3px; }
+
+  .bubble-ai {
+    background: white;
+    border-radius: 4px 12px 12px 12px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--black);
+    max-width: 92%;
+    border: 0.5px solid var(--border);
+  }
+
+  .bubble-user {
+    background: var(--blue);
+    border-radius: 12px 4px 12px 12px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: white;
+    max-width: 80%;
+    align-self: flex-end;
+  }
+
+  .msg-user { align-items: flex-end; }
+
+  /* PIN box */
+  .pin-box {
+    background: var(--amber-light);
+    border: 0.5px solid #fcd34d;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+
+  .pin-input-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    align-items: center;
+  }
+
+  .pin-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 16px;
+    letter-spacing: 0.2em;
+    text-align: center;
+    font-family: 'DM Serif Display', serif;
+    background: white;
+  }
+
+  .pin-btn {
+    background: var(--black);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Room table */
+  .room-table-wrap {
+    margin-top: 10px;
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 0.5px solid var(--border);
+  }
+
+  .room-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    background: white;
+  }
+
+  .room-table th {
+    background: var(--black);
+    color: white;
+    padding: 6px 8px;
+    font-weight: 500;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+
+  .room-table td {
+    padding: 6px 8px;
+    border-bottom: 0.5px solid var(--border);
+    font-size: 11.5px;
+  }
+
+  .room-table tr:last-child td { border-bottom: none; }
+
+  .cell-free {
+    background: var(--green-light);
+    color: var(--green);
+    font-weight: 500;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    display: inline-block;
+  }
+
+  .cell-taken {
+    color: var(--mid-gray);
+    font-size: 11px;
+  }
+
+  .cell-partial {
+    background: var(--amber-light);
+    color: var(--amber);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    display: inline-block;
+  }
+
+  /* Combo cards */
+  .combo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .combo-card {
+    background: white;
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+
+  .combo-card.best {
+    border: 1.5px solid var(--blue);
+  }
+
+  .combo-pct {
+    font-size: 20px;
+    font-family: 'DM Serif Display', serif;
+    color: var(--blue);
+    font-weight: 400;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .combo-card.best .combo-pct { color: var(--blue); }
+
+  .combo-best-label {
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 4px;
+  }
+
+  .combo-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .pct-pill {
+    font-size: 10px;
+    font-weight: 500;
+    background: var(--blue-light);
+    color: var(--blue);
+    border-radius: 4px;
+    padding: 1px 6px;
+    flex-shrink: 0;
+  }
+
+  .combo-detail {
+    font-size: 11px;
+    color: var(--mid-gray);
+    line-height: 1.5;
+  }
+
+  /* Summary box */
+  .summary-box {
+    background: var(--blue);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: white;
+    font-size: 13px;
+    line-height: 1.7;
+    margin-top: 10px;
+  }
+
+  .summary-box strong { font-weight: 500; }
+
+  /* Typing */
+  .typing {
+    display: flex; gap: 4px; align-items: center;
+    padding: 10px 14px;
+    background: white;
+    border-radius: 4px 12px 12px 12px;
+    width: fit-content;
+    border: 0.5px solid var(--border);
+  }
+
+  .typing span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--mid-gray);
+    animation: bounce 1.2s ease-in-out infinite;
+  }
+
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+
+  .input-area {
+    padding: 12px 1.25rem;
+    border-top: 0.5px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: white;
+  }
+
+  .input-field {
+    flex: 1; padding: 9px 14px;
+    border: 0.5px solid var(--border);
+    border-radius: 24px;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--mid-gray);
+    background: var(--warm-gray);
+    outline: none;
+  }
+
+  .input-send {
+    width: 36px; height: 36px;
+    background: var(--black);
+    border: none; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+  }
+
+  .input-send svg { width: 14px; height: 14px; fill: white; }
+
+  .replay-btn {
+    max-width: 660px;
+    margin: 1.5rem auto 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  .replay-btn button {
+    background: rgba(255,255,255,0.08);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    border-radius: 24px;
+    padding: 10px 24px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all .2s;
+  }
+
+  .replay-btn button:hover {
+    background: white;
+    color: var(--black);
+    border-color: white;
+  }
+
+  .info-note {
+    font-size: 11px;
+    color: var(--mid-gray);
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 0.5px solid var(--border);
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="logo">K<br>INEO</div>
+  <div>
+    <h1>Kineo Assistent</h1>
+    <p>Demo — Team-Modus: Sereina prüft Stellenmöglichkeiten</p>
+  </div>
+</div>
+
+<div class="chat-wrap">
+  <div class="chat-header">
+    <div class="chat-header-logo">K<br>INEO</div>
+    <div class="chat-header-info">
+      <h2>KINEO</h2>
+      <p>6 Standorte in Zürich · Physiotherapie</p>
+    </div>
+    <div class="team-badge">Team-Modus</div>
+  </div>
+
+  <div class="messages" id="msgs"></div>
+
+  <div class="input-area">
+    <input class="input-field" placeholder="Frag mich etwas zu Kineo..." readonly />
+    <button class="input-send">
+      <svg viewBox="0 0 16 16"><path d="M14.5 8L1.5 1l2 7-2 7z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="replay-btn">
+  <button onclick="replay()">↺ Demo neu starten</button>
+</div>
+
+<script>
+const msgs = document.getElementById('msgs');
+let timer = null;
+
+function ai(html) {
+  const g = document.createElement('div');
+  g.className = 'msg-group';
+  g.innerHTML = `<div class="msg-label">Kineo Assistent</div><div class="bubble-ai">${html}</div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+}
+
+function user(text) {
+  const g = document.createElement('div');
+  g.className = 'msg-group msg-user';
+  g.innerHTML = `<div class="msg-label" style="text-align:right">Sereina</div><div class="bubble-user">${text}</div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+}
+
+function typing(id) {
+  const t = document.createElement('div');
+  t.className = 'msg-group';
+  t.id = id;
+  t.innerHTML = `<div class="msg-label">Kineo Assistent</div><div class="typing"><span></span><span></span><span></span></div>`;
+  msgs.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('visible'));
+  msgs.scrollTop = 99999;
+}
+
+function removeTyping(id) {
+  const t = document.getElementById(id);
+  if (t) t.remove();
+}
+
+const sequence = [
+  // Welcome
+  [0, () => ai(`Hallo 👋 Ich bin der Kineo Assistent – dein erster Schritt zur richtigen Therapie.<br><br><strong>Wie kann ich helfen?</strong>`)],
+  [1800, () => user('Sereina Urech')],
+  [600, () => {
+    ai(`Hallo Sereina 👋 Gib bitte den Team-PIN ein um den internen Bereich zu öffnen.<div class="pin-box">🔒 Team-PIN<div class="pin-input-row"><input class="pin-input" id="pin-demo" value="● ● ● ● ● ●" readonly /><button class="pin-btn" onclick="pinConfirm()">Bestätigen</button></div></div>`);
+    setTimeout(pinConfirm, 2000);
+  }],
+  [-1], // pause for pin (handled by auto-confirm above)
+
+  // After PIN
+  [600, () => ai(`✓ Zugang gewährt. Willkommen, Sereina.<br><br>Was möchtest du prüfen?<br><br>· Freie Zimmer-Slots nach Standort<br>· Mögliche Stellenkombinationen für neue Stellen<br>· Maximale neue Kapazität pro Standort`)],
+  [2200, () => user('Ich möchte eine neue Therapeutin einstellen, 80% Pensum. Wo hat es noch Platz?')],
+
+  [800, 'typing1'],
+  [1600, () => {
+    removeTyping('typing1');
+    ai(`Ich prüfe die freien Zimmer-Slots für eine neue 80%-Stelle (4 Tage, je 1 Schicht FD oder SD):<br><br>
+    <div class="room-table-wrap">
+    <table class="room-table">
+      <tr><th>Standort</th><th>Max. neu</th><th>80% möglich?</th></tr>
+      <tr><td>Zollikon</td><td><span class="cell-free">160%</span></td><td>✓ Ja — Z3 komplett frei</td></tr>
+      <tr><td>Thalwil</td><td><span class="cell-partial">60%</span></td><td>✗ Nein — aktuell knapp</td></tr>
+      <tr><td>Wipkingen</td><td><span class="cell-free">140%</span></td><td>✓ Ja — Z4 frei</td></tr>
+      <tr><td>Escher Wyss</td><td><span class="cell-partial">60%</span></td><td>✗ Nein — max. 40–60%</td></tr>
+      <tr><td>Stauffacher</td><td><span class="cell-partial">100%</span></td><td>✓ Möglich — 60%+40%</td></tr>
+      <tr><td>Seefeld</td><td><span class="cell-partial">40%</span></td><td>✗ Nein — fast voll</td></tr>
+    </table>
+    </div>
+    <div class="info-note">1 Person = 1 Schicht pro Tag · FD/SD ausgewogen eingeplant</div>`);
+  }],
+
+  [2500, () => user('Zeig mir die konkreten Kombinationen für Zollikon und Wipkingen')],
+
+  [800, 'typing2'],
+  [2200, () => {
+    removeTyping('typing2');
+    ai(`Hier die konkreten Schichtpläne für eine 80%-Stelle (2 FD + 2 SD ausgewogen):
+
+    <div style="margin-top:10px;margin-bottom:4px;font-size:11px;font-weight:500;letter-spacing:0.06em;color:#8a8880;text-transform:uppercase">Zollikon — aktuelle freie Slots</div>
+    <div class="room-table-wrap">
+    <table class="room-table">
+      <tr><th>Zimmer</th><th>Mo</th><th>Di</th><th>Mi</th><th>Do</th><th>Fr</th></tr>
+      <tr><td>Z1</td><td><span class="cell-free">FREI</span></td><td class="cell-taken">Meike</td><td><span class="cell-free">FREI</span></td><td class="cell-taken">Meike</td><td><span class="cell-free">FREI</span></td></tr>
+      <tr><td>Z2</td><td><span class="cell-free">FREI</span></td><td class="cell-taken">Helen</td><td><span class="cell-free">FREI</span></td><td class="cell-taken">Helen</td><td><span class="cell-free">FREI</span></td></tr>
+      <tr><td>Z3</td><td><span class="cell-free">FREI</span></td><td><span class="cell-free">FREI</span></td><td><span class="cell-free">FREI</span></td><td><span class="cell-free">FREI</span></td><td><span class="cell-free">FREI</span></td></tr>
+    </table>
+    </div>
+    <div class="info-note">Z1 Di+Do = Meike · Z2 Di+Do = Helen · Z3 komplett frei</div>
+    <div class="combo-grid">
+      <div class="combo-card best">
+        <div class="combo-best-label">Empfohlen — 100%</div>
+        <div class="combo-pct">100%</div>
+        <div class="combo-row"><span class="pct-pill">FD</span><span class="combo-detail">Mo Z3 · Mi Z3 · Fr Z3</span></div>
+        <div class="combo-row"><span class="pct-pill">SD</span><span class="combo-detail">Di Z3 · Do Z3</span></div>
+      </div>
+      <div class="combo-card">
+        <div class="combo-pct">80%</div>
+        <div class="combo-row"><span class="pct-pill">FD</span><span class="combo-detail">Mo Z3 · Mi Z3</span></div>
+        <div class="combo-row"><span class="pct-pill">SD</span><span class="combo-detail">Di Z3 · Do Z3</span></div>
+      </div>
+    </div>
+    <div class="info-note" style="margin-top:6px">Soll ich auch kleinere Pensen (60%/40%) zeigen?</div>
+
+    <div style="margin-top:14px;margin-bottom:4px;font-size:11px;font-weight:500;letter-spacing:0.06em;color:#8a8880;text-transform:uppercase">Wipkingen — aktuelle freie Slots</div>
+    <div class="combo-grid">
+      <div class="combo-card best">
+        <div class="combo-best-label">Empfohlen</div>
+        <div class="combo-pct">80%</div>
+        <div class="combo-row"><span class="pct-pill">FD</span><span class="combo-detail">Mo Z4 · Di Z4</span></div>
+        <div class="combo-row"><span class="pct-pill">SD</span><span class="combo-detail">Mi Z4 · Do Z4</span></div>
+      </div>
+      <div class="combo-card">
+        <div class="combo-pct">80%</div>
+        <div class="combo-row"><span class="pct-pill">FD</span><span class="combo-detail">Di Z2 · Mi Z4</span></div>
+        <div class="combo-row"><span class="pct-pill">SD</span><span class="combo-detail">Mo Z2 · Do Z4</span></div>
+      </div>
+    </div>`);
+  }],
+
+  [2800, () => user('Was wenn wir in Zollikon sogar 2 neue Leute einstellen?')],
+
+  [800, 'typing3'],
+  [2000, () => {
+    removeTyping('typing3');
+    ai(`Zollikon hat auf Z3 noch kompletten Spielraum — Z1 Meike Di/Do, Z2 Helen Di/Do, Z3 komplett frei:<br><br>
+    <div class="combo-card best" style="margin-bottom:8px">
+      <div class="combo-best-label">Maximum Zollikon — offiziell</div>
+      <div class="combo-pct">160%</div>
+      <div class="combo-row"><span class="pct-pill">neu P1</span><span class="combo-detail">100% — Z3 Mo–Fr (3FD+2SD)</span></div>
+      <div class="combo-row"><span class="pct-pill">neu P2</span><span class="combo-detail">60% — Z1 Mo/Mi/Fr (2FD+1SD)</span></div>
+      <div class="info-note" style="margin-top:6px">Z1 Di+Do=Meike · Z2 Di+Do=Helen · nur Z3 ganz frei<br>Auf Wunsch: Szenarien mit Umstrukturierung möglich</div>
+    </div>
+    <div class="summary-box">
+      <strong>Empfehlung für 2 neue Stellen:</strong><br>
+      Person 1 — 100% · Z3 Mo–Fr · 3 FD + 2 SD<br>
+      Person 2 — 60% · Z1 Mo/Mi/Fr · 2 FD + 1 SD<br><br>
+      Total neue Kapazität: <strong>160%</strong> · Standort gut ausgelastet.<br>
+      Auf Wunsch zeige ich auch 40%-Varianten.
+    </div>`);
+  }],
+
+  [2500, () => user('Super, danke — das exportiere ich als Word')],
+  [1400, () => ai(`Gerne — du kannst den Chat über die Export-Bar als Word-Dokument herunterladen. Alle Zimmer-Pläne und Kombinationen sind drin.<br><br>Noch weitere Standorte prüfen?`)],
+];
+
+let idx = 0;
+let paused = false;
+
+function runNext() {
+  if (idx >= sequence.length) return;
+  const item = sequence[idx];
+  idx++;
+
+  if (item === -1) {
+    paused = true;
+    return;
+  }
+
+  const [delay, action] = item;
+
+  if (typeof action === 'string') {
+    // typing indicator
+    timer = setTimeout(() => {
+      typing(action);
+      runNext();
+    }, delay);
+  } else {
+    timer = setTimeout(() => {
+      action();
+      runNext();
+    }, delay);
+  }
+}
+
+function pinConfirm() {
+  paused = false;
+  idx++; // skip the -1
+  runNext();
+}
+
+function replay() {
+  clearTimeout(timer);
+  msgs.innerHTML = '';
+  idx = 0;
+  paused = false;
+  runNext();
+}
+
+runNext();
+</script>
+</body>
+</html>

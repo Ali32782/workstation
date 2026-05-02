@@ -1,0 +1,40 @@
+# Anything generated at runtime or carrying secrets stays out of git.
+# See services/README.md ("What is not in git") for the rationale.
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python runtime
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Local databases (slot history, scraped patient data)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Logs (server is canonical)
+*.log
+logs/
+
+# Streamlit / kineo-dashboard data (xlsx with billing data)
+kineo-dashboard/input/
+kineo-dashboard/output/
+
+# Playwright debugging snapshots
+screenshots/
+
+# Forecast model pickles (regenerable from training data)
+models/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/

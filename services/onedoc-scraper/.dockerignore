@@ -1,0 +1,11 @@
+.git
+.cursor
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+slots.db
+report.html
+models/
+email_config.json

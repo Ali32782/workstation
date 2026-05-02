@@ -28,6 +28,8 @@ Kurzüberblick über alle Anleitungen unter `docs/` und ihren Umsetzungsgrad im 
 | [SECURITY-DEBT.md](./SECURITY-DEBT.md) | Bekannte Sicherheits-Schulden | Tracking |
 | [WELLEN-AUFTRAG.md](./WELLEN-AUFTRAG.md) | Wellen-Planung | Referenz |
 | [playbooks/README.md](./playbooks/README.md) | Interne Playbooks | Siehe Unterseiten |
+| [../services/README.md](../services/README.md) | Source-of-truth für die drei Python-Services neben dem Portal (onedoc-scraper, kineo-dashboard, kineo-bot). Mirror nach `/opt/corelab/` per `rsync`. | `services/{onedoc-scraper,kineo-dashboard,kineo-bot}/` |
+| [smoke-tests.md](./smoke-tests.md) | Playwright Read-Only Smoke-Suite gegen Produktion (login redirect, /api/health, /api/version, public-helpdesk, /login form). CI: GitHub Actions cron. | `portal/tests/smoke/`, `.github/workflows/smoke.yml` |
 
 ### Scripts – häufig referenziert
 

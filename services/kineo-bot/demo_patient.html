@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kineo Assistent — Demo: Patientenweg</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --black: #111110;
+    --white: #fafaf8;
+    --kineo-blue: #1a5276;
+    --kineo-blue-light: #d6e8f5;
+    --green: #2d6a4f;
+    --green-light: #d8f3dc;
+    --warm-gray: #f5f4f0;
+    --mid-gray: #8a8880;
+    --border: #e2e0da;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--warm-gray);
+    color: var(--black);
+    min-height: 100vh;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .page-header {
+    max-width: 640px;
+    margin: 0 auto 2.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .logo {
+    width: 44px; height: 44px;
+    background: var(--black);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 500; color: white;
+    letter-spacing: 0.08em; line-height: 1.4; text-align: center;
+  }
+
+  .page-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.4rem;
+    font-weight: 400;
+    color: var(--black);
+  }
+
+  .page-header p {
+    font-size: 12px;
+    color: var(--mid-gray);
+    margin-top: 1px;
+  }
+
+  .demo-label {
+    max-width: 640px;
+    margin: 0 auto 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .demo-label span {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--mid-gray);
+  }
+
+  .demo-label::after {
+    content: '';
+    flex: 1;
+    height: 0.5px;
+    background: var(--border);
+  }
+
+  /* Chat container */
+  .chat-wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 0.5px solid var(--border);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+  }
+
+  .chat-header {
+    background: var(--black);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chat-header-logo {
+    width: 36px; height: 36px;
+    background: white;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; font-weight: 600; letter-spacing: 0.06em;
+    color: var(--black); line-height: 1.4; text-align: center;
+  }
+
+  .chat-header-info h2 {
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+  }
+
+  .chat-header-info p {
+    color: rgba(255,255,255,0.45);
+    font-size: 11px;
+    margin-top: 1px;
+  }
+
+  .online-dot {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+  }
+
+  .online-dot::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+  }
+
+  /* Messages */
+  .messages {
+    padding: 1.5rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .msg-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .msg-label {
+    font-size: 10px;
+    color: var(--mid-gray);
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+
+  .bubble-ai {
+    background: var(--warm-gray);
+    border-radius: 4px 12px 12px 12px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--black);
+    max-width: 88%;
+    border: 0.5px solid var(--border);
+  }
+
+  .bubble-user {
+    background: var(--kineo-blue);
+    border-radius: 12px 4px 12px 12px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: white;
+    max-width: 80%;
+    align-self: flex-end;
+  }
+
+  .msg-user {
+    align-items: flex-end;
+  }
+
+  /* Slots */
+  .slot-section {
+    margin-top: 10px;
+    padding: 10px;
+    background: white;
+    border-radius: 8px;
+    border: 0.5px solid var(--border);
+  }
+
+  .slot-date {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    color: var(--mid-gray);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .slot-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  .slot-btn {
+    background: var(--green-light);
+    color: var(--green);
+    border: 0.5px solid #b7e4c7;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+  }
+
+  .slot-btn:hover, .slot-btn.selected {
+    background: var(--green);
+    color: white;
+    border-color: var(--green);
+  }
+
+  /* Confirm box */
+  .confirm-box {
+    margin-top: 10px;
+    background: white;
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .confirm-box strong {
+    font-size: 13px;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .btn-confirm {
+    background: var(--kineo-blue);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .btn-cancel {
+    background: transparent;
+    color: var(--mid-gray);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* SMS auth */
+  .auth-box {
+    margin-top: 10px;
+    background: white;
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .auth-box h4 {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .auth-box p {
+    font-size: 12px;
+    color: var(--mid-gray);
+    margin-bottom: 10px;
+  }
+
+  .code-input {
+    width: 100%;
+    text-align: center;
+    font-size: 22px;
+    letter-spacing: 0.3em;
+    padding: 10px;
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'DM Serif Display', serif;
+    color: var(--black);
+    background: var(--warm-gray);
+    margin-bottom: 10px;
+  }
+
+  .btn-sms {
+    width: 100%;
+    background: var(--kineo-blue);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    margin-bottom: 6px;
+  }
+
+  .btn-resend {
+    width: 100%;
+    background: transparent;
+    color: var(--mid-gray);
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    padding: 4px;
+  }
+
+  /* Success */
+  .success-box {
+    background: var(--green-light);
+    border: 0.5px solid #b7e4c7;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--green);
+  }
+
+  .success-box strong { font-weight: 500; }
+
+  /* Map preview */
+  .map-box {
+    margin-top: 10px;
+    background: white;
+    border: 0.5px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .map-visual {
+    height: 100px;
+    background: linear-gradient(135deg, #e8f4f8 0%, #d4eaf5 50%, #c8e0ee 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .map-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(26,82,118,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(26,82,118,0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .map-pin {
+    position: relative;
+    z-index: 1;
+    width: 28px; height: 28px;
+    background: var(--kineo-blue);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 3px 12px rgba(26,82,118,0.4);
+  }
+
+  .map-pin::after {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    background: white;
+    border-radius: 50%;
+  }
+
+  .map-info {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--black);
+    line-height: 1.6;
+  }
+
+  .map-info strong { font-weight: 500; font-size: 12.5px; }
+
+  .map-info .route {
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 0.5px solid var(--border);
+    color: var(--mid-gray);
+    font-size: 11.5px;
+  }
+
+  /* Steps indicator */
+  .steps {
+    max-width: 640px;
+    margin: 0 auto 1.5rem;
+    display: flex;
+    gap: 6px;
+  }
+
+  .step {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background .4s;
+  }
+
+  .step.active { background: var(--kineo-blue); }
+  .step.done { background: var(--green); }
+
+  /* Input area */
+  .input-area {
+    padding: 12px 1.25rem;
+    border-top: 0.5px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .input-field {
+    flex: 1;
+    padding: 9px 14px;
+    border: 0.5px solid var(--border);
+    border-radius: 24px;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--mid-gray);
+    background: var(--warm-gray);
+    outline: none;
+  }
+
+  .input-send {
+    width: 36px; height: 36px;
+    background: var(--kineo-blue);
+    border: none;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .input-send svg { width: 14px; height: 14px; fill: white; }
+
+  /* Animations */
+  .msg-group { opacity: 0; transform: translateY(8px); }
+  .msg-group.visible {
+    animation: fadeUp 0.35s ease forwards;
+  }
+
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Typing indicator */
+  .typing {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--warm-gray);
+    border-radius: 4px 12px 12px 12px;
+    width: fit-content;
+    border: 0.5px solid var(--border);
+  }
+
+  .typing span {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--mid-gray);
+    animation: bounce 1.2s ease-in-out infinite;
+  }
+
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-5px); }
+  }
+
+  /* Replay button */
+  .replay-btn {
+    max-width: 640px;
+    margin: 1.5rem auto 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  .replay-btn button {
+    background: white;
+    border: 0.5px solid var(--border);
+    border-radius: 24px;
+    padding: 10px 24px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--black);
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0.03em;
+    transition: all .2s;
+  }
+
+  .replay-btn button:hover {
+    background: var(--black);
+    color: white;
+    border-color: var(--black);
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="logo">K<br>INEO</div>
+  <div>
+    <h1>Kineo Assistent</h1>
+    <p>Demo — Patientenweg: Sportverletzung zur Buchung</p>
+  </div>
+</div>
+
+<div class="steps">
+  <div class="step" id="s1"></div>
+  <div class="step" id="s2"></div>
+  <div class="step" id="s3"></div>
+  <div class="step" id="s4"></div>
+  <div class="step" id="s5"></div>
+  <div class="step" id="s6"></div>
+</div>
+
+<div class="chat-wrap">
+  <div class="chat-header">
+    <div class="chat-header-logo">K<br>INEO</div>
+    <div class="chat-header-info">
+      <h2>KINEO</h2>
+      <p>6 Standorte in Zürich · Physiotherapie</p>
+    </div>
+    <div class="online-dot">Online</div>
+  </div>
+
+  <div class="messages" id="msgs"></div>
+
+  <div class="input-area">
+    <input class="input-field" placeholder="Frag mich etwas zu Kineo..." readonly />
+    <button class="input-send">
+      <svg viewBox="0 0 16 16"><path d="M14.5 8L1.5 1l2 7-2 7z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="replay-btn">
+  <button onclick="replay()">↺ Demo neu starten</button>
+</div>
+
+<script>
+const msgs = document.getElementById('msgs');
+let timer = null;
+let step = 0;
+
+const steps = [
+  {
+    delay: 600,
+    render: () => ai(`Hallo 👋 Ich bin der Kineo Assistent – dein erster Schritt zur richtigen Therapie.<br><br>Ich kenne unsere Standorte, Spezialisierungen und Therapeuten und helfe dir, die beste Behandlung zu finden und einen Termin zu buchen.<br><br><strong>Wie kann ich helfen?</strong>`),
+    step: 1
+  },
+  {
+    delay: 2200,
+    render: () => user('Ich habe mir beim Fussball das Knie verdreht — Aussenband, denke ich'),
+    step: 1
+  },
+  {
+    delay: 1800,
+    render: () => ai(`Oh das tönt unangenehm — gut dass du es anschauen lässt.<br><br>Warst du schon beim Arzt und hast eine Verordnung oder eine Bildgebung (Röntgen/MRI) machen lassen?<br><br>Falls du direkt zu uns kommen möchtest, geht das auch — du kannst als Selbstzahler starten oder die Verordnung nachreichen. Da es sich um eine Verdrehung handelt, wäre das wahrscheinlich ein Unfall — dann rechnen wir über SUVA oder deine Unfallversicherung ab, nicht über die Krankenkasse.<br><br>In welchem Teil von Zürich arbeitest oder wohnst du?`),
+    step: 2
+  },
+  {
+    delay: 2200,
+    render: () => user('Ich arbeite in Zürich West, Kreis 5'),
+    step: 2
+  },
+  {
+    delay: 1600,
+    render: () => ai(`Perfekt — Kineo Escher Wyss liegt direkt bei dir, Hardturmstrasse 18 in Kreis 5.<br><br>Für Knie- und Sportverletzungen ideal:<br>· <strong>Clara Benning</strong> — Sport, Athletiktraining<br>· <strong>Annika Heinrich</strong> — Sport, Functional Training, Dry Needling<br>· <strong>Andreas Niggl</strong> — Sport, Runners Physio, Athletiktraining<br><br>Escher Wyss ist unser HYROX-Hub — mit Sportwissenschaftlerin Nina Schulte direkt nach der Physio.<br><br>Ich lade die freien Termine für dich…`),
+    step: 3
+  },
+  {
+    delay: 2000,
+    render: () => aiSlots(),
+    step: 3
+  },
+  {
+    delay: 500,
+    render: () => {},
+    step: 4,
+    afterConfirm: true
+  },
+  {
+    delay: 1200,
+    render: () => aiAuth(),
+    step: 4
+  },
+  {
+    delay: 500,
+    render: () => {},
+    step: 5,
+    afterCode: true
+  },
+  {
+    delay: 1000,
+    render: () => aiSuccess(),
+    step: 5
+  },
+  {
+    delay: 2000,
+    render: () => user('Wie komme ich zur Praxis?'),
+    step: 5
+  },
+  {
+    delay: 1400,
+    render: () => aiMap(),
+    step: 6
+  }
+];
+
+function ai(html) {
+  const g = document.createElement('div');
+  g.className = 'msg-group';
+  g.innerHTML = `<div class="msg-label">Kineo Assistent</div><div class="bubble-ai">${html}</div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+}
+
+function user(text) {
+  const g = document.createElement('div');
+  g.className = 'msg-group msg-user';
+  g.innerHTML = `<div class="msg-label" style="text-align:right">Du</div><div class="bubble-user">${text}</div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+}
+
+function aiSlots() {
+  const g = document.createElement('div');
+  g.className = 'msg-group';
+  g.innerHTML = `
+    <div class="msg-label">Kineo Assistent</div>
+    <div class="bubble-ai">
+      Hier sind freie Termine bei Kineo Escher Wyss:
+      <div class="slot-section">
+        <div class="slot-date">Mi, 15. April</div>
+        <div class="slot-row">
+          <span class="slot-btn" onclick="selectSlot(this,'Mi 15.04 · 09:00 · Clara')">09:00 · Clara</span>
+          <span class="slot-btn" onclick="selectSlot(this,'Mi 15.04 · 11:00 · Annika')">11:00 · Annika</span>
+          <span class="slot-btn" onclick="selectSlot(this,'Mi 15.04 · 16:30 · Andreas')">16:30 · Andreas</span>
+        </div>
+        <div class="slot-date">Fr, 17. April</div>
+        <div class="slot-row">
+          <span class="slot-btn" onclick="selectSlot(this,'Fr 17.04 · 08:00 · Andreas')">08:00 · Andreas</span>
+          <span class="slot-btn" onclick="selectSlot(this,'Fr 17.04 · 14:00 · Clara')">14:00 · Clara</span>
+        </div>
+        <div class="slot-date">Mo, 21. April</div>
+        <div class="slot-row">
+          <span class="slot-btn" onclick="selectSlot(this,'Mo 21.04 · 10:00 · Annika')">10:00 · Annika</span>
+          <span class="slot-btn" onclick="selectSlot(this,'Mo 21.04 · 15:00 · Andreas')">15:00 · Andreas</span>
+        </div>
+      </div>
+    </div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+}
+
+let selectedSlot = '';
+function selectSlot(btn, slot) {
+  document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedSlot = slot;
+  updateSteps(4);
+  // Demo: skip confirm dialog, go straight to SMS auth
+  setTimeout(() => runStep(7), 600);
+}
+
+function aiAuth() {
+  const g = document.createElement('div');
+  g.className = 'msg-group';
+  g.innerHTML = `
+    <div class="msg-label">Kineo Assistent</div>
+    <div class="bubble-ai">
+      <div class="auth-box">
+        <h4>SMS-Code eingeben</h4>
+        <p>Wir haben einen Code an +417*****090 gesendet.</p>
+        <input class="code-input" value="8 2 1 1 4 4" readonly />
+        <button class="btn-sms" onclick="verifyCode()">Bestätigen</button>
+        <button class="btn-resend">Neuen Code senden</button>
+      </div>
+    </div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+  // Demo: auto-verify after 2.5 seconds
+  setTimeout(verifyCode, 2500);
+}
+
+function verifyCode() {
+  stepRunning = false;
+  runStep(9);
+}
+
+function aiSuccess() {
+  const parts = selectedSlot.split(' · ');
+  const g = document.createElement('div');
+  g.className = 'msg-group';
+  g.innerHTML = `
+    <div class="msg-label">Kineo Assistent</div>
+    <div class="bubble-ai">
+      <div class="success-box">
+        ✓ <strong>Termin bestätigt!</strong><br>
+        ${parts[2]} · ${parts[0]} um ${parts[1]} Uhr<br>
+        Kineo Escher Wyss · Hardturmstrasse 18<br><br>
+        Du erhältst eine Bestätigung per SMS.
+      </div>
+      <div style="margin-top:10px;padding:12px 14px;background:white;border:0.5px solid var(--border);border-radius:10px;">
+        <div style="font-size:12.5px;font-weight:500;margin-bottom:4px">Verordnung hochladen <span style="font-size:11px;color:var(--mid-gray);font-weight:400">— optional, aber empfohlen</span></div>
+        <div style="font-size:12px;color:var(--mid-gray);margin-bottom:10px;line-height:1.5">Mit ärztlicher Verordnung übernimmt die Grundversicherung nach Franchise (10% Selbstbehalt). Hast du noch keine, bring sie einfach zum Termin mit.</div>
+        <label id="upload-label" style="display:flex;align-items:center;gap:8px;background:var(--warm-gray);border:0.5px dashed var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;font-size:12.5px;color:var(--kineo-blue)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10V3M5 6l3-3 3 3M3 13h10"/></svg>
+          <span id="upload-text">Verordnung auswählen (PDF oder Foto)</span>
+          <input type="file" accept=".pdf,image/*" style="display:none" onchange="handleUpload(this)" />
+        </label>
+      </div>
+    </div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+  updateSteps(5);
+}
+
+function aiMap() {
+  const g = document.createElement('div');
+  g.className = 'msg-group';
+  g.innerHTML = `
+    <div class="msg-label">Kineo Assistent</div>
+    <div class="bubble-ai">
+      <div class="map-box">
+        <div class="map-visual">
+          <div class="map-grid"></div>
+          <div class="map-pin"></div>
+        </div>
+        <div class="map-info">
+          <strong>Kineo Escher Wyss</strong>
+          Hardturmstrasse 18, 8005 Zürich<br>
+          <div class="route">
+            🚊 Tram 4/13 → Escher-Wyss-Platz (3 Min zu Fuss)<br>
+            🚌 Bus 72 → Hardturmstrasse<br>
+            🚲 Velofreundlich — direkt am Hardturm
+          </div>
+        </div>
+      </div>
+    </div>`;
+  msgs.appendChild(g);
+  requestAnimationFrame(() => g.classList.add('visible'));
+  msgs.scrollTop = 99999;
+  updateSteps(6);
+}
+
+function updateSteps(n) {
+  for (let i = 1; i <= 6; i++) {
+    const el = document.getElementById('s' + i);
+    if (!el) continue;
+    el.className = 'step ' + (i < n ? 'done' : i === n ? 'active' : '');
+  }
+}
+
+let currentStep = 0;
+let stepRunning = false;
+
+function runStep(idx) {
+  if (idx >= steps.length) return;
+  if (stepRunning && idx !== 9) return; // prevent double-trigger except for verifyCode
+  const s = steps[idx];
+  currentStep = idx;
+
+  // afterCode = pause, verifyCode() will call runStep(9) manually
+  if (s.afterCode) {
+    if (s.step) updateSteps(s.step);
+    return; // wait for verifyCode()
+  }
+
+  const isAi = !s.render.toString().includes('user(') && !s.afterConfirm && !s.afterCode;
+
+  if (isAi && s.delay > 800) {
+    const typing = document.createElement('div');
+    typing.className = 'msg-group';
+    typing.id = 'typing-ind';
+    typing.innerHTML = `<div class="msg-label">Kineo Assistent</div><div class="typing"><span></span><span></span><span></span></div>`;
+    msgs.appendChild(typing);
+    requestAnimationFrame(() => typing.classList.add('visible'));
+    msgs.scrollTop = 99999;
+
+    stepRunning = true;
+    timer = setTimeout(() => {
+      const t = document.getElementById('typing-ind');
+      if (t) t.remove();
+      s.render();
+      if (s.step) updateSteps(s.step);
+      stepRunning = false;
+      if (!s.afterConfirm && !s.afterCode) {
+        timer = setTimeout(() => runStep(idx + 1), steps[idx + 1]?.delay || 1500);
+      }
+    }, s.delay);
+  } else {
+    stepRunning = true;
+    timer = setTimeout(() => {
+      s.render();
+      if (s.step) updateSteps(s.step);
+      stepRunning = false;
+      if (!s.afterConfirm && !s.afterCode) {
+        timer = setTimeout(() => runStep(idx + 1), steps[idx + 1]?.delay || 1500);
+      }
+    }, s.delay);
+  }
+}
+
+function handleUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const label = document.getElementById('upload-label');
+  const text = document.getElementById('upload-text');
+  text.textContent = '✓ ' + file.name + ' — wird gesendet…';
+  label.style.borderColor = 'var(--green)';
+  label.style.color = 'var(--green)';
+  label.style.background = 'var(--green-light)';
+  setTimeout(() => {
+    text.textContent = '✓ ' + file.name + ' — erfolgreich hochgeladen';
+    // In real app: upload to server here
+  }, 1200);
+}
+
+function replay() {
+  clearTimeout(timer);
+  msgs.innerHTML = '';
+  updateSteps(0);
+  selectedSlot = '';
+  currentStep = 0;
+  stepRunning = false;
+  runStep(0);
+}
+
+// Start
+runStep(0);
+</script>
+</body>
+</html>

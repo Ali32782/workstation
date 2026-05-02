@@ -1,0 +1,17 @@
+[Unit]
+Description=Kineo report refresh (on-demand scrape + HTML)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/onedoc_scraper
+EnvironmentFile=-/opt/onedoc_scraper/.env
+ExecStart=/opt/onedoc_scraper/.venv/bin/python3 /opt/onedoc_scraper/report_refresh_server.py
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

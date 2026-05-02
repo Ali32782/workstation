@@ -1,0 +1,51 @@
+<script type="application/ld+json">
+    {
+      "@context":"https://schema.org",
+      "@type":"IndividualPhysician",
+      "@id":"https://www.onedoc.ch/de/#practitioner-2907953",
+      "name":"Frau Andrina Kümin",
+      "alternateName": "Andrina Kümin",
+      "url":"https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2s/andrina-kumin",
+      "description":":date: Buchen Sie Ihren Termin online bei Frau Andrina Kümin, Physiotherapeutin Seefeldstrasse 83, 8008 Zürich",
+      "image":"https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-large.jpg",
+      "isAcceptingNewPatients": true,
+      "medicalSpecialty":["Physiotherapie","Personal Training","Klassische Massage"],
+      "knowsLanguage":["Deutsch","Englisch","Französisch"],
+      "currenciesAccepted":"CHF",
+      "address":{
+        "streetAddress":"Seefeldstrasse 83",
+        "addressLocality":"Zürich",
+        "postalCode":"8008",
+        "addressCountry":"CH"
+      },
+      "telephone":"+41445129147",
+      
+      "practicesAt":[
+        
+          
+          {
+            "@type":"PhysiciansOffice",
+            "@id":"https://www.onedoc.ch/de/#location-50967",
+            "name": "Kineo Zürich Seefeld",
+            "telephone":"+41445129147",
+            "currenciesAccepted":"CHF",
+            "hasMap":"https://www.google.ch/maps/place/Seefeldstrasse 83, 8008 Zürich",
+            
+                "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld",
+              
+            "image": "https://assets.onedoc.ch/images/entities/ec1cfc0eacfaba256999de12448ca8216b719f1b63eb345a18638497fb0af319.png",
+            
+            "address":{
+              "streetAddress":"Seefeldstrasse 83",
+              "addressLocality":"Zürich",
+              "postalCode":"8008",
+              "addressCountry":"CH"
+            }
+          }
+        
+      ],
+      "availableService":[
+        
+      ]
+   }
+  </script><div class="od-profile od-profile--bookable btf-profile-professional" data-professional-id="2907953" data-entity-id="50967" data-calendar-id="125442" data-professional-selection="single-or-any"><header class="od-profile-header"><div class="od-profile-header-wrapper"><div class="od-profile-header-picture"><img alt="Frau Kümin, Physiotherapeutin in Zürich" title="Frau Kümin, Physiotherapeutin in Zürich" src="https://assets.onedoc.ch/images/users/869668bb9ff39285a86a214512ed66738a58a230b610074dc9c9b9cdd2f14c43-small.jpg"><div class="od-profile-header-picture-overlay"><i class="material-icons md-36">photo_camera</i><span>+ 3 Fotos</span></div></div><div class="od-profile-header-description"><h1 class="od-profile-header-description-name">Frau Andrina Kümin</h1><h2 class="od-profile-header-description-specialty">Physiotherapeutin</h2></div></div></header><nav class="od-profile-nav"><div class="od-profile-nav-wrapper"><div class="od-profile-nav-items"><div class="od-profile-nav-item active" data-target="summary">Zusammenfassung</div><div class="od-profile-nav-item" data-target="map">Karte</div><div class="od-profile-nav-item" data-target="description">Vorstellung</div></div></div></nav><div class="od-profile-content"><div class="od-profile-content-body"><div id="profile-summary" class="od-profile-anchor"></div><div class="od-profile-card"><div class="od-profile-card-section"><div class="od-profile-card-section-header"><img class="od-profile-card-section-icon" src="/assets/images/icons/new-patients.svg" alt="Patient mit Pluszeichen, der anzeigt, dass neue Patienten angenommen werden"><h3 class="od-profile-card-section-title">Zugelassene Patienten</h3></div><div class="od-profile-card-section-body">Frau Andrina Kümin akzeptiert neue Patienten</div></div><div class="od-profile-card-section-blank-separator"></div><div class="od-profile-card-section"><div class="od-profile-card-section-header"><img class="od-profile-card-section-icon" src="/assets/images/icons/specialties.svg" alt="Aktenkoffer-Symbol, das die Fachgebiete der Fachperson ank\u00fcndigt"><h3 class="od-profile-card-section-title">Fachrichtungen</h3></div><div class="od-profile-card-section-body"><div class="od-profile-chip-set"><div class="od-profile-chip">Physiotherapie</div><div class="od-profile-chip">Personal Training</div><div class="od-profile-chip">Klassische Massage</div><div class="od-profile-expandable-bg"></div></div></div></div></div><div id="profile-map" class="od-profile-anchor"></div><div class="od-profile-card"><div class="od-profile-card-section od-profile-card-section-map"><div class="od-profile-card-section-map-content"><div class="od-profile-card-section-header"><img class="od-profile-card-section-icon" src="/assets/images/icons/map.svg" alt="Standortmarker, der Karte und Zugangsinformationen zur Praxis anzeigt"><h3 class="od-profile-card-section-title">Karte und Anreiseinformationen</h3></div><div class="od-profile-card-section-body"><a href="/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld"><

@@ -1,0 +1,1976 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Therapie Slot Report</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; }
+    header { background: #1a1a2e; color: #fff; padding: 20px 32px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 20px; font-weight: 500; }
+    header span { font-size: 13px; opacity: 0.7; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+    .standort-block { margin-bottom: 32px; }
+    .standort-title { font-size: 16px; font-weight: 600; color: #1a1a2e; border-left: 4px solid #4a6cf7; padding-left: 12px; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+    .card-name { font-weight: 600; font-size: 15px; }
+    .badge { font-size: 11px; padding: 3px 8px; border-radius: 20px; font-weight: 500; }
+    .badge-ok { background: #e8f5e9; color: #2e7d32; }
+    .badge-err { background: #fce4ec; color: #c62828; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .metric { background: #f8f9ff; border-radius: 8px; padding: 12px; }
+    .metric-val { font-size: 24px; font-weight: 700; color: #4a6cf7; }
+    .metric-label { font-size: 11px; color: #888; margin-top: 2px; }
+    .metric-hist { background: #f5f5f5; }
+    .metric-hist .metric-val { color: #555; font-size: 20px; }
+    .chart-wrap { height: 80px; margin-top: 8px; }
+    .updated { font-size: 11px; color: #aaa; text-align: right; margin-top: 8px; }
+    .summary { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .summary h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .summary-item { text-align: center; }
+    .summary-val { font-size: 32px; font-weight: 700; color: #1a1a2e; }
+    .summary-label { font-size: 12px; color: #888; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 20px; padding: 12px 16px; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .toolbar button { font-size: 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid #ddd; background: #f8f9fa; cursor: pointer; }
+    .toolbar button:hover { background: #eef1ff; border-color: #4a6cf7; color: #1a1a2e; }
+    .toolbar span { font-size: 11px; color: #888; margin-right: 8px; }
+    details.panel { margin-bottom: 16px; }
+    details.panel > summary { list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #1a1a2e; padding: 10px 14px; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    details.panel > summary::-webkit-details-marker { display: none; }
+    details.panel[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .panel-body { padding: 12px 14px 16px; background: #fafafa; border-radius: 0 0 10px 10px; border: 1px solid #eee; border-top: none; }
+    details.standort-panel { margin-bottom: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); background: #fff; }
+    details.standort-panel > summary.standort-summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 14px 16px; font-size: 17px; font-weight: 600; color: #1a1a2e; border-left: 4px solid #4a6cf7; background: #fff; }
+    details.standort-panel > summary::-webkit-details-marker { display: none; }
+    .standort-meta { font-size: 12px; font-weight: 500; color: #666; }
+    .standort-inner { padding: 16px; background: #f5f5f5; }
+    details.card-collapsible { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 12px; overflow: hidden; }
+    details.card-collapsible > summary.card-summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; }
+    details.card-collapsible > summary::-webkit-details-marker { display: none; }
+    .card-summary-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .card-kpis { font-size: 12px; color: #666; }
+    .card-inner { padding: 0 16px 16px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Therapie Slot Reporting</h1>
+  <span>Stand: 03.05.2026 00:00</span>
+</header>
+<div class="container">
+  <div class="toolbar">
+    <span>Ansicht:</span>
+    <button type="button" id="btn-expand-standorte">Standorte aufklappen</button>
+    <button type="button" id="btn-collapse-standorte">Standorte zuklappen</button>
+    <button type="button" id="btn-expand-therapeuten">Therapeuten aufklappen</button>
+    <button type="button" id="btn-collapse-therapeuten">Therapeuten zuklappen</button>
+  </div>
+
+  <div class="summary" style="border-left:4px solid #4a6cf7;padding-left:16px;margin-bottom:20px">
+    <p style="font-size:13px;color:#444;line-height:1.5">
+      <strong>Wochenend-Fokus (ab Fr 18:00, Sa/So):</strong>
+      Alle vier Spalten = <strong>nächste vier volle Kalenderwochen</strong> (API KW1–KW4); die laufende Woche wird nicht angezeigt.
+      Zeitzone: Europe/Zurich.
+    </p>
+  </div>
+
+  <div class="summary">
+    <h2>Übersicht</h2>
+    <div class="summary-grid">
+      <div class="summary-item">
+        <div class="summary-val">75</div>
+        <div class="summary-label">Freie Slots Woche 1 (Fokus Folgewoche)</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-val">25</div>
+        <div class="summary-label">Therapeuten erfasst</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-val">6</div>
+        <div class="summary-label">Standorte</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-val" style="color:#e65100">25.0%</div>
+        <div class="summary-label">Absagequote (letzte 4W)</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-val">1</div>
+        <div class="summary-label">Absagen erkannt</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-val">3</div>
+        <div class="summary-label">Buchungen erkannt</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary" style="border-left:4px solid #ef4444;padding-left:16px">
+    <h2 style="color:#991b1b">Top Alerts</h2>
+    <ul style="margin-left:18px;color:#7f1d1d;font-size:13px;line-height:1.6">
+<li>Andreas Niggl @ Thalwil: hohe Absagequote (100.0%)</li>
+    </ul>
+  </div>
+
+  <div class="summary" style="border-left:4px solid #f59e0b;padding-left:16px">
+    <h2 style="color:#92400e">Datenqualitaet</h2>
+    <ul style="margin-left:18px;color:#7c2d12;font-size:13px;line-height:1.6">
+<li>Aktuelle Woche hat 0 Slots, Folgewoche aber >0 (moeglicher API-/Zeitfenster-Effekt).</li>
+    </ul>
+  </div>
+
+  <div class="summary" style="border-left:4px solid #94a3b8;padding-left:16px">
+    <h2 style="color:#475569">Prognose</h2>
+    <p style="font-size:13px;color:#666;line-height:1.55">
+      Die <strong>Slot-Füllungsprognose</strong> (Prozent, KI-Hinweis in den Karten) wird erst ab <strong>13.06.2026</strong> angezeigt (früheste Messung: 02.05.2026; mindestens 6 Wochen fortlaufende Snapshots).
+    </p>
+  </div>
+
+  <details class="panel" open>
+    <summary>Therapeuten an mehreren Standorten</summary>
+    <div class="panel-body" style="border-left:4px solid #f59e0b">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:10px">
+      <thead><tr style="background:#fef3c7">
+        <th style="padding:7px 10px;text-align:left;color:#92400e">Name</th>
+        <th style="padding:7px 10px;text-align:left;color:#92400e">Standorte</th>
+        <th style="padding:7px 10px;text-align:center;color:#92400e">Woche von 04.05. total</th>
+        <th style="padding:7px 10px;text-align:center;color:#92400e">Woche von 11.05. total</th>
+        <th style="padding:7px 10px;text-align:center;color:#92400e">Woche von 18.05. total</th>
+        <th style="padding:7px 10px;text-align:center;color:#92400e">Woche von 25.05. total</th>
+        <th style="padding:7px 10px;text-align:left;color:#92400e">Aufschlüsselung</th>
+      </tr></thead>
+      <tbody>
+
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Andreas Niggl</td>
+          <td style="padding:7px 10px">Escher Wyss + Thalwil</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">6</td>
+          <td style="padding:7px 10px;text-align:center">5</td>
+          <td style="padding:7px 10px;text-align:center">16</td>
+          <td style="padding:7px 10px;text-align:center">26</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Escher Wyss: 3/3/15/21 · Thalwil: 3/2/1/5</td>
+        </tr>
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Annika Heinrich</td>
+          <td style="padding:7px 10px">Escher Wyss + Thalwil</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">8</td>
+          <td style="padding:7px 10px;text-align:center">7</td>
+          <td style="padding:7px 10px;text-align:center">12</td>
+          <td style="padding:7px 10px;text-align:center">0</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Escher Wyss: 6/2/3/0 · Thalwil: 2/5/9/0</td>
+        </tr>
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Andrina Kümin</td>
+          <td style="padding:7px 10px">Seefeld + Stauffacher</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">3</td>
+          <td style="padding:7px 10px;text-align:center">7</td>
+          <td style="padding:7px 10px;text-align:center">10</td>
+          <td style="padding:7px 10px;text-align:center">24</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Seefeld: 1/7/1/20 · Stauffacher: 2/0/9/4</td>
+        </tr>
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Helen Schwank</td>
+          <td style="padding:7px 10px">Seefeld + Zollikon</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">5</td>
+          <td style="padding:7px 10px;text-align:center">2</td>
+          <td style="padding:7px 10px;text-align:center">2</td>
+          <td style="padding:7px 10px;text-align:center">10</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Seefeld: 5/2/2/9 · Zollikon: 0/0/0/1</td>
+        </tr>
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Joëlle Ramseier</td>
+          <td style="padding:7px 10px">Seefeld + Thalwil</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">19</td>
+          <td style="padding:7px 10px;text-align:center">5</td>
+          <td style="padding:7px 10px;text-align:center">24</td>
+          <td style="padding:7px 10px;text-align:center">26</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Seefeld: 12/4/12/15 · Thalwil: 7/1/12/11</td>
+        </tr>
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Meike Vogel</td>
+          <td style="padding:7px 10px">Seefeld + Zollikon</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">2</td>
+          <td style="padding:7px 10px;text-align:center">4</td>
+          <td style="padding:7px 10px;text-align:center">19</td>
+          <td style="padding:7px 10px;text-align:center">22</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Seefeld: 1/1/2/4 · Zollikon: 1/3/17/18</td>
+        </tr>
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 10px;font-weight:600">Emma Leu</td>
+          <td style="padding:7px 10px">Stauffacher + Thalwil</td>
+          <td style="padding:7px 10px;text-align:center;font-weight:700;color:#d97706">0</td>
+          <td style="padding:7px 10px;text-align:center">4</td>
+          <td style="padding:7px 10px;text-align:center">15</td>
+          <td style="padding:7px 10px;text-align:center">12</td>
+          <td style="padding:7px 10px;color:#888;font-size:12px">Stauffacher: 0/0/1/8 · Thalwil: 0/4/14/4</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </details>
+
+  <h2 style="font-size:15px;font-weight:600;color:#555;margin:28px 0 12px;text-transform:uppercase;letter-spacing:0.05em">Therapeuten nach Standort</h2>
+
+  <details class="standort-panel" open>
+    <summary class="standort-summary">
+      <span>Escher Wyss</span>
+      <span class="standort-meta">3 Therapeuten · 26 freie Slots Woche von 04.05.</span>
+    </summary>
+    <div class="standort-inner">
+    <div class="grid">
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Andreas Niggl</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 3 · Woche von 11.05.: 3</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">3</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 2 Di, 1 Do</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">3</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">15</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+12 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">21</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+6 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Escher_Wyss_Andreas_Niggl"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Escher_Wyss_Andreas_Niggl').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Annika Heinrich</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 6 · Woche von 11.05.: 2</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">6</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 6 Mi</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-4 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">3</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+1 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-3 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#c62828">NIEDRIG</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Escher_Wyss_Annika_Heinrich"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Escher_Wyss_Annika_Heinrich').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Clara Benning</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fee2e2;color:#991b1b;font-weight:600">KRITISCH</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 17 · Woche von 11.05.: 15</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">17</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 4 Di, 6 Mi, 5 Do, 2 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">15</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-2 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">27</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+12 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">34</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+7 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#c62828">NIEDRIG</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Escher_Wyss_Clara_Benning"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Escher_Wyss_Clara_Benning').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+    </div>
+  </details>
+
+  <details class="standort-panel" open>
+    <summary class="standort-summary">
+      <span>Seefeld</span>
+      <span class="standort-meta">6 Therapeuten · 25 freie Slots Woche von 04.05.</span>
+    </summary>
+    <div class="standort-inner">
+    <div class="grid">
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Andrina Kümin</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 1 · Woche von 11.05.: 7</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 1 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">7</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+6 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (-6 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">20</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+19 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Seefeld_Andrina_K_min"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-02</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Seefeld_Andrina_K_min').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-02"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Helen Schwank</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 5 · Woche von 11.05.: 2</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">5</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 2 Mi, 3 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-3 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+0 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">9</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+7 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#c62828">NIEDRIG</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Seefeld_Helen_Schwank"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Seefeld_Helen_Schwank').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Joëlle Ramseier</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 12 · Woche von 11.05.: 4</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">12</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 3 Mo, 2 Mi, 7 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-8 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">12</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+8 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">15</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+3 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#c62828">NIEDRIG</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Seefeld_Jo_lle_Ramseier"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Seefeld_Jo_lle_Ramseier').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Meike Vogel</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 1 · Woche von 11.05.: 1</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 1 Mi</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+1 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+2 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Seefeld_Meike_Vogel"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Seefeld_Meike_Vogel').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Noah Stierli</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fee2e2;color:#991b1b;font-weight:600">KRITISCH</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 6 · Woche von 11.05.: 10</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">6</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 2 Mo, 1 Di, 3 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">10</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+4 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">30</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+20 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">13</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-17 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#c62828">NIEDRIG</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Seefeld_Noah_Stierli"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Seefeld_Noah_Stierli').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Sereina Urech</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 2</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+2 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+2 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+0 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Seefeld_Sereina_Urech"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Seefeld_Sereina_Urech').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+    </div>
+  </details>
+
+  <details class="standort-panel" open>
+    <summary class="standort-summary">
+      <span>Stauffacher</span>
+      <span class="standort-meta">3 Therapeuten · 2 freie Slots Woche von 04.05.</span>
+    </summary>
+    <div class="standort-inner">
+    <div class="grid">
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Andrina Kümin</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 2 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 1 Mo, 1 Do</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-2 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">9</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+9 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-5 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Stauffacher_Andrina_K_min"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Stauffacher_Andrina_K_min').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Carmen Weber</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 1</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+1 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (-1 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+1 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Stauffacher_Carmen_Weber"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Stauffacher_Carmen_Weber').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Emma Leu</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+1 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">8</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+7 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Stauffacher_Emma_Leu"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Stauffacher_Emma_Leu').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+    </div>
+  </details>
+
+  <details class="standort-panel" open>
+    <summary class="standort-summary">
+      <span>Thalwil</span>
+      <span class="standort-meta">6 Therapeuten · 14 freie Slots Woche von 04.05.</span>
+    </summary>
+    <div class="standort-inner">
+    <div class="grid">
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Andreas Niggl</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 3 · Woche von 11.05.: 2</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">3</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 2 Mi, 1 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-1 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (-1 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">5</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+4 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#e65100">100.0%</div>
+            <div class="metric-label">Absagequote (1 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Thalwil_Andreas_Niggl"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Thalwil_Andreas_Niggl').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Annika Heinrich</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 2 · Woche von 11.05.: 5</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 2 Do</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">5</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+3 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">9</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+4 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-9 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0.0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Thalwil_Annika_Heinrich"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Thalwil_Annika_Heinrich').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Emma Leu</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 4</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+4 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">14</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+10 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-10 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Thalwil_Emma_Leu"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Thalwil_Emma_Leu').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Hanna Raffeiner</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 2 · Woche von 11.05.: 2</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 1 Di, 1 Mi</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">2</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">26</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+24 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">12</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-14 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.1</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0.0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Thalwil_Hanna_Raffeiner"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Thalwil_Hanna_Raffeiner').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Joëlle Ramseier</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 7 · Woche von 11.05.: 1</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">7</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 5 Di, 2 Do</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-6 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">12</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+11 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">11</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-1 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#c62828">NIEDRIG</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Thalwil_Jo_lle_Ramseier"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Thalwil_Jo_lle_Ramseier').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Theresa Bitterlich</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+0 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+0 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Thalwil_Theresa_Bitterlich"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Thalwil_Theresa_Bitterlich').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+    </div>
+  </details>
+
+  <details class="standort-panel" open>
+    <summary class="standort-summary">
+      <span>Wipkingen</span>
+      <span class="standort-meta">5 Therapeuten · 7 freie Slots Woche von 04.05.</span>
+    </summary>
+    <div class="standort-inner">
+    <div class="grid">
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Barbara Victorio</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">16</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+16 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">15</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-1 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Wipkingen_Barbara_Victorio"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Wipkingen_Barbara_Victorio').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Eva Danko</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">13</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+13 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">35</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+22 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Wipkingen_Eva_Danko"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Wipkingen_Eva_Danko').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Eve Schreurs</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 4 · Woche von 11.05.: 6</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">4</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 2 Mi, 2 Fr</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">6</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+2 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (-6 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">19</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+19 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0.0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Wipkingen_Eve_Schreurs"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Wipkingen_Eve_Schreurs').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Raphael Hahner</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 1</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+1 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">23</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+22 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">18</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (-5 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Wipkingen_Raphael_Hahner"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Wipkingen_Raphael_Hahner').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Sonia Montero</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 3 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">3</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 1 Mo, 2 Do</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (-3 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">8</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+8 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">24</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+16 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Wipkingen_Sonia_Montero"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Wipkingen_Sonia_Montero').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+    </div>
+  </details>
+
+  <details class="standort-panel" open>
+    <summary class="standort-summary">
+      <span>Zollikon</span>
+      <span class="standort-meta">2 Therapeuten · 1 freie Slots Woche von 04.05.</span>
+    </summary>
+    <div class="standort-inner">
+    <div class="grid">
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Helen Schwank</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#ecfdf5;color:#166534;font-weight:600">STABIL</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 0 · Woche von 11.05.: 0</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 04.05.</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+0 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">0</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+0 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+1 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">HOCH</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Zollikon_Helen_Schwank"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Zollikon_Helen_Schwank').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+
+      <details class="card-collapsible" open>
+        <summary class="card-summary">
+          <div class="card-summary-left">
+            <span class="card-name" style="font-weight:600;font-size:15px">Meike Vogel</span>
+            <span class="badge badge-ok">OK</span>
+            <span style="font-size:11px;padding:4px 8px;border-radius:16px;background:#fff7ed;color:#9a3412;font-weight:600">BEOBACHTEN</span>
+          </div>
+          <span class="card-kpis">Woche von 04.05.: 1 · Woche von 11.05.: 3</span>
+        </summary>
+        <div class="card-inner">
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-val">1</div>
+            <div class="metric-label">Freie Slots Woche von 04.05. – 1 Di</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">3</div>
+            <div class="metric-label">Freie Slots Woche von 11.05. (+2 vs linke Spalte, ein Abruf)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">17</div>
+            <div class="metric-label">Freie Slots Woche von 18.05. (+14 vs linke Spalte)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val">18</div>
+            <div class="metric-label">Freie Slots Woche von 25.05. (+1 vs linke Spalte)</div>
+          </div>
+          <div class="metric metric-hist">
+            <div class="metric-val">0.0</div>
+            <div class="metric-label">Ø Buchungen/Tag</div>
+          </div>
+          <div class="metric" style="background:#fff8e1">
+            <div class="metric-val" style="font-size:18px;color:#2e7d32">0%</div>
+            <div class="metric-label">Absagequote (0 Absagen)</div>
+          </div>
+          <div class="metric" style="background:#f3e5f5">
+            <div class="metric-val" style="font-size:18px;color:#e65100">MITTEL</div>
+            <div class="metric-label">Auslastungstrend</div>
+          </div>
+
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart_Zollikon_Meike_Vogel"></canvas>
+        </div>
+        <div class="updated">Letzter Check: 2026-05-03</div>
+        </div>
+      </details>
+      <script>
+        (function() {
+          var ctx = document.getElementById('chart_Zollikon_Meike_Vogel').getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ["05-02", "05-02", "05-02", "05-02", "05-02", "05-02", "05-03"],
+              datasets: [{ data: [0, 0, 0, 0, 0, 0, 0], backgroundColor: '#4a6cf730', borderColor: '#4a6cf7', borderWidth: 1, borderRadius: 3 }]
+            },
+            options: {
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 9 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+    </div>
+  </details>
+
+  <script>
+  (function() {
+    function all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+    document.getElementById('btn-expand-standorte').addEventListener('click', function() {
+      all('details.standort-panel').forEach(function(d) { d.open = true; });
+    });
+    document.getElementById('btn-collapse-standorte').addEventListener('click', function() {
+      all('details.standort-panel').forEach(function(d) { d.open = false; });
+    });
+    document.getElementById('btn-expand-therapeuten').addEventListener('click', function() {
+      all('details.card-collapsible').forEach(function(d) { d.open = true; });
+    });
+    document.getElementById('btn-collapse-therapeuten').addEventListener('click', function() {
+      all('details.card-collapsible').forEach(function(d) { d.open = false; });
+    });
+  })();
+  </script>
+</div></body></html>

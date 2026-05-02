@@ -1,0 +1,175 @@
+[
+  {
+    "standort": "Seefeld",
+    "entity_id": "50967",
+    "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdl1/kineo-zurich-seefeld",
+    "therapeuten": [
+      {
+        "name": "Noah Stierli",
+        "prof_id": "2907964",
+        "calendar_id": "125443",
+        "url": "https://www.onedoc.ch/de/physiotherapeut/zurich/pcy2t/noah-stierli"
+      },
+      {
+        "name": "Meike Vogel",
+        "prof_id": "2944269",
+        "calendar_id": "126599",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pczyx/meike-vogel"
+      },
+      {
+        "name": "Sereina Urech",
+        "prof_id": "2907969",
+        "calendar_id": "125444",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2u/sereina-urech"
+      },
+      {
+        "name": "Joëlle Ramseier",
+        "prof_id": "2998987",
+        "calendar_id": "128306",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pc1ac/joelle-ramseier"
+      },
+      {
+        "name": "Helen Schwank",
+        "prof_id": "2907961",
+        "calendar_id": "125445",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2v/helen-schwank"
+      },
+      {
+        "name": "Felica Kossendey",
+        "prof_id": "2907958",
+        "calendar_id": "125440",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2q/felica-kossendey"
+      },
+      {
+        "name": "Andrina Kümin",
+        "prof_id": "2907953",
+        "calendar_id": "125442",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy2s/andrina-kumin"
+      }
+    ]
+  },
+  {
+    "standort": "Wipkingen",
+    "entity_id": "50970",
+    "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdl4/kineo-wipkingen",
+    "therapeuten": [
+      {
+        "name": "Eve Schreurs",
+        "prof_id": "2999078",
+        "calendar_id": "128319",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pc1ap/eve-schreurs"
+      },
+      {
+        "name": "Sonia Montero",
+        "prof_id": "2907167",
+        "calendar_id": "125387",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy09/sonia-montero"
+      },
+      {
+        "name": "Barbara Victorio",
+        "prof_id": "2944281",
+        "calendar_id": "126601",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pczyz/barbara-victorio"
+      },
+      {
+        "name": "Raphael Hahner",
+        "prof_id": "2907166",
+        "calendar_id": "125386",
+        "url": "https://www.onedoc.ch/de/physiotherapeut/zurich/pcy08/raphael-hahner"
+      },
+      {
+        "name": "Eva Danko",
+        "prof_id": "2907150",
+        "calendar_id": "125383",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy05/eva-danko"
+      }
+    ]
+  },
+  {
+    "standort": "Stauffacher",
+    "entity_id": "50968",
+    "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdl2/kineo-zurich-stauffacher",
+    "therapeuten": [
+      {
+        "name": "Carmen Weber",
+        "prof_id": "2911916",
+        "calendar_id": "125641",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy8b/carmen-weber"
+      },
+      {
+        "name": "Andrina Kümin",
+        "prof_id": "2908008",
+        "calendar_id": "125453",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pcy23/andrina-kumin"
+      },
+      {
+        "name": "Emma Leu",
+        "prof_id": "2962676",
+        "calendar_id": "127231",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pc0gh/emma-leu"
+      }
+    ]
+  },
+  {
+    "standort": "Escher Wyss",
+    "entity_id": "51318",
+    "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zurich/ebdvs/kineo-escher-wyss",
+    "therapeuten": [
+      {
+        "name": "Clara Benning",
+        "prof_id": "2936879",
+        "calendar_id": "126376",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pczsq/clara-benning"
+      },
+      {
+        "name": "Andreas Niggl",
+        "prof_id": "2936885",
+        "calendar_id": "126378",
+        "url": "https://www.onedoc.ch/de/physiotherapeut/zurich/pczss/andreas-niggl"
+      },
+      {
+        "name": "Annika Heinrich",
+        "prof_id": "2936895",
+        "calendar_id": "126377",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pczsr/annika-heinrich"
+      },
+      {
+        "name": "Lucrecia Guerra",
+        "prof_id": "3110062",
+        "calendar_id": "131070",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zurich/pc3e4/lucrecia-guerra"
+      }
+    ]
+  },
+  {
+    "standort": "Zollikon",
+    "entity_id": "50971",
+    "url": "https://www.onedoc.ch/de/physiotherapiepraxis/zollikon/ebdl5/kineo-zollikon",
+    "therapeuten": [
+      {
+        "name": "Helen Schwank",
+        "prof_id": "2907110",
+        "calendar_id": "125377",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zollikon/pcy0z/helen-schwank"
+      },
+      {
+        "name": "Felica Kossendey",
+        "prof_id": "2907109",
+        "calendar_id": "125378",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zollikon/pcy00/felica-kossendey"
+      },
+      {
+        "name": "Meike Vogel",
+        "prof_id": "2944266",
+        "calendar_id": "126598",
+        "url": "https://www.onedoc.ch/de/physiotherapeutin/zollikon/pczyw/meike-vogel"
+      }
+    ]
+  },
+  {
+    "standort": "Thalwil",
+    "entity_id": "",
+    "url": "https://www.onedoc.ch/de/physiotherapiepraxis/thalwil/ebdl6/kineo-thalwil",
+    "therapeuten": []
+  }
+]

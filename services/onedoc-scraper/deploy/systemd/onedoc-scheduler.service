@@ -1,0 +1,18 @@
+[Unit]
+Description=OneDoc Scraper Scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/onedoc_scraper
+# Minus = optional: fehlende .env bricht den Start nicht ab
+EnvironmentFile=-/opt/onedoc_scraper/.env
+ExecStart=/opt/onedoc_scraper/.venv/bin/python3 /opt/onedoc_scraper/adaptive_scheduler.py
+Restart=always
+RestartSec=15
+User=onedoc
+Group=onedoc
+
+[Install]
+WantedBy=multi-user.target
