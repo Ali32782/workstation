@@ -53,6 +53,11 @@ Email via **Migadu** (managed). VoIP via **Peoplefone CH + Zoiper**
 ├── docker-compose.jitsi.yml       # Jitsi Meet (4 containers)
 ├── docker-compose.zammad.yml      # Zammad helpdesk
 ├── docker-compose.monitoring.yml  # Uptime Kuma (phase 2)
+├── docker-compose.mautic.yml      # Mautic — Mailchimp-Alternative
+├── docker-compose.opencut.yml     # OpenCut — Browser-Videoeditor (CapCut-Alt.)
+├── docker-compose.postiz.yml      # Postiz — Social-Scheduler (Buffer-Alt.)
+├── docker-compose.kineo-bot.yml   # Kineo Raumplanungs-Assistent (FastAPI+Anthropic)
+├── docker-compose.kineo-dashboard.yml # Kineo Operations Dashboard (Streamlit)
 ├── .env.example                   # copy to .env and fill
 ├── Makefile                       # thin wrapper for common commands
 ├── landing/                       # static apex + tenant dashboard (nginx)

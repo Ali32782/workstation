@@ -40,7 +40,8 @@ Kurzüberblick über alle Anleitungen unter `docs/` und ihren Umsetzungsgrad im 
 | CSP für iframed Apps | `scripts/npm-iframe-csp.sh` | **vorhanden** |
 | OIDC Wiring | `scripts/wire-oidc.sh` | **vorhanden** |
 | Portal-only Smoke | `scripts/smoke-portal.sh` | **vorhanden** (LB-style probe) |
-| Cross-Stack Smoke | `scripts/smoke-stacks.sh` | **vorhanden** (Container + interne Endpoints) |
+| Cross-Stack Smoke | `scripts/smoke-stacks.sh` | **vorhanden** (Container + interne Endpoints, inkl. Bot+Dashboard) |
+| NPM Proxy-Host (idempotent, kein UI) | `scripts/npm-add-proxy-host.sh` | **vorhanden** (UPSERT + internalNginx-Regenerate; vermeidet `docker restart npm`-Outage) |
 | Backup-Freshness | `scripts/backup-verify.sh` | **vorhanden** (Alter + Größe + Log-Tail) |
 | Backup-Cron-Fix | `scripts/fix-backup-cron.sh` | **vorhanden** (root-only; korrigiert Legacy-Pfad) |
 | OpenCut/Postiz aktivieren | `scripts/activate-opencut-postiz.sh` | **vorhanden** (env-uncomment + Portal rebuild) |

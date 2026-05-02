@@ -113,6 +113,15 @@ einfließen (spätestens vor Onboarding erster externer Praxis).
   - Postiz (Social-Scheduler, Buffer-Alternative, 30+ Plattformen) — auf `social.kineo360.work` (DNS+NPM TBD)
   - Beide neuen Stacks: dedicated Postgres + Redis pro Stack (kein Shared-State mit Plane/Twenty)
   - Aktivierung pro Tool via `scripts/activate-opencut-postiz.sh` nach DNS+NPM-Setup
+- [x] **Kineo Bot self-hosted** (2026-05-02) — `kineo-raumplanungsassistent.onrender.com` (Render) abgelöst durch lokalen Container `kineo_bot` auf `bot.kineo360.work` (FastAPI + Anthropic, In-Memory OTP-Store).
+  - **Akzeptierte Debt**: keine Auth (öffentlich gewollt — ist die Sales-Self-Service-Seite), keine Postgres-Persistence, Anthropic-Cost-Cap fehlt (Bot teilt sich aktuell `SCRAPER_ANTHROPIC_API_KEY`).
+  - **Trigger zum Abbau**: ungewöhnlicher Token-Verbrauch im Anthropic-Dashboard, oder erstes Bot-Missbrauchs-Pattern in den Access-Logs.
+- [x] **Kineo Operations Dashboard self-hosted** (2026-05-02) — Streamlit-Container `kineo_dashboard` auf `dashboard.kineo360.work` mit NPM-Basic-Auth (Variante A in MORGEN.md 1c) hinter `*.kineo360.work` Wildcard-Cert.
+  - **Akzeptierte Debt**:
+    - Klartext-Passwort der Access-List liegt zusätzlich zum bcrypt-Hash in NPM-SQLite (`access_list_auth.password`) — NPM-Standard, fürs UI-Pre-Fill. nginx liest nur den bcrypt-Hash aus `/data/access/1`.
+    - **Single-Account** (`kineo` / 16-stelliges generiertes PW) — kein per-User-Audit-Trail.
+    - Streamlit hat **keine eigene Auth**, nur die NPM-Schicht. Wenn jemand Zugang zum proxy-Netzwerk bekommt (Container-Compromise), umgeht er die Auth.
+  - **Trigger zum Abbau**: 2. Mitarbeiter braucht Dashboard-Zugang → migrieren zu **oauth2-proxy + Keycloak** (Variante B), gibt SSO mit dem Portal-Login.
 
 ## Why this is acceptable right now
 

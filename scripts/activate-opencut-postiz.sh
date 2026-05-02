@@ -3,17 +3,19 @@
 # activate-opencut-postiz.sh
 #
 # Sobald DNS (videos.kineo360.work + social.kineo360.work) auf den Server
-# zeigt UND beide Domains in NPM einen Proxy-Host haben, schaltet dieses
-# Skript die Portal-Sidebar-Einträge frei und rebuildet das Portal.
+# zeigt, schaltet dieses Skript den Marketing-Hub komplett frei — inkl.
+# der NPM-Proxy-Hosts (kein UI-Klick mehr nötig).
 #
 # Ablauf:
 #   1. Smoke-Test der internen Endpoints (ohne NPM)
-#   2. (optional) HTTPS-Smoke-Test über die öffentlichen URLs
-#   3. NEXT_PUBLIC_OPENCUT_URL / NEXT_PUBLIC_POSTIZ_URL in /opt/corelab/.env
+#   2. NPM-Proxy-Hosts via npm-add-proxy-host.sh anlegen / aktualisieren
+#      (idempotent, kein UI-Klick, kein docker-restart-npm)
+#   3. (optional) HTTPS-Smoke-Test über die öffentlichen URLs
+#   4. NEXT_PUBLIC_OPENCUT_URL / NEXT_PUBLIC_POSTIZ_URL in /opt/corelab/.env
 #      einkommentieren
-#   4. portal-Image rebuilden (env-Vars werden zum Build-Zeitpunkt gebaked)
-#   5. portal neu hochziehen
-#   6. Smoke-Test der Sidebar-API
+#   5. portal-Image rebuilden (env-Vars werden zum Build-Zeitpunkt gebaked)
+#   6. portal neu hochziehen
+#   7. Smoke-Test der Sidebar-API
 #
 # Verwendung (auf dem Server oder via SSH):
 #   ssh medtheris-corelab 'cd /opt/corelab && bash scripts/activate-opencut-postiz.sh'
@@ -42,16 +44,59 @@ docker run --rm --network proxy curlimages/curl:latest \
   }
 
 echo
-echo "==> 2. Public HTTPS smoke test (nur Warnung wenn NPM/DNS noch fehlt)"
-curl -fsS -o /dev/null -w "  https://videos.kineo360.work  HTTP %{http_code}\n" \
-  --max-time 10 https://videos.kineo360.work/ \
-  || echo "  ! videos.kineo360.work noch nicht öffentlich — DNS oder NPM fehlt"
-curl -fsS -o /dev/null -w "  https://social.kineo360.work  HTTP %{http_code}\n" \
-  --max-time 10 https://social.kineo360.work/ \
-  || echo "  ! social.kineo360.work noch nicht öffentlich — DNS oder NPM fehlt"
+echo "==> 2. NPM Proxy-Hosts anlegen / aktualisieren (idempotent)"
+HELPER="${REPO_ROOT}/scripts/npm-add-proxy-host.sh"
+if [[ ! -x "$HELPER" ]]; then
+  echo "  ! ${HELPER} fehlt oder ist nicht ausführbar — Abbruch."
+  echo "  Hint: scp scripts/npm-add-proxy-host.sh und chmod +x"
+  exit 1
+fi
+
+# Pre-flight: zeigt DNS schon auf den Server?
+SERVER_IP="${SERVER_IP:-$(curl -fsS https://api.ipify.org 2>/dev/null || echo "")}"
+for d in videos.kineo360.work social.kineo360.work; do
+  RESOLVED=$(dig +short "$d" A | head -1)
+  if [[ -z "$RESOLVED" ]]; then
+    echo "  ! ${d} hat keinen DNS-A-Record — bitte in Cloudflare anlegen und erneut starten."
+    exit 1
+  fi
+  if [[ -n "$SERVER_IP" && "$RESOLVED" != "$SERVER_IP" ]]; then
+    echo "  ! ${d} → ${RESOLVED}, Server ist ${SERVER_IP} — DNS zeigt nicht auf uns."
+    exit 1
+  fi
+done
+echo "  ✓ DNS-Records vorhanden"
+
+# OpenCut: Browser-only video editor; iframe ok für CSP frame-ancestors,
+# kein WebSocket im klassischen Sinn nötig.
+bash "$HELPER" \
+  --domain videos.kineo360.work \
+  --host opencut_web \
+  --port 3000 \
+  --frame-ancestors "https://app.kineo360.work" \
+  --client-max-body-size 1024M
+
+# Postiz: Heavy-WebSocket (Temporal queue UI), grosse Uploads für Reels/Videos,
+# unbuffered streaming an Frontend.
+bash "$HELPER" \
+  --domain social.kineo360.work \
+  --host postiz_backend \
+  --port 5000 \
+  --frame-ancestors "https://app.kineo360.work" \
+  --client-max-body-size 512M \
+  --proxy-buffering off
 
 echo
-echo "==> 3. Portal-.env: NEXT_PUBLIC_OPENCUT_URL / NEXT_PUBLIC_POSTIZ_URL aktivieren"
+echo "==> 3. Public HTTPS smoke test"
+curl -fsS -o /dev/null -w "  https://videos.kineo360.work  HTTP %{http_code}\n" \
+  --max-time 10 https://videos.kineo360.work/ \
+  || echo "  ! videos.kineo360.work antwortet nicht — Logs prüfen"
+curl -fsS -o /dev/null -w "  https://social.kineo360.work  HTTP %{http_code}\n" \
+  --max-time 10 https://social.kineo360.work/ \
+  || echo "  ! social.kineo360.work antwortet nicht — Logs prüfen"
+
+echo
+echo "==> 4. Portal-.env: NEXT_PUBLIC_OPENCUT_URL / NEXT_PUBLIC_POSTIZ_URL aktivieren"
 if grep -qE "^# *NEXT_PUBLIC_OPENCUT_URL=" "$ENV_FILE"; then
   sed -i 's|^# *\(NEXT_PUBLIC_OPENCUT_URL=.*\)|\1|' "$ENV_FILE"
   echo "  ✓ NEXT_PUBLIC_OPENCUT_URL einkommentiert"
@@ -66,15 +111,15 @@ else
 fi
 
 echo
-echo "==> 4. Portal-Image rebuilden (NEXT_PUBLIC_* werden beim Build gebaked)"
+echo "==> 5. Portal-Image rebuilden (NEXT_PUBLIC_* werden beim Build gebaked)"
 docker compose build portal
 
 echo
-echo "==> 5. Portal neu hochziehen"
+echo "==> 6. Portal neu hochziehen"
 docker compose up -d portal
 
 echo
-echo "==> 6. Smoke-Test Portal-Sidebar"
+echo "==> 7. Smoke-Test Portal-Sidebar"
 sleep 8
 PORTAL_URL="${PORTAL_PUBLIC_URL:-$PORTAL_PUBLIC_URL_DEFAULT}"
 echo "  Portal: $PORTAL_URL"

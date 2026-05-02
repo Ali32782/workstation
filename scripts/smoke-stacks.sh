@@ -40,7 +40,7 @@ echo "==> 1. Container snapshot ($SSH_HOST)"
 #   them as "running" would force us to keep a Compose hack that restarts
 #   them; ignoring them in the smoke is correct.
 container_lines=$(ssh "$SSH_HOST" 'docker ps -a --format "{{.Names}}|{{.Status}}" \
-  | grep -E "^(portal|keycloak|keycloak-db|mautic_|twenty|plane|postiz_|opencut_|nextcloud|rocketchat|jitsi|gitea|zammad|snappymail|documenso|nginx-proxy-manager)" \
+  | grep -E "^(portal|keycloak|keycloak-db|mautic_|twenty|plane|postiz_|opencut_|nextcloud|rocketchat|jitsi|gitea|zammad|snappymail|documenso|nginx-proxy-manager|kineo_)" \
   | grep -vE "(-init|-migrator)" || true')
 
 while IFS= read -r line; do
@@ -83,6 +83,8 @@ probes=(
   "documenso           3000  /api/health         documenso-health     200|404"
   "opencut_web         3000  /api/health         opencut-health       200"
   "postiz_backend      5000  /auth/login         postiz-front         200"
+  "kineo_bot           8000  /                   kineo-bot-front      200"
+  "kineo_dashboard     8501  /_stcore/health     kineo-dashboard-hc   200"
 )
 
 for p in "${probes[@]}"; do
@@ -115,10 +117,17 @@ else
     "https://sign.kineo360.work                                 200|302|307"
     "https://videos.kineo360.work                               200|503"
     "https://social.kineo360.work                               200|302|503"
+    "https://bot.kineo360.work                                  200"
+    "https://dashboard.kineo360.work                            401|403"
   )
   for p in "${pubs[@]}"; do
     read -r url codes <<<"$p"
-    code=$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 8 "$url" 2>/dev/null || echo ERR)
+    # -f makes curl exit 22 on 4xx/5xx — but we WANT to read those codes
+    # (e.g. 401 from dashboard auth gate). Drop -f and rely on -w only.
+    # Note: curl ALWAYS prints the http_code via -w (incl. "000" on TLS
+    # failure), so we just need to ignore the exit code without appending.
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "$url" 2>/dev/null) || true
+    [[ -z "$code" ]] && code="000"
     if [[ "$code" =~ ^(${codes})$ ]]; then
       green "  ✓ ${url}  → HTTP $code"
     else
