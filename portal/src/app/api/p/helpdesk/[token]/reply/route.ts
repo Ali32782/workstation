@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { addArticle, getTicket } from "@/lib/helpdesk/zammad";
 import { getHelpdeskTenant } from "@/lib/helpdesk/config";
 import { verifyPortalToken } from "@/lib/helpdesk/portal-token";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,17 @@ export async function POST(
   ctx: { params: Promise<{ token: string }> },
 ) {
   const { token } = await ctx.params;
+
+  // Rate-limit: 6 replies per minute per IP+token. Real customers will hit
+  // the wall around once a year; misbehaving clients (or a leaked link being
+  // abused) cap out fast.
+  const limited = rateLimitResponse(
+    req,
+    { scope: "p-helpdesk-reply", windowMs: 60_000, max: 6 },
+    `${req.headers.get("x-forwarded-for") ?? "ip"}:${token.slice(0, 8)}`,
+  );
+  if (limited) return limited;
+
   const claim = verifyPortalToken(token);
   if (!claim) {
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTicket } from "@/lib/helpdesk/zammad";
 import { getHelpdeskTenant } from "@/lib/helpdesk/config";
 import { verifyPortalToken } from "@/lib/helpdesk/portal-token";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,10 +16,21 @@ export const runtime = "nodejs";
  * outstanding link.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ token: string }> },
 ) {
   const { token } = await ctx.params;
+
+  // Rate-limit: 30 GETs per minute per IP+token combo. Plenty for a real
+  // customer polling the page; chokes brute-force token guessers regardless
+  // of how cheap a single round-trip is.
+  const limited = rateLimitResponse(
+    req,
+    { scope: "p-helpdesk-get", windowMs: 60_000, max: 30 },
+    `${req.headers.get("x-forwarded-for") ?? "ip"}:${token.slice(0, 8)}`,
+  );
+  if (limited) return limited;
+
   const claim = verifyPortalToken(token);
   if (!claim) {
     return NextResponse.json(

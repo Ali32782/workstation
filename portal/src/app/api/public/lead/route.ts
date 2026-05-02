@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import type { PublicLeadInput } from "@/lib/crm/public-lead";
 import { submitPublicLead } from "@/lib/crm/public-lead";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -63,6 +64,21 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const h = corsHeaders(req);
+
+  // Rate-limit: 5 submissions per minute per IP. Prevents form-spam scrapers
+  // from flooding Twenty CRM with bogus leads. Tuned for a real human filling
+  // out a form repeatedly (typo, retry); aggressive scrapers hit the wall fast.
+  const limited = rateLimitResponse(req, {
+    scope: "public-lead",
+    windowMs: 60_000,
+    max: 5,
+  });
+  if (limited) {
+    for (const [k, v] of Object.entries(h)) {
+      limited.headers.set(k, v);
+    }
+    return limited;
+  }
 
   const configured = Boolean(process.env.PUBLIC_LEAD_FORM_SECRET?.trim());
   if (!configured) {
