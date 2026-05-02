@@ -58,7 +58,7 @@ jobs:
           skip-dirs: "node_modules,.next,.venv,__pycache__"
 
       - name: Upload SARIF (filesystem)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
@@ -82,7 +82,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Upload SARIF (config)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-config.sarif
